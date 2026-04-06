@@ -1385,17 +1385,17 @@ void OpenGLRenderer::dispatch_buckets_jak1(DmaFollower dma,
     g_current_renderer = renderer->name_and_id();
     // lg::info("Render: {} start", g_current_renderer);
 
-    // render primary camera (top-left half-width viewport)
+    // render primary camera — left half, full height
     m_render_state.camera_idx = 0;
     auto dma_copy = dma;
-    glViewport(old_viewport[0], old_viewport[1], old_viewport[2] / 2, old_viewport[3] / 2);
+    glViewport(old_viewport[0], old_viewport[1], old_viewport[2] / 2, old_viewport[3]);
     renderer->render(dma, &m_render_state, bucket_prof);
 
-    // render secondary camera (top-right half-width viewport), skipping texture-only buckets
+    // render secondary camera — right half, full height (skip texture-only buckets)
     if (!m_skip_multi_buckets[bucket_id]) {
       m_render_state.camera_idx = 1;
-      glViewport(old_viewport[0] + old_viewport[2] / 2, old_viewport[1] + old_viewport[3] / 2,
-                 old_viewport[2] / 2, old_viewport[3] / 2);
+      glViewport(old_viewport[0] + old_viewport[2] / 2, old_viewport[1],
+                 old_viewport[2] / 2, old_viewport[3]);
       renderer->render(dma_copy, &m_render_state, bucket_prof);
     }
 
