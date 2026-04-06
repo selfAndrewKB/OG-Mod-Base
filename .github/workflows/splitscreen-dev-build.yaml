@@ -1,9 +1,7 @@
 name: "Splitscreen Dev Build"
 
 on:
-  push:
-    branches:
-      - splitscreen-jak1
+  workflow_dispatch:
 
 jobs:
   build_windows:
