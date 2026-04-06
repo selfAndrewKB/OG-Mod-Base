@@ -2,6 +2,7 @@
 
 #include "common/goal_constants.h"
 #include "common/log/log.h"
+#include "common/math/geometry.h"
 #include "common/util/FileUtil.h"
 
 #include "game/graphics/opengl_renderer/BlitDisplays.h"
@@ -69,12 +70,61 @@ void GLAPIENTRY opengl_error_callback(GLenum source,
   }
 }
 
+// Reads the multi-camera struct from GOAL (sent via DMA bucket 2) and precomputes per-camera
+// transform matrices used by the split-screen renderer passes.
+class MultiCameraMatrixGrabber : public BucketRenderer {
+ public:
+  MultiCameraMatrixGrabber(const std::string& name, int my_id) : BucketRenderer(name, my_id) {}
+  void draw_debug_window() override {}
+  void render(DmaFollower& dma, SharedRenderState* render_state, ScopedProfilerNode&) override {
+    while (dma.current_tag_offset() != render_state->next_bucket) {
+      auto xfer = dma.read_and_advance();
+      if (xfer.size_bytes == sizeof(SharedRenderState::MultiCameraGoalMatrices) &&
+          render_state->camera_idx == 0) {
+        memcpy(&render_state->multi_camera_goal, xfer.data,
+               sizeof(SharedRenderState::MultiCameraGoalMatrices));
+
+        math::Matrix4f cpri_T_w = inverse(render_state->multi_camera_goal.w_T_cpri);
+        for (int i = 0; i < 4; i++) {
+          auto& cam = render_state->cameras[i];
+          const auto& w_T_c = i == 0 ? render_state->multi_camera_goal.w_T_cpri
+                                     : render_state->multi_camera_goal.w_T_cextra[i - 1];
+          cam.w_T_wprime = render_state->multi_camera_goal.w_T_cpri * inverse(w_T_c);
+          cam.pri_cam_T_cam = cpri_T_w * w_T_c;
+        }
+      }
+    }
+  }
+};
+
 OpenGLRenderer::OpenGLRenderer(std::shared_ptr<TexturePool> texture_pool,
                                std::shared_ptr<Loader> loader,
                                GameVersion version)
     : m_render_state(texture_pool, loader, version),
       m_collide_renderer(version),
-      m_version(version) {
+      m_version(version),
+      m_skip_multi_buckets((int)jak2::BucketId::MAX_BUCKETS) {
+  // Buckets that are skipped for secondary viewports:
+  // - texture-only buckets (no geometry, nothing to re-render)
+  // - ocean and sky (require GOAL-side fixes to support multiple cameras)
+  for (auto bucket : {
+           jak1::BucketId::OCEAN_MID_AND_FAR,
+           jak1::BucketId::OCEAN_NEAR,
+           jak1::BucketId::SKY_DRAW,
+           jak1::BucketId::TFRAG_TEX_LEVEL0,
+           jak1::BucketId::TFRAG_TEX_LEVEL1,
+           jak1::BucketId::SHRUB_TEX_LEVEL0,
+           jak1::BucketId::SHRUB_TEX_LEVEL1,
+           jak1::BucketId::ALPHA_TEX_LEVEL0,
+           jak1::BucketId::ALPHA_TEX_LEVEL1,
+           jak1::BucketId::PRIS_TEX_LEVEL0,
+           jak1::BucketId::PRIS_TEX_LEVEL1,
+           jak1::BucketId::WATER_TEX_LEVEL0,
+           jak1::BucketId::WATER_TEX_LEVEL1,
+           jak1::BucketId::PRE_SPRITE_TEX,
+       }) {
+    m_skip_multi_buckets[(int)bucket] = true;
+  }
   // requires OpenGL 4.3
 #ifndef __APPLE__
   // setup OpenGL errors
@@ -667,7 +717,9 @@ void OpenGLRenderer::init_bucket_renderers_jak1() {
   //-------------
   // 0 : ??
   // 1 : ??
-  // 2 : ??
+  // 2 : multi-camera data (GOAL sends inv-camera-rot matrices here each frame)
+  init_bucket_renderer<MultiCameraMatrixGrabber>("multicam", BucketCategory::OTHER,
+                                                 BucketId::BUCKET2);
   // 3 : SKY_DRAW
   init_bucket_renderer<SkyRenderer>("sky", BucketCategory::OTHER, BucketId::SKY_DRAW);
   // 4 : OCEAN_MID_AND_FAR
@@ -1323,13 +1375,30 @@ void OpenGLRenderer::dispatch_buckets_jak1(DmaFollower dma,
   ASSERT(dma.current_tag_offset() == m_render_state.next_bucket);
   m_render_state.next_bucket += 16;
 
+  GLint old_viewport[4];
+  glGetIntegerv(GL_VIEWPORT, old_viewport);
+
   // loop over the buckets!
   for (size_t bucket_id = 0; bucket_id < m_bucket_renderers.size(); bucket_id++) {
     auto& renderer = m_bucket_renderers[bucket_id];
     auto bucket_prof = prof.make_scoped_child(renderer->name_and_id());
     g_current_renderer = renderer->name_and_id();
     // lg::info("Render: {} start", g_current_renderer);
+
+    // render primary camera (top-left half-width viewport)
+    m_render_state.camera_idx = 0;
+    auto dma_copy = dma;
+    glViewport(old_viewport[0], old_viewport[1], old_viewport[2] / 2, old_viewport[3] / 2);
     renderer->render(dma, &m_render_state, bucket_prof);
+
+    // render secondary camera (top-right half-width viewport), skipping texture-only buckets
+    if (!m_skip_multi_buckets[bucket_id]) {
+      m_render_state.camera_idx = 1;
+      glViewport(old_viewport[0] + old_viewport[2] / 2, old_viewport[1] + old_viewport[3] / 2,
+                 old_viewport[2] / 2, old_viewport[3] / 2);
+      renderer->render(dma_copy, &m_render_state, bucket_prof);
+    }
+
     if (sync_after_buckets) {
       auto pp = scoped_prof("finish");
       glFinish();
@@ -1348,6 +1417,9 @@ void OpenGLRenderer::dispatch_buckets_jak1(DmaFollower dma,
       m_collide_renderer.render(&m_render_state, p);
     }
   }
+
+  // Restore original viewport after split-screen pass
+  glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
 
   // TODO ending data.
 }

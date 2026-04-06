@@ -2,6 +2,7 @@
 
 #include "background_common.h"
 
+#include "common/math/geometry.h"
 #include "common/util/os.h"
 #include "common/util/simd_util.h"
 
@@ -228,6 +229,18 @@ std::array<math::Vector4f, 4> make_new_cam_mat(const math::Vector4f cam_T_w[4],
   return result;
 }
 
+namespace {
+math::Matrix4f matrix_from_col_vectors(const math::Vector4f* vectors) {
+  math::Matrix4f ret;
+  for (int c = 0; c < 4; c++) {
+    for (int r = 0; r < 4; r++) {
+      ret(r, c) = vectors[c][r];
+    }
+  }
+  return ret;
+}
+}  // namespace
+
 void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
                             SharedRenderState* render_state,
                             ShaderId shader) {
@@ -237,7 +250,11 @@ void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
   glUniform1i(glGetUniformLocation(id, "gfx_hack_no_tex"), Gfx::g_global_settings.hack_no_tex);
   glUniform1i(glGetUniformLocation(id, "decal"), false);
   glUniform1i(glGetUniformLocation(id, "tex_T0"), 0);
-  glUniformMatrix4fv(glGetUniformLocation(id, "camera"), 1, GL_FALSE, settings.camera[0].data());
+  // Apply per-camera world-space delta to tfrag camera uniform for split-screen.
+  auto& this_cam = render_state->cameras[render_state->camera_idx];
+  math::Matrix4f s_T_w = matrix_from_col_vectors(settings.camera);
+  glUniformMatrix4fv(glGetUniformLocation(id, "camera"), 1, GL_FALSE,
+                     (s_T_w * this_cam.w_T_wprime).data());
 
   auto newcam =
       make_new_cam_mat(settings.rot, settings.perspective, settings.fog.x(), settings.hvdf_off.z());

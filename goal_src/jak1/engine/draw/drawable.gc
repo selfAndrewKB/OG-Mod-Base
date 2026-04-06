@@ -735,6 +735,16 @@
 
 (define *generic-effect-mode* 0)
 
+;; Multi-camera struct: one primary camera (matches *math-camera*) plus up to 3 extra cameras.
+;; C++ reads this from DMA bucket 2 each frame and precomputes per-camera transform matrices.
+(deftype multi-camera (structure)
+  ((primary-camera matrix :inline)
+   (extra-cameras  matrix 3 :inline)
+   )
+  )
+
+(define *multi-camera* (new 'global 'multi-camera))
+
 (defun real-main-draw-hook ()
   "The main drawing function. This dispatches all renderers and is called directly from the display-loop
   in main.gc"
@@ -757,6 +767,32 @@
         (let ((s5-0 (-> *level* level gp-0)))
           (if (= (-> s5-0 status) 'active) (print-mem-usage (compute-memory-usage s5-0 #f) s5-0 *stdcon*)))))
     (reset! *dma-mem-usage*))
+
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; Multi-camera: set primary camera from *math-camera* each frame.
+  ;; Secondary camera placement is done by localmulti-run-eachframe via *multi-camera* extra-cameras.
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  (matrix-copy! (-> *multi-camera* primary-camera)
+                (-> *math-camera* inv-camera-rot)
+                )
+
+  ;; Send *multi-camera* to C++ via DMA bucket 2.
+  ;; C++ reads this in MultiCameraMatrixGrabber and precomputes w_T_wprime and pri_cam_T_cam.
+  (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf))
+                               (the bucket-id 2))
+    (dma-buffer-add-cnt-vif2
+      buf
+      (/ (size-of multi-camera) 16)
+      (the vif-tag 0)
+      (the vif-tag 0)
+      )
+    (mem-copy! (-> buf base)
+               (the pointer *multi-camera*)
+               (size-of multi-camera)
+               )
+    (&+! (-> buf base) (size-of multi-camera))
+    )
+
   ;; todo shrub matrix
   ;; initialize dma buckets that are generic sinks.
   ;; other renderers may output to these, so do them first.
