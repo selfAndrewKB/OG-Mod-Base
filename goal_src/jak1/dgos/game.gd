@@ -352,6 +352,8 @@
   "orb-placer.o" ;; added
   "mod-custom-code.o" ;; added
   "mod-debug.o" ;; added
+  "multi-debug.o" ;; co-op debug logging
+  "localmulti.o" ;; co-op split-screen support
   ;; keep zoomer stuff loaded
   "target-racer-h.o"
   "racer-part.o"

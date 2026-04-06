@@ -1,0 +1,258 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: localmulti.gc
+;; name in dgo: localmulti
+;; dgos: GAME
+
+;; Local split-screen co-op support for Jak 1.
+;; Ported from OG-Jak2-Multi splitscreen-hack- branch.
+;; Extra targets (players 2-4) are stored in *target-list* as handles.
+;; Activation: hold L3 on a secondary controller, double-tap D-pad up.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Process spawning
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun start-extra-target ((idx int))
+  "Spawn a new target process from the dead pool."
+  (when (multi-log-enabled? 'spawn)
+    (format 0 "[MULTI:spawn]   start-extra-target idx=~D~%" idx)
+    )
+  (process-spawn
+    target
+    :init init-target
+    (-> *game-info* current-continue)
+    :from *target-dead-pool*
+    :to *target-pool*
+    :stack *kernel-dram-stack*
+    )
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Controller routing hook (called from init-target)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun runs-on-tgt-int ()
+  "Called at the start of init-target for every spawned target.
+   Controller assignment is handled per-target in localmulti-start instead."
+  (none)
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Alive checks
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun target-alive? ((tgt target))
+  "Return #t if the given target process is live (not #f, not in a dead state)."
+  (and tgt
+    (not (or (= (-> tgt state) #f) (= (-> tgt state) symbol)))
+    )
+  )
+
+(defun extra-target-alive? ()
+  "Return #t if any secondary target (index 1+) is currently alive."
+  (dotimes (tgt-idx (-> *target-list* length))
+    (if (and (> tgt-idx 0) (target-alive? (get-target tgt-idx)))
+      (return #t)
+      )
+    )
+  #f
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Warp / distance
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun warp-jakA-to-jakB ((jakA target) (jakB target))
+  "Teleport jakA to jakB's current position."
+  (when (multi-log-enabled? 'warp)
+    (format 0 "[MULTI:warp]    ~A -> ~A~%" (-> jakA name) (-> jakB name))
+    )
+  (set! (-> (-> jakA root) trans x) (-> (-> jakB root) trans x))
+  (set! (-> (-> jakA root) trans y) (-> (-> jakB root) trans y))
+  (set! (-> (-> jakA root) trans z) (-> (-> jakB root) trans z))
+  )
+
+(defun check-multi-jak-dist ((jak target))
+  "Return #t if jak is too far from *target* and should be warped back.
+   Suppressed during launch / high-jump states to avoid mid-air teleports."
+  (case (-> jak state)
+    ((target-launch target-duck-high-jump target-duck-high-jump-jump)
+      #f
+      )
+    (else
+      (let ((j-vec (new 'static 'vector)))
+        (set! (-> j-vec x) (-> (-> jak root) trans x))
+        (set! (-> j-vec y) (-> (-> jak root) trans y))
+        (set! (-> j-vec z) (-> (-> jak root) trans z))
+        (> (vector-vector-distance j-vec (target-pos 0)) (meters 75.0))
+        )
+      )
+    )
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Vehicle-section state detection
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define racer? #f)
+(define flutflut? #f)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Per-frame logic (hooked into runs-every-frame)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun localmulti-run-eachframe ()
+  "Main per-frame co-op update. Updates vehicle state, manages camera,
+   handles racer/flutflut despawn, and warps lagging players back."
+
+  ;; Update racer / flutflut flags based on *target*'s current state
+  (set! racer?
+    (aif *target*
+      (case (-> it next-state name)
+        (('target-racing
+          'target-racing-bounce
+          'target-racing-death
+          'target-racing-falling
+          'target-racing-grab
+          'target-racing-hit
+          'target-racing-jump
+          'target-racing-smack
+          'target-racing-start) #t)
+        )
+      )
+    )
+  (set! flutflut?
+    (aif *target*
+      (case (-> it next-state name)
+        (('target-flut-air-attack
+          'target-flut-air-attack-hit-ground
+          'target-flut-double-jump
+          'target-flut-falling
+          'target-flut-grab
+          'target-flut-hit
+          'target-flut-hit-ground
+          'target-flut-jump
+          'target-flut-running-attack
+          'target-flut-stance
+          'target-flut-start
+          'target-flut-walk) #t)
+        )
+      )
+    )
+
+  ;; Keep camera focused on *target* when extra players are active
+  (when (and
+          (extra-target-alive?)
+          (!= (-> *camera* drawable-target) *target*)
+          (!= (-> *target* state name) 'target-pole-cycle)
+          )
+    (set! (-> *camera* drawable-target) (the-as handle *target*))
+    )
+
+  (cond
+    ;; Racer section: reset camera but keep P2 alive
+    (racer?
+      (send-event *camera* 'change-state cam-string 0)
+      (send-event *camera* 'set-slave-option #x6000)
+      ;; P2 stays alive — despawn abandoned (crashes engine, see phase-2.md)
+      )
+    ;; Flutflut section: P2 stays alive
+    (flutflut?
+      ;; P2 stays alive — despawn abandoned (crashes engine, see phase-2.md)
+      )
+    ;; Normal: force cam-stick when multiple players are active and camera is cam-string
+    ((and
+        (extra-target-alive?)
+        (= (-> (-> (-> (the-as (pointer camera-slave) (-> *camera* child))) state) name) 'cam-string))
+      (send-event *camera* 'change-state cam-stick 0)
+      )
+    )
+
+  ;; Warp secondary players to *target* if they hold all four shoulder buttons, or are too far
+  (dotimes (tgt-idx (-> *target-list* length))
+    (let ((tgt (get-target tgt-idx)))
+      (when (and (> tgt-idx 0) tgt)
+        (when (and (cpad-hold? tgt-idx l1) (cpad-hold? tgt-idx l2)
+                   (cpad-hold? tgt-idx r1) (cpad-hold? tgt-idx r2))
+          (warp-jakA-to-jakB tgt *target*)
+          )
+        )
+      )
+    )
+
+  (none)
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Spawn / despawn
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun localmulti-start ((tgt-idx int))
+  "Spawn the extra target at tgt-idx if not already alive.
+   P2 is permanent once spawned — despawn is not supported (crashes engine)."
+  (let ((tgt (get-target tgt-idx)))
+    (when (> tgt-idx 0)
+      (cond
+        ((target-alive? tgt)
+          ;; already alive — do nothing (P2 is permanent)
+          (when (multi-log-enabled? 'spawn)
+            (format 0 "[MULTI:spawn]   tgt ~D already alive, ignoring~%" tgt-idx)
+            )
+          )
+        (else
+          ;; spawn new
+          (when (multi-log-enabled? 'spawn)
+            (format 0 "[MULTI:spawn]   spawning tgt ~D~%" tgt-idx)
+            )
+          (set! tgt (-> (start-extra-target tgt-idx) 0))
+          (warp-jakA-to-jakB tgt *target*)
+          (set! (-> *target-list* tgt-idx) (process->handle tgt))
+          (case tgt-idx
+            ((1) (draw-green tgt))
+            ((2) (draw-red tgt))
+            ((3) (draw-blue tgt))
+            )
+          (set! (-> tgt control unknown-cpad-info00) (-> *cpad-list* cpads tgt-idx))
+          (when (multi-log-enabled? 'spawn)
+            (format 0 "[MULTI:spawn]   tgt ~D spawned, cpad ~D~%" tgt-idx tgt-idx)
+            (format 0 "[MULTI:spawn]   sidekick: ~A~%" (ppointer->process (-> tgt sidekick)))
+            )
+          (multi-dump-target "post-spawn" tgt)
+          )
+        )
+      )
+    )
+  (none)
+  )
+
+(defun localmulti-start-all ((x int))
+  "Spawn extra targets for player slots 1 through x-1."
+  (dotimes (tgt-idx x)
+    (localmulti-start tgt-idx)
+    )
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Cheat code hook (called from main-cheats)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun spawn-extra-targets-code ()
+  "Called every frame from main-cheats. Secondary players hold L3 and
+   double-tap D-pad up to toggle their Jak in/out."
+  (dotimes (tgt-idx (-> *target-list* length))
+    (when (and (> tgt-idx 0)
+               (cpad-hold? tgt-idx l3)
+               (or *cheat-mode* (= *kernel-boot-message* 'play))
+               )
+      (check-cheat-code (-> *cheat-temp* tgt-idx) tgt-idx
+        (up up)
+        (cpad-clear! tgt-idx r1)
+        (cheats-sound-play *cheat-mode*)
+        (localmulti-start tgt-idx)
+        )
+      )
+    )
+  (none)
+  )

@@ -1,0 +1,77 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: multi-debug.gc
+;; name in dgo: multi-debug
+;; dgos: GAME
+
+;; Debug logging for split-screen co-op.
+;; Toggle categories at runtime via the REPL:
+;;   (set! *multi-dbg* #t)          ;; master switch
+;;   (set! *multi-dbg-spawn* #t)    ;; spawn/despawn events
+;;   (set! *multi-dbg-camera* #t)   ;; camera management
+;;   (set! *multi-dbg-vehicle* #t)  ;; racer/flutflut detection
+;;   (set! *multi-dbg-warp* #t)     ;; warp/distance checks
+;;   (set! *multi-dbg-detail* #t)   ;; verbose field dumps
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Switches
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define *multi-dbg*        #t)   ;; master — #f silences everything
+(define *multi-dbg-spawn*  #t)   ;; spawn, despawn, sidekick lifecycle
+(define *multi-dbg-camera* #f)   ;; camera target changes, mode switches
+(define *multi-dbg-vehicle* #t)  ;; racer?/flutflut? transitions
+(define *multi-dbg-warp*   #f)   ;; warp teleports, distance checks
+(define *multi-dbg-detail* #t)   ;; verbose struct dumps (heavy)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Logging helpers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun multi-log ((cat symbol) (msg string))
+  "Print [MULTI:<cat>] msg if the master switch AND category are enabled."
+  (when *multi-dbg*
+    (case cat
+      (('spawn)   (when *multi-dbg-spawn*   (format 0 "[MULTI:spawn]   ~A~%" msg)))
+      (('camera)  (when *multi-dbg-camera*  (format 0 "[MULTI:camera]  ~A~%" msg)))
+      (('vehicle) (when *multi-dbg-vehicle* (format 0 "[MULTI:vehicle] ~A~%" msg)))
+      (('warp)    (when *multi-dbg-warp*    (format 0 "[MULTI:warp]    ~A~%" msg)))
+      (('detail)  (when *multi-dbg-detail*  (format 0 "[MULTI:detail]  ~A~%" msg)))
+      (else       (format 0 "[MULTI] ~A~%" msg))
+      )
+    )
+  (none)
+  )
+
+(defun multi-log-enabled? ((cat symbol))
+  "Return #t if master + category are both enabled. Use for gating expensive
+   format calls that build strings inline."
+  (and *multi-dbg*
+    (case cat
+      (('spawn)   *multi-dbg-spawn*)
+      (('camera)  *multi-dbg-camera*)
+      (('vehicle) *multi-dbg-vehicle*)
+      (('warp)    *multi-dbg-warp*)
+      (('detail)  *multi-dbg-detail*)
+      (else #t)
+      )
+    )
+  )
+
+(defun multi-dump-target ((label string) (tgt target))
+  "Dump diagnostic fields for a target process. Only prints when detail is on."
+  (when (multi-log-enabled? 'detail)
+    (format 0 "[MULTI:detail]  --- ~A ---~%" label)
+    (format 0 "[MULTI:detail]    type:     ~A~%" (-> tgt type))
+    (format 0 "[MULTI:detail]    state:    ~A~%" (-> tgt state))
+    (format 0 "[MULTI:detail]    pid:      ~D~%" (-> tgt pid))
+    (format 0 "[MULTI:detail]    sidekick: ~A~%" (ppointer->process (-> tgt sidekick)))
+    (format 0 "[MULTI:detail]    control:  ~A~%" (-> tgt control))
+    (format 0 "[MULTI:detail]    draw:     ~A~%" (-> tgt draw))
+    (format 0 "[MULTI:detail]    part:     ~A~%" (-> tgt part))
+    (format 0 "[MULTI:detail]    child:    ~A~%" (ppointer->process (-> tgt child)))
+    (format 0 "[MULTI:detail]  --- end ---~%")
+    )
+  (none)
+  )

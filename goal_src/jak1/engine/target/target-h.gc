@@ -154,6 +154,17 @@
 
 (define-perm *target* target #f)
 
+;; co-op: list of handles for all player targets (index 0 = *target*, 1-3 = extra players)
+(define *target-list* (new 'global 'boxed-array handle 4))
+
+(defun get-target ((tgt-idx int))
+  "Return the target process at the given index, or #f if slot is empty."
+  (if (zero? (-> *target-list* tgt-idx))
+    (the-as target #f)
+    (the-as target (handle->process (-> *target-list* tgt-idx)))
+    )
+  )
+
 (deftype sidekick (process-drawable)
   ((parent-override  (pointer target) :overlay-at parent)
    (control          control-info :overlay-at root)
