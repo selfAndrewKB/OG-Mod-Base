@@ -1,0 +1,15 @@
+name: "Splitscreen Dev Build"
+
+on:
+  push:
+    branches:
+      - splitscreen-jak1
+
+jobs:
+  build_windows:
+    name: "Windows Build (Clang)"
+    uses: ./.github/workflows/windows-build-clang.yaml
+    with:
+      cmakePreset: "Release-windows-clang-static"
+      cachePrefix: "static"
+      uploadArtifacts: true
