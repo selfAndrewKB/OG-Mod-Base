@@ -772,8 +772,16 @@
   ;; Multi-camera: set primary camera from *math-camera* each frame.
   ;; Secondary camera placement is done by localmulti-run-eachframe via *multi-camera* extra-cameras.
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ;; Primary camera: full affine (rotation + position).
+  ;; inv-camera-rot is rotation-only (vector 3 = 0,0,0,1).
+  ;; We patch vector 3 with *math-camera* trans so C++ gets a real world-space camera.
+  ;; Secondary camera gets the same trans offset by (P2-P1), so any trans instability
+  ;; during cam-state transitions cancels out in w_T_wprime and pri_cam_T_cam.
   (matrix-copy! (-> *multi-camera* primary-camera)
                 (-> *math-camera* inv-camera-rot)
+                )
+  (vector-copy! (-> *multi-camera* primary-camera vector 3)
+                (-> *math-camera* trans)
                 )
 
   ;; Send *multi-camera* to C++ via DMA bucket 2.

@@ -512,12 +512,39 @@ math::Matrix4f matrix_from_col_vectors(const math::Vector4f* vectors) {
 }
 }  // namespace
 
+// Build a per-camera cam_no_persp matrix for split-screen TIE rendering.
+// TIE vertices are pre-translated to be P1-camera-relative by GOAL.
+// For secondary cameras, we need P2's rotation + a position-delta correction.
+math::Matrix4f build_splitscreen_cam_no_persp(SharedRenderState* render_state,
+                                               const math::Vector4f* p1_rot) {
+  auto& this_cam = render_state->cameras[render_state->camera_idx];
+  if (render_state->camera_idx == 0) {
+    return matrix_from_col_vectors(p1_rot);
+  }
+
+  // P2's world-to-camera rotation
+  auto cam_mat = matrix_from_col_vectors(this_cam.cam_rot);
+
+  // Position delta: vertices are P1-relative, need P2-relative offset
+  auto& pri_cam = render_state->cameras[0];
+  float dx = pri_cam.cam_world_pos[0] - this_cam.cam_world_pos[0];
+  float dy = pri_cam.cam_world_pos[1] - this_cam.cam_world_pos[1];
+  float dz = pri_cam.cam_world_pos[2] - this_cam.cam_world_pos[2];
+
+  // Column 3 = R_p2 * delta (rotate position correction into P2's camera space)
+  cam_mat(0, 3) = cam_mat(0, 0) * dx + cam_mat(0, 1) * dy + cam_mat(0, 2) * dz;
+  cam_mat(1, 3) = cam_mat(1, 0) * dx + cam_mat(1, 1) * dy + cam_mat(1, 2) * dz;
+  cam_mat(2, 3) = cam_mat(2, 0) * dx + cam_mat(2, 1) * dy + cam_mat(2, 2) * dz;
+  cam_mat(3, 3) = 1.0f;
+
+  return cam_mat;
+}
+
 void init_etie_cam_uniforms(const EtieUniforms& uniforms,
                             const GoalBackgroundCameraData& data,
                             SharedRenderState* render_state) {
-  auto& this_cam = render_state->cameras[render_state->camera_idx];
-  math::Matrix4f s_T_w = matrix_from_col_vectors(data.rot);
-  glUniformMatrix4fv(uniforms.cam_no_persp, 1, GL_FALSE, (s_T_w * this_cam.w_T_wprime).data());
+  auto cam_no_persp = build_splitscreen_cam_no_persp(render_state, data.rot);
+  glUniformMatrix4fv(uniforms.cam_no_persp, 1, GL_FALSE, cam_no_persp.data());
 
   math::Vector4f perspective[2];
   float inv_fog = 1.f / data.fog[0];
@@ -907,10 +934,8 @@ void Tie3::render_tree_wind(int idx,
   // note: this isn't the most efficient because we might compute wind matrices for invisible
   // instances. TODO: add vis ids to the instance info to avoid this
   memset(tree.wind_matrix_cache.data(), 0, sizeof(float) * 16 * tree.wind_matrix_cache.size());
-  // Apply per-camera world-space delta to wind camera transform.
-  auto& this_cam = render_state->cameras[render_state->camera_idx];
-  math::Matrix4f s_T_w = matrix_from_col_vectors(settings.camera.camera);
-  auto hacked_cam = s_T_w * this_cam.w_T_wprime;
+  // Build per-camera wind camera transform for split-screen.
+  auto hacked_cam = build_splitscreen_cam_no_persp(render_state, settings.camera.camera);
   std::array<math::Vector4f, 4> cam;
   for (int c = 0; c < 4; c++) {
     for (int r = 0; r < 4; r++) {

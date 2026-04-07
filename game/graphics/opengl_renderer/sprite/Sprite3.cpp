@@ -234,9 +234,30 @@ void Sprite3::render_2d_group0(DmaFollower& dma,
   // glUniform4fv(glGetUniformLocation(shid, "hmge_scale"), 1, m_frame_data.hmge_scale.data());
   glUniform1f(glGetUniformLocation(shid, "deg_to_rad"), m_frame_data.deg_to_rad);
   glUniform1f(glGetUniformLocation(shid, "inv_area"), m_frame_data.inv_area);
+  // Split-screen: build per-camera sprite camera matrix.
+  // Sprite positions are P1-camera-relative; for P2, correct rotation and position.
   auto& this_cam = render_state->cameras[render_state->camera_idx];
-  glUniformMatrix4fv(glGetUniformLocation(shid, "camera"), 1, GL_FALSE,
-                     (m_3d_matrix_data.camera * this_cam.w_T_wprime).data());
+  math::Matrix4f sprite_cam;
+  if (render_state->camera_idx > 0) {
+    // Build P2's rotation from precomputed per-camera data
+    for (int c = 0; c < 4; c++) {
+      for (int r = 0; r < 4; r++) {
+        sprite_cam(r, c) = this_cam.cam_rot[c][r];
+      }
+    }
+    // Position delta: vertices are P1-relative, correct for P2
+    auto& pri_cam = render_state->cameras[0];
+    float dx = pri_cam.cam_world_pos[0] - this_cam.cam_world_pos[0];
+    float dy = pri_cam.cam_world_pos[1] - this_cam.cam_world_pos[1];
+    float dz = pri_cam.cam_world_pos[2] - this_cam.cam_world_pos[2];
+    sprite_cam(0, 3) = sprite_cam(0, 0) * dx + sprite_cam(0, 1) * dy + sprite_cam(0, 2) * dz;
+    sprite_cam(1, 3) = sprite_cam(1, 0) * dx + sprite_cam(1, 1) * dy + sprite_cam(1, 2) * dz;
+    sprite_cam(2, 3) = sprite_cam(2, 0) * dx + sprite_cam(2, 1) * dy + sprite_cam(2, 2) * dz;
+    sprite_cam(3, 3) = 1.0f;
+  } else {
+    sprite_cam = m_3d_matrix_data.camera;
+  }
+  glUniformMatrix4fv(glGetUniformLocation(shid, "camera"), 1, GL_FALSE, sprite_cam.data());
   glUniform4fv(glGetUniformLocation(shid, "xy_array"), 8, m_frame_data.xy_array[0].data());
   glUniform4fv(glGetUniformLocation(shid, "xyz_array"), 4, m_frame_data.xyz_array[0].data());
   glUniform4fv(glGetUniformLocation(shid, "st_array"), 4, m_frame_data.st_array[0].data());

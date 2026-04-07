@@ -99,9 +99,13 @@ struct SharedRenderState {
   // Per-camera transform matrices, precomputed from multi_camera_goal each frame.
   // w_T_wprime: world-space delta from primary to this camera (used by background/TIE/sprite).
   // pri_cam_T_cam: primary-camera-space transform (used by Merc/Shadow which work in clip space).
+  // cam_world_pos: camera world position (for overriding cam_trans in TFrag).
+  // cam_rot: world-to-camera rotation in GOAL row format (for rebuilding pc_camera/cam_no_persp).
   struct Cam {
     math::Matrix4f w_T_wprime;
     math::Matrix4f pri_cam_T_cam;
+    math::Vector4f cam_world_pos;
+    math::Vector4f cam_rot[4];
   };
   Cam cameras[4];
   int camera_idx = 0;

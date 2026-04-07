@@ -91,6 +91,17 @@ class MultiCameraMatrixGrabber : public BucketRenderer {
                                      : render_state->multi_camera_goal.w_T_cextra[i - 1];
           cam.w_T_wprime = render_state->multi_camera_goal.w_T_cpri * inverse(w_T_c);
           cam.pri_cam_T_cam = cpri_T_w * w_T_c;
+
+          // Per-camera world position (column 3 of camera-to-world matrix).
+          cam.cam_world_pos = {w_T_c(0, 3), w_T_c(1, 3), w_T_c(2, 3), 1.f};
+
+          // World-to-camera rotation in GOAL row format.
+          // Rows of the C++ camera-to-world matrix give the world-to-camera rotation
+          // when interpreted as GOAL's transposed row-major convention.
+          for (int r = 0; r < 3; r++) {
+            cam.cam_rot[r] = {w_T_c(r, 0), w_T_c(r, 1), w_T_c(r, 2), 0.f};
+          }
+          cam.cam_rot[3] = {0, 0, 0, 1};
         }
       }
     }

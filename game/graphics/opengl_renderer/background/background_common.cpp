@@ -250,41 +250,29 @@ void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
   glUniform1i(glGetUniformLocation(id, "gfx_hack_no_tex"), Gfx::g_global_settings.hack_no_tex);
   glUniform1i(glGetUniformLocation(id, "decal"), false);
   glUniform1i(glGetUniformLocation(id, "tex_T0"), 0);
-  // Apply per-camera world-space delta to tfrag camera uniform for split-screen.
+  // Split-screen: use per-camera rotation and position for secondary cameras.
+  // The TFrag shader reads cam_trans (position) and pc_camera (rotation+projection),
+  // NOT the "camera" uniform — so we override those directly.
   auto& this_cam = render_state->cameras[render_state->camera_idx];
-  math::Matrix4f s_T_w = matrix_from_col_vectors(settings.camera);
-  glUniformMatrix4fv(glGetUniformLocation(id, "camera"), 1, GL_FALSE,
-                     (s_T_w * this_cam.w_T_wprime).data());
+  const math::Vector4f* rot = settings.rot;
+  math::Vector4f trans = settings.trans;
+  if (render_state->camera_idx > 0) {
+    rot = this_cam.cam_rot;
+    trans = this_cam.cam_world_pos;
+  }
+
+  // "camera" uniform (rotation-only, unused by TFrag shader but set for consistency)
+  math::Matrix4f s_T_w = matrix_from_col_vectors(rot);
+  glUniformMatrix4fv(glGetUniformLocation(id, "camera"), 1, GL_FALSE, s_T_w.data());
 
   auto newcam =
-      make_new_cam_mat(settings.rot, settings.perspective, settings.fog.x(), settings.hvdf_off.z());
-
-  /*
-  fmt::print("camera:\n{}\n{}\n{}\n{}\n", settings.camera[0].to_string_aligned(),
-             settings.camera[1].to_string_aligned(), settings.camera[2].to_string_aligned(),
-             settings.camera[3].to_string_aligned());
-
-  fmt::print("camera2:\n{}\n{}\n{}\n{}\n", newcam[0].to_string_aligned(),
-             newcam[1].to_string_aligned(), newcam[2].to_string_aligned(),
-             newcam[3].to_string_aligned());
-
-  fmt::print("persp:\n{}\n{}\n{}\n{}\n", settings.perspective[0].to_string_aligned(),
-             settings.perspective[1].to_string_aligned(),
-             settings.perspective[2].to_string_aligned(),
-             settings.perspective[3].to_string_aligned());
-  fmt::print("rot:\n{}\n{}\n{}\n{}\n", settings.rot[0].to_string_aligned(),
-             settings.rot[1].to_string_aligned(), settings.rot[2].to_string_aligned(),
-             settings.rot[3].to_string_aligned());
-  fmt::print("ctrans: {}\n", settings.trans.to_string_aligned());
-  fmt::print("hvdf: {}\n", settings.hvdf_off.to_string_aligned());
-  */
+      make_new_cam_mat(rot, settings.perspective, settings.fog.x(), settings.hvdf_off.z());
 
   glUniformMatrix4fv(glGetUniformLocation(id, "pc_camera"), 1, GL_FALSE, newcam[0].data());
 
   glUniform4f(glGetUniformLocation(id, "hvdf_offset"), settings.hvdf_off[0], settings.hvdf_off[1],
               settings.hvdf_off[2], settings.hvdf_off[3]);
-  glUniform4f(glGetUniformLocation(id, "cam_trans"), settings.trans[0], settings.trans[1],
-              settings.trans[2], settings.trans[3]);
+  glUniform4f(glGetUniformLocation(id, "cam_trans"), trans[0], trans[1], trans[2], trans[3]);
   glUniform1f(glGetUniformLocation(id, "fog_constant"), settings.fog.x());
   glUniform1f(glGetUniformLocation(id, "fog_min"), settings.fog.y());
   glUniform1f(glGetUniformLocation(id, "fog_max"), settings.fog.z());

@@ -84,6 +84,19 @@
 (define *multi-flutflut?* #f)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; P2 independent spring camera
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Smoothed camera position for P2 — gives P2 its own spring lag
+;; so the camera doesn't rigidly track P2's character.
+(define *p2-cam-pos* (new 'global 'vector))
+(define *p2-cam-initialized?* #f)
+
+;; Spring factor: 0.0 = no movement, 1.0 = instant snap.
+;; 0.08 ≈ camera converges in ~12 frames (~0.4s at 30fps).
+(define *p2-cam-spring* 0.08)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Camera helpers
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -95,6 +108,102 @@
       #f
       )
     )
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Standalone P2 follow camera
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun p2-camera-update ()
+  "Standalone third-person follow camera for Player 2.
+   Independent of P1's camera — uses P2's position and facing only.
+   Writes result into (-> *multi-camera* extra-cameras 0)."
+  (let ((cam-mat (-> *multi-camera* extra-cameras 0))
+        (p2 (get-target 1)))
+
+    (cond
+      ;; Fallback: if P2 isn't alive, mirror P1's camera so viewport isn't garbage
+      ((not (target-alive? p2))
+        (matrix-copy! cam-mat (-> *math-camera* inv-camera-rot))
+        (vector-copy! (-> cam-mat vector 3) (-> *math-camera* trans))
+        (set! (-> cam-mat vector 3 w) 1.0)
+        )
+
+      (else
+        ;; P2 is alive — compute independent follow camera
+        (let ((p2-pos (-> p2 control trans))
+              (p2-fwd (new 'stack-no-clear 'vector))
+              (behind (new 'stack-no-clear 'vector))
+              (desired (new 'stack-no-clear 'vector))
+              (look-at (new 'stack-no-clear 'vector))
+              (fwd (new 'stack-no-clear 'vector))
+              (down (new 'stack-no-clear 'vector))
+              )
+
+          ;; A. Get P2's facing direction from their current orientation
+          (vector-z-quaternion! p2-fwd (-> p2 control quat))
+
+          ;; B. Compute "behind" direction (negated forward, projected horizontal)
+          (vector-negate! behind p2-fwd)
+          (set! (-> behind y) 0.0)
+          (let ((len (vector-length behind)))
+            (if (< len 0.001)
+              ;; P2 looking straight up/down — use fallback
+              (set-vector! behind 0.0 0.0 -1.0 0.0)
+              (vector-normalize! behind 1.0)
+              )
+            )
+
+          ;; C. Desired position: behind P2 at CAMERA-bank distance, above by height
+          (let ((dist (-> *CAMERA-bank* default-string-max-z))    ;; (meters 12.5)
+                (height (-> *CAMERA-bank* default-string-max-y))  ;; (meters 3)
+                )
+            (vector-float*! desired behind dist)
+            (vector+! desired desired p2-pos)
+            (+! (-> desired y) height)
+            )
+
+          ;; D. Spring-lerp toward desired position (snap on first frame)
+          (cond
+            ((not *p2-cam-initialized?*)
+              (vector-copy! *p2-cam-pos* desired)
+              (set! *p2-cam-initialized?* #t)
+              )
+            (else
+              (vector-lerp! *p2-cam-pos* *p2-cam-pos* desired *p2-cam-spring*)
+              )
+            )
+
+          ;; E. Forward (look-at) direction: aim at P2's chest, not feet
+          (vector-copy! look-at p2-pos)
+          (+! (-> look-at y) (meters 1))
+          (vector-! fwd look-at *p2-cam-pos*)
+          (vector-normalize! fwd 1.0)
+
+          ;; F. Down vector from world gravity
+          (vector-normalize-copy! down (-> *standard-dynamics* gravity) 1.0)
+
+          ;; G. Build rotation matrix (zeroes row 3)
+          (forward-down->inv-matrix cam-mat fwd down)
+
+          ;; H. Set camera world position (AFTER rotation — forward-down->inv-matrix zeroes row 3)
+          (vector-copy! (-> cam-mat vector 3) *p2-cam-pos*)
+          (set! (-> cam-mat vector 3 w) 1.0)
+
+          ;; Diagnostic logging
+          (when (multi-log-enabled? 'camera)
+            (format 0 "[MULTI:camera] P2=~F,~F,~F  cam=~F,~F,~F~%"
+              (-> p2-pos x) (-> p2-pos y) (-> p2-pos z)
+              (-> *p2-cam-pos* x) (-> *p2-cam-pos* y) (-> *p2-cam-pos* z))
+            (format 0 "[MULTI:camera] desired=~F,~F,~F  behind=~F,~F,~F~%"
+              (-> desired x) (-> desired y) (-> desired z)
+              (-> behind x) (-> behind y) (-> behind z))
+            )
+          )
+        )
+      )
+    )
+  (none)
   )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -186,6 +295,9 @@
       )
     )
 
+  ;; Update standalone P2 camera (independent of P1's camera system)
+  (p2-camera-update)
+
   (none)
   )
 
@@ -196,6 +308,10 @@
 (defun start-extra-target ((idx int))
   "Spawn, configure, and register a new target process for player slot idx.
    Assigns the correct controller, color, and handle. Returns the target."
+  ;; Reset P2 spring camera so it snaps to the new spawn position
+  (when (= idx 1)
+    (set! *p2-cam-initialized?* #f)
+    )
   (when (multi-log-enabled? 'spawn)
     (format 0 "[MULTI:spawn]   start-extra-target idx=~D~%" idx)
     )
