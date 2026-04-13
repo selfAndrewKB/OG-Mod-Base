@@ -33,6 +33,18 @@
 ;; post-draw code (HUD, actors-update, cutscene reads).
 (define *math-camera-backup* (new 'global 'math-camera))
 
+;; Phase 3G: indirection pointer for update-camera's output. Each cam-master
+;; sets this to its own output-cam at the top of its code loop. cam-update.gc
+;; writes update-camera() results to whatever this currently points at.
+;; In single-player this is always *math-camera*. In split-screen, cam-master-P2
+;; swaps it to *p2-math-camera* while its processes run.
+(define *cam-out* *math-camera*)
+
+;; Phase 3G: P2's camera-master process (nil until P2 target spawns).
+;; Owns P2's cam-slave (which reads cpad 1) and writes to *p2-math-camera*.
+;; Declared as basic so this file doesn't need a hard dep on camera-h.
+(define *camera-p2* #f)
+
 ;; 0 during pass 1 (P1), 1 during pass 2 (P2). Read by dma-bucket-insert-tag
 ;; to offset bucket indices into the second half of the bucket array.
 (define *active-render-cam* 0)
@@ -42,6 +54,15 @@
 (define *p2-cam-pos* (new 'global 'vector))
 (define *p2-cam-initialized?* #f)
 (define *p2-cam-spring* 0.08)
+
+;; P2 right-stick camera state.
+;; *p2-cam-yaw-dir* is a unit XZ vector pointing from P2 toward the camera
+;; (i.e. the camera sits at p2-pos + yaw-dir*dist). Rotated each frame by
+;; controller-2 right-stick X. Reset to behind P2's facing on respawn.
+(define *p2-cam-yaw-dir* (new 'global 'vector))
+;; 0..1 blend from (min-y, min-z) → (max-y, max-z) CAMERA-bank string values.
+;; Driven by controller-2 right-stick Y. 0.5 = midpoint on respawn.
+(define *p2-cam-pitch-param* 0.5)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; math-camera blob copy
@@ -53,6 +74,15 @@
    have identical type tags, so a raw mem-copy is safe and fast."
   (mem-copy! (the pointer dst) (the pointer src) (size-of math-camera))
   dst)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Movement helpers for secondary targets
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun get-p2-cam-rot-for-movement ()
+  "Return *p2-math-camera* inv-camera-rot-smooth for use by P2's read-pad.
+   Called from logic-target.gc (ENGINE.CGO) via forward declaration."
+  (-> *p2-math-camera* inv-camera-rot-smooth))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; P2 math-camera derivation
@@ -74,27 +104,60 @@
        ;; P2 not alive: leave P2 camera identical to P1 (mem-copy already did it).
        #f)
       (else
-       ;; Step 2: compute P2's world position (spring-lerped behind P2).
+       ;; Step 2: compute P2's world position (spring-lerped from *p2-cam-yaw-dir*).
        (let ((p2-pos (-> p2 control trans))
              (p2-fwd (new 'stack-no-clear 'vector))
-             (behind (new 'stack-no-clear 'vector))
              (desired (new 'stack-no-clear 'vector))
              (look-at (new 'stack-no-clear 'vector))
              (fwd (new 'stack-no-clear 'vector))
              (down (new 'stack-no-clear 'vector)))
 
-         (vector-z-quaternion! p2-fwd (-> p2 control quat))
+         ;; On first frame after spawn: initialise yaw-dir behind P2's facing
+         ;; and reset pitch to the mid-point.
+         (when (not *p2-cam-initialized?*)
+           (vector-z-quaternion! p2-fwd (-> p2 control quat))
+           (vector-negate! *p2-cam-yaw-dir* p2-fwd)
+           (set! (-> *p2-cam-yaw-dir* y) 0.0)
+           (let ((len (vector-length *p2-cam-yaw-dir*)))
+             (if (< len 0.001)
+               (set-vector! *p2-cam-yaw-dir* 0.0 0.0 -1.0 0.0)
+               (vector-normalize! *p2-cam-yaw-dir* 1.0)))
+           (set! *p2-cam-pitch-param* 0.5))
 
-         (vector-negate! behind p2-fwd)
-         (set! (-> behind y) 0.0)
-         (let ((len (vector-length behind)))
-           (if (< len 0.001)
-               (set-vector! behind 0.0 0.0 -1.0 0.0)
-               (vector-normalize! behind 1.0)))
+         ;; Controller-2 right stick X → rotate *p2-cam-yaw-dir* around world-Y-down.
+         ;; Same scale and deadzone as vanilla cam-stick horizontal input.
+         (let ((yaw-delta (analog-input-horizontal-third
+                            (the-as int (-> *cpad-list* cpads 1 rightx))
+                            128.0 32.0 110.0
+                            (* 21845.334 (seconds-per-frame)))))
+           (when (!= yaw-delta 0.0)
+             (let ((rot-m (new-stack-matrix0))
+                   (world-down (new 'stack-no-clear 'vector)))
+               (set-vector! world-down 0.0 -1.0 0.0 0.0)
+               (matrix-axis-angle! rot-m world-down yaw-delta)
+               (vector-matrix*! *p2-cam-yaw-dir* *p2-cam-yaw-dir* rot-m))))
 
-         (let ((dist (-> *CAMERA-bank* default-string-max-z))
-               (height (-> *CAMERA-bank* default-string-max-y)))
-           (vector-float*! desired behind dist)
+         ;; Controller-2 right stick Y → adjust pitch param (dist/height blend).
+         ;; Same clamped-accumulator pattern as vanilla cam-stick vertical input.
+         (let ((pitch-delta (analog-input-vertical-third
+                              (the-as int (-> *cpad-list* cpads 1 righty))
+                              128.0 32.0 110.0 0.05)))
+           (cond
+             ((< (* 0.05 (- 1.0 *p2-cam-pitch-param*)) pitch-delta)
+              (+! *p2-cam-pitch-param* (* 0.05 (- 1.0 *p2-cam-pitch-param*))))
+             ((< pitch-delta (* 0.05 (- *p2-cam-pitch-param*)))
+              (+! *p2-cam-pitch-param* (* 0.05 (- *p2-cam-pitch-param*))))
+             (else (+! *p2-cam-pitch-param* pitch-delta))))
+         (set! *p2-cam-pitch-param* (fmax 0.0 (fmin 1.0 *p2-cam-pitch-param*)))
+
+         ;; Compute desired camera position from accumulated yaw/pitch.
+         (let ((dist   (lerp (-> *CAMERA-bank* default-string-min-z)
+                             (-> *CAMERA-bank* default-string-max-z)
+                             *p2-cam-pitch-param*))
+               (height (lerp (-> *CAMERA-bank* default-string-min-y)
+                             (-> *CAMERA-bank* default-string-max-y)
+                             *p2-cam-pitch-param*)))
+           (vector-float*! desired *p2-cam-yaw-dir* dist)
            (vector+! desired desired p2-pos)
            (+! (-> desired y) height))
 

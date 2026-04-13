@@ -20,7 +20,7 @@
 
 (define *multi-dbg*        #t)   ;; master — #f silences everything
 (define *multi-dbg-spawn*  #t)   ;; spawn, despawn, sidekick lifecycle
-(define *multi-dbg-camera* #f)   ;; camera target changes, mode switches
+(define *multi-dbg-camera* #t)   ;; camera target changes, mode switches (Phase 3G observation run)
 (define *multi-dbg-vehicle* #t)  ;; racer?/flutflut? transitions
 (define *multi-dbg-warp*   #f)   ;; warp teleports, distance checks
 (define *multi-dbg-detail* #t)   ;; verbose struct dumps (heavy)

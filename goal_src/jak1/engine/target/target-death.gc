@@ -6,6 +6,11 @@
 (require "engine/camera/pov-camera-h.gc")
 (require "engine/target/target-part.gc")
 
+;; Phase 3G diagnostic: multi-debug logging module lives in GAME.CGO.
+;; Symbol is resolved by the time any target spawns in-game, so the
+;; forward-declaration is safe here in ENGINE.CGO.
+(define-extern multi-log-enabled? (function symbol symbol))
+
 ;; DECOMP BEGINS
 (define-extern runs-on-jak-spawn (function none))
 
@@ -71,9 +76,14 @@
       (move-to-point! (-> self control) (-> arg0 trans))
       (rot->dir-targ! (-> self control))
       (set! (-> (&-> self control unknown-qword00) 0) (-> self control trans quad))
-      (cond
-        ((not (string= (-> arg0 name) "default")) (set! *external-cam-mode* #f) (cam-stop) (suspend) 0)
-        (else (send-event *camera* 'clear-entity) (send-event *camera* 'change-state cam-fixed 0) (suspend) 0))
+      ;; Phase 3G: cam-stop / cam-state events here must only run for the primary
+      ;; player. If a secondary (P2) hits (cam-stop), it kills P1's running camera
+      ;; slave — and the later guarded (cam-start) won't fire for P2 either — which
+      ;; leaves P1 with a detached, free-floating spectator camera.
+      (when (= self *target*)
+        (cond
+          ((not (string= (-> arg0 name) "default")) (set! *external-cam-mode* #f) (cam-stop) (suspend) 0)
+          (else (send-event *camera* 'clear-entity) (send-event *camera* 'change-state cam-fixed 0) (suspend) 0)))
       (set! (-> *load-state* vis-nick) (-> arg0 vis-nick))
       (set! (-> *load-state* want 0 name) (-> arg0 lev0))
       (set! (-> *load-state* want 0 display?) (-> arg0 disp0))
@@ -105,34 +115,47 @@
       (new 'stack 'transformq)
       (cond
         ((not (string= (-> arg0 name) "default"))
-         (cam-start #t)
-         (suspend)
-         (suspend)
-         (set! (-> *camera-combiner* trans quad) (-> arg0 camera-trans quad))
-         (let ((s5-1 (-> *camera-combiner* inv-camera-rot))
-               (s4-0 (-> arg0 camera-rot)))
-           (matrix-identity! s5-1)
-           (set! (-> s5-1 vector 0 x) (-> s4-0 0))
-           (set! (-> s5-1 vector 0 y) (-> s4-0 1))
-           (set! (-> s5-1 vector 0 z) (-> s4-0 2))
-           (set! (-> s5-1 vector 1 x) (-> s4-0 3))
-           (set! (-> s5-1 vector 1 y) (-> s4-0 4))
-           (set! (-> s5-1 vector 1 z) (-> s4-0 5))
-           (set! (-> s5-1 vector 2 x) (-> s4-0 6))
-           (set! (-> s5-1 vector 2 y) (-> s4-0 7))
-           (set! (-> s5-1 vector 2 z) (-> s4-0 8)))
-         (send-event *camera* 'change-target self)
-         (send-event *camera* 'no-intro)
-         (send-event *camera* 'clear-entity)
-         (send-event *camera* 'force-blend 0)
-         (send-event *camera* 'change-state cam-fixed 0)
-         (send-event *camera* 'change-state cam-string 0))
+         (when (multi-log-enabled? 'camera)
+           (format 0 "[MULTI:camera] target-continue(named) self=~A is-primary?=~A~%"
+                   (-> self name) (= self *target*)))
+         ;; Phase 3G: the entire named-branch camera init — cam-start, the direct
+         ;; *camera-combiner* trans/rot write, and the change-target/state events —
+         ;; must only run for the primary player. Secondary targets spawned via
+         ;; localmulti otherwise slam P1's combiner to the new continue-point's
+         ;; saved camera, causing a visible jolt before cam-master smooths back.
+         (when (= self *target*)
+           (cam-start #t)
+           (suspend)
+           (suspend)
+           (set! (-> *camera-combiner* trans quad) (-> arg0 camera-trans quad))
+           (let ((s5-1 (-> *camera-combiner* inv-camera-rot))
+                 (s4-0 (-> arg0 camera-rot)))
+             (matrix-identity! s5-1)
+             (set! (-> s5-1 vector 0 x) (-> s4-0 0))
+             (set! (-> s5-1 vector 0 y) (-> s4-0 1))
+             (set! (-> s5-1 vector 0 z) (-> s4-0 2))
+             (set! (-> s5-1 vector 1 x) (-> s4-0 3))
+             (set! (-> s5-1 vector 1 y) (-> s4-0 4))
+             (set! (-> s5-1 vector 1 z) (-> s4-0 5))
+             (set! (-> s5-1 vector 2 x) (-> s4-0 6))
+             (set! (-> s5-1 vector 2 y) (-> s4-0 7))
+             (set! (-> s5-1 vector 2 z) (-> s4-0 8)))
+           (send-event *camera* 'change-target self)
+           (send-event *camera* 'no-intro)
+           (send-event *camera* 'clear-entity)
+           (send-event *camera* 'force-blend 0)
+           (send-event *camera* 'change-state cam-fixed 0)
+           (send-event *camera* 'change-state cam-string 0)))
         (else
-         (send-event *camera* 'change-target self)
-         (send-event *camera* 'change-state cam-string 0)
-         (send-event *camera* 'teleport)
-         (send-event *camera* 'no-intro)
-         (send-event *camera* 'clear-entity)))
+         (when (multi-log-enabled? 'camera)
+           (format 0 "[MULTI:camera] target-continue(default) self=~A is-primary?=~A~%"
+                   (-> self name) (= self *target*)))
+         (when (= self *target*)
+           (send-event *camera* 'change-target self)
+           (send-event *camera* 'change-state cam-string 0)
+           (send-event *camera* 'teleport)
+           (send-event *camera* 'no-intro)
+           (send-event *camera* 'clear-entity))))
       (send-event self 'level-enter (-> arg0 level))
       (dotimes (v1-124 (-> *level* length))
         (let ((a0-64 (-> *level* level v1-124))) (if (= (-> a0-64 status) 'active) (set! (-> a0-64 all-visible?) 'loading))))

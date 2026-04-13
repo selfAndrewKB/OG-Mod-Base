@@ -9,6 +9,10 @@
 (require "engine/common-obs/water-h.gc")
 (require "engine/target/target-util.gc")
 
+;; Forward declaration: defined in engine/draw/multi-draw.gc (GAME.CGO, loaded after ENGINE.CGO).
+;; Returns *p2-math-camera* inv-camera-rot-smooth for P2 movement stick projection.
+(define-extern get-p2-cam-rot-for-movement (function matrix))
+
 ;; note: changed for high fps
 
 ;; target-start is modified due to changing the size of the stack in gkernel.gc
@@ -294,7 +298,12 @@
   (set! (-> arg0 w) 0.0)
   (set! (-> self control unknown-vector30 quad) (-> arg0 quad))
   (set! (-> self control unknown-float20) (-> self control unknown-cpad-info00 stick0-speed))
-  (vector-matrix*! arg0 arg0 (matrix-local->world #t #f)))
+  ;; Phase 3G: secondary targets project movement against their own camera-rot.
+  ;; *math-camera* holds P1's camera when targets run (outside the dual-pass loop),
+  ;; so P2 must use *p2-math-camera* inv-camera-rot-smooth instead.
+  (if (nonzero? (-> self control unknown-cpad-info00 number))
+    (vector-matrix*! arg0 arg0 (get-p2-cam-rot-for-movement))
+    (vector-matrix*! arg0 arg0 (matrix-local->world #t #f))))
 
 (defun warp-vector-into-surface! ((arg0 vector) (arg1 vector) (arg2 vector))
   (let ((a2-2 (matrix-from-two-vectors! (new-stack-matrix0) (-> (matrix-local->world #t #f) vector 1) arg2)))

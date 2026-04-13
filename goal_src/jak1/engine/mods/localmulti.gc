@@ -148,33 +148,17 @@
       )
     )
 
-  ;; Keep camera focused on *target* when extra players are active
-  (when (and
-          (extra-target-alive?)
-          (!= (-> *camera* drawable-target) *target*)
-          (!= (-> *target* state name) 'target-pole-cycle)
-          )
-    (set! (-> *camera* drawable-target) (the-as handle *target*))
-    )
-
-  (cond
-    ;; Racer section: reset camera but keep P2 alive
-    (*multi-racer?*
-      (send-event *camera* 'change-state cam-string 0)
-      (send-event *camera* 'set-slave-option #x6000)
-      ;; P2 stays alive — despawn abandoned (crashes engine, see phase-2.md)
-      )
-    ;; Flutflut section: P2 stays alive
-    (*multi-flutflut?*
-      ;; P2 stays alive — despawn abandoned (crashes engine, see phase-2.md)
-      )
-    ;; Normal: force cam-stick when multiple players are active and camera is cam-string
-    ((and
-        (extra-target-alive?)
-        (= (camera-slave-state-name) 'cam-string))
-      (send-event *camera* 'change-state cam-stick 0)
-      )
-    )
+  ;; Phase 3G: drawable-target override removed. Forcing *camera* drawable-target
+  ;; every frame triggered reset-drawable-tracking in cam-master, snapping all
+  ;; smoothing accumulators and causing a visible jolt on P2 spawn. P1's camera
+  ;; already tracks *target* through the normal cam-master path — no override needed. In the Phase 3F dual-pass
+  ;; architecture P2's camera is fully independent of P1's, so there is
+  ;; no reason to alter P1's camera state (cam-string → cam-stick) or
+  ;; to reset the camera during racer/flutflut sections.  P1's camera
+  ;; is now handled entirely by vanilla cam-update.
+  ;;
+  ;; *multi-racer?* / *multi-flutflut?* are still updated above in case
+  ;; we need them for future vehicle-mode logic (e.g. spring tuning).
 
   ;; Warp secondary players to *target* if they hold all four shoulder buttons, or are too far
   (let ((idx 1))
