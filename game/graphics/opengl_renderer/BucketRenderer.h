@@ -40,7 +40,9 @@ struct SharedRenderState {
   u32 offset_of_s7;
 
   bool use_sky_cpu = true;
-  bool use_occlusion_culling = false;  // disabled for multi-camera (vis data is primary-camera-space only)
+  // Phase 3F: dual-pass split-screen authors per-camera vis bits, so
+  // occlusion culling is correct for both viewports. Re-enabled.
+  bool use_occlusion_culling = true;
   math::Vector<u8, 4> fog_color = math::Vector<u8, 4>{0, 0, 0, 0};
   float fog_intensity = 1.f;
   bool no_multidraw = false;
@@ -88,22 +90,10 @@ struct SharedRenderState {
 
   bool stencil_dirty = false;
 
-  // Camera matrices sent from GOAL each frame via DMA bucket 2.
-  // w_T_cpri: the primary camera's inv-camera-rot (pose of primary camera in world space).
-  // w_T_cextra: inv-camera-rot for up to 3 extra cameras.
-  struct MultiCameraGoalMatrices {
-    math::Matrix4f w_T_cpri;
-    math::Matrix4f w_T_cextra[3];
-  } multi_camera_goal;
-
-  // Per-camera transform matrices, precomputed from multi_camera_goal each frame.
-  // w_T_wprime: world-space delta from primary to this camera (used by background/TIE/sprite).
-  // pri_cam_T_cam: primary-camera-space transform (used by Merc/Shadow which work in clip space).
-  struct Cam {
-    math::Matrix4f w_T_wprime;
-    math::Matrix4f pri_cam_T_cam;
-  };
-  Cam cameras[4];
+  // Phase 3F: native dual-pass split-screen. In single-player and for pass 1
+  // of split-screen, camera_idx is 0. For pass 2, camera_idx is 1. Renderers
+  // use this only as a debug/identity tag — all per-camera data now rides in
+  // the per-pass DMA chain, not in C++ overrides.
   int camera_idx = 0;
 };
 

@@ -166,12 +166,18 @@
 ;; there is typically a texture upload bucket followed by renderer-specific draw buckets.
 (defconstant BUCKET_COUNT (#if PC_PORT 70 69))
 
+;; Dual-pass split-screen: the bucket array is sized to 2x BUCKET_COUNT.
+;; Pass 1 (P1) writes buckets 0..BUCKET_COUNT-1, pass 2 (P2) writes
+;; BUCKET_COUNT..BUCKET_COUNT_TOTAL-1. C++ auto-detects by checking if the
+;; second half has been written to. See multi-draw.gc.
+(defconstant BUCKET_COUNT_TOTAL (* 2 BUCKET_COUNT))
+
 (defenum bucket-id
   :type int32
   :bitfield #f
   ;; 0
   ;; 1
-  ;; 2
+  ;; 2 (BUCKET2_RESERVED — placeholder, formerly multi-camera DMA)
   (sky-draw 3) ;; actual sky and cloud framebuffer draws
   (ocean-mid-and-far 4) ;; actual ocean framebuffer draws for mid/transition/far
   (tfrag-tex0 5) ;; tfrag texture upload, level 0

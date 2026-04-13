@@ -255,6 +255,7 @@
   "target2.o"
   "target-death.o"
   "menu.o"
+  "multi-draw.o" ;; Phase 3F — native dual-camera draw pipeline
   "drawable.o"
   "drawable-group.o"
   "drawable-inline-array.o"

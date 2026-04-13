@@ -437,7 +437,7 @@ void TFragment::render_tree(int geom,
   glEnable(GL_PRIMITIVE_RESTART);
   glPrimitiveRestartIndex(UINT32_MAX);
 
-  // Vis data is in primary-camera space; mark everything visible for secondary viewports.
+  // TFragment near: draw everything (no per-node frustum culling at this layer).
   for (size_t i = 0; i < tree.vis->vis_nodes.size(); i++) {
     m_cache.vis_temp.data()[i] = 1;
   }

@@ -61,10 +61,16 @@
       (set! bucket (the-as (inline-array dma-bucket) (-> bucket 1)))))
   bucket)
 
+;; Forward-declared in multi-draw.gc, read below by dma-bucket-insert-tag.
+(define-extern *active-render-cam* int)
+
 (defun dma-bucket-insert-tag ((base (inline-array dma-bucket)) (idx bucket-id) (tag-start pointer) (tag-end (pointer dma-tag)))
-  "Add a DMA chain to the bucket"
-  ;; find the bucket
-  (let ((bucket (-> base idx)))
+  "Add a DMA chain to the bucket. In dual-pass split-screen, *active-render-cam*=1
+   shifts the effective bucket index by BUCKET_COUNT so P2's DMA lands in the
+   second half of the bucket array (BUCKET_COUNT..BUCKET_COUNT_TOTAL-1)."
+  ;; find the bucket, offsetting for the active render pass
+  (let* ((effective-idx (+ (the-as int idx) (* *active-render-cam* BUCKET_COUNT)))
+         (bucket (-> base effective-idx)))
     ;; update our last bucket to point to this one.
     ;; this is abusing the dma-bucket type to set the "addr" field of the dma-tag.
     (set! (-> (the-as dma-bucket (-> bucket last)) next) (the-as uint tag-start))

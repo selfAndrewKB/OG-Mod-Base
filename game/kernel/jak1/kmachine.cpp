@@ -511,6 +511,10 @@ void update_discord_rpc(u32 discord_info) {
   }
 }
 
+void pc_set_split_screen_active(u32 active) {
+  Gfx::g_global_settings.split_screen = (active != 0);
+}
+
 void pc_set_levels(u32 l0, u32 l1) {
   if (!Gfx::GetCurrentRenderer()) {
     return;
@@ -546,6 +550,10 @@ void InitMachine_PCPort() {
   // Called from the game thread at each frame to tell the PC rendering code which levels to start
   // loading. The loader internally handles locking.
   make_function_symbol_from_c("__pc-set-levels", (void*)pc_set_levels);
+  // Phase 3F: GOAL signals dual-pass split-screen rendering to the C++
+  // dispatcher via this hook.
+  make_function_symbol_from_c("__pc-set-split-screen-active",
+                              (void*)pc_set_split_screen_active);
 
   make_function_symbol_from_c("pc-discord-rpc-update", (void*)update_discord_rpc);
 

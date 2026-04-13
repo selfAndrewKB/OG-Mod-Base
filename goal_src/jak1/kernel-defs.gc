@@ -440,6 +440,10 @@
 
 (define-extern __pc-set-levels (function string string none))
 
+;; Phase 3F: set Gfx::g_global_settings.split_screen from GOAL.
+;; Nonzero = C++ dispatcher should run two passes into split viewports.
+(define-extern __pc-set-split-screen-active (function int none))
+
 ;; Input Related Functions
 (define-extern pc-get-controller-count (function int))
 

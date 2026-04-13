@@ -1971,6 +1971,7 @@
  "target/target2.gc"
  "target/target-death.gc"
  "debug/menu.gc"
+ "draw/multi-draw.gc" ;; Phase 3F — native dual-camera draw pipeline
  "draw/drawable.gc"
  "draw/drawable-group.gc"
  "draw/drawable-inline-array.gc"

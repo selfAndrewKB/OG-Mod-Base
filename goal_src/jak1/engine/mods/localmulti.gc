@@ -16,6 +16,10 @@
 
 (define *multi-cheat-temp* (the-as (pointer int32) (malloc 'global 16)))  ;; 4 int32s (indices 0-3)
 
+;; Defined in engine/draw/multi-draw.gc (Phase 3F). Reset on P2 respawn so the
+;; spring camera snaps to the new position.
+(define-extern *p2-cam-initialized?* symbol)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Controller routing hook (called from init-target for every spawned target)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -86,6 +90,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Camera helpers
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Phase 3F: *p2-cam-pos* / *p2-cam-initialized?* / *p2-cam-spring* and
+;; p2-camera-update moved into engine/draw/multi-draw.gc where the P2
+;; math-camera is authored.
 
 (defun camera-slave-state-name ()
   "Return the camera slave's current state name, or #f if no slave exists."
@@ -186,6 +194,7 @@
       )
     )
 
+  ;; Phase 3F: P2 camera is derived inside multi-draw.gc at draw time, not here.
   (none)
   )
 
@@ -196,6 +205,10 @@
 (defun start-extra-target ((idx int))
   "Spawn, configure, and register a new target process for player slot idx.
    Assigns the correct controller, color, and handle. Returns the target."
+  ;; Reset P2 spring camera so it snaps to the new spawn position
+  (when (= idx 1)
+    (set! *p2-cam-initialized?* #f)
+    )
   (when (multi-log-enabled? 'spawn)
     (format 0 "[MULTI:spawn]   start-extra-target idx=~D~%" idx)
     )

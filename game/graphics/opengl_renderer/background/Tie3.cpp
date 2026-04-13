@@ -446,7 +446,8 @@ void Tie3::setup_tree(int idx,
   }
 
   if (!m_debug_all_visible) {
-    // need culling data
+    // Phase 3F: culling runs per pass because settings.camera.planes are now
+    // authored by whichever GOAL *math-camera* was active for this pass.
     cull_check_all_slow(settings.camera.planes, tree.vis->vis_nodes, settings.occlusion_culling,
                         tree.vis_temp.data());
   }
@@ -514,10 +515,12 @@ math::Matrix4f matrix_from_col_vectors(const math::Vector4f* vectors) {
 
 void init_etie_cam_uniforms(const EtieUniforms& uniforms,
                             const GoalBackgroundCameraData& data,
-                            SharedRenderState* render_state) {
-  auto& this_cam = render_state->cameras[render_state->camera_idx];
-  math::Matrix4f s_T_w = matrix_from_col_vectors(data.rot);
-  glUniformMatrix4fv(uniforms.cam_no_persp, 1, GL_FALSE, (s_T_w * this_cam.w_T_wprime).data());
+                            SharedRenderState* /*render_state*/) {
+  // Phase 3F: per-camera uniform overrides deleted. The DMA data now comes
+  // from a per-camera GOAL draw pass and is already correct for whichever
+  // viewport we're currently rendering.
+  auto cam_no_persp = matrix_from_col_vectors(data.rot);
+  glUniformMatrix4fv(uniforms.cam_no_persp, 1, GL_FALSE, cam_no_persp.data());
 
   math::Vector4f perspective[2];
   float inv_fog = 1.f / data.fog[0];
@@ -907,16 +910,10 @@ void Tie3::render_tree_wind(int idx,
   // note: this isn't the most efficient because we might compute wind matrices for invisible
   // instances. TODO: add vis ids to the instance info to avoid this
   memset(tree.wind_matrix_cache.data(), 0, sizeof(float) * 16 * tree.wind_matrix_cache.size());
-  // Apply per-camera world-space delta to wind camera transform.
-  auto& this_cam = render_state->cameras[render_state->camera_idx];
-  math::Matrix4f s_T_w = matrix_from_col_vectors(settings.camera.camera);
-  auto hacked_cam = s_T_w * this_cam.w_T_wprime;
-  std::array<math::Vector4f, 4> cam;
-  for (int c = 0; c < 4; c++) {
-    for (int r = 0; r < 4; r++) {
-      cam[c][r] = hacked_cam(r, c);
-    }
-  }
+  // Phase 3F: per-camera wind matrix override deleted. settings.camera.camera
+  // was authored by the GOAL pass for whichever math-camera is active.
+  (void)render_state;
+  auto cam = settings.camera.camera;
 
   for (size_t inst_id = 0; inst_id < tree.instance_info->size(); inst_id++) {
     auto& info = tree.instance_info->operator[](inst_id);

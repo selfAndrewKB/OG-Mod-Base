@@ -912,20 +912,18 @@ void Merc2::handle_setup_dma(DmaFollower& dma, SharedRenderState* render_state) 
   // 8 qw's of low memory data
   memcpy(&m_low_memory, first.data + 16, sizeof(LowMemory));
 
-  // Apply per-camera perspective transform for split-screen.
-  // Merc works in clip space, so we right-multiply by inverse(pri_cam_T_cam).
-  auto& this_cam = render_state->cameras[render_state->camera_idx];
+  // Phase 3F: per-camera perspective override deleted. m_low_memory is
+  // authored per-pass by GOAL with whichever math-camera is active.
   math::Matrix4f p = matrix_from_col_vectors(m_low_memory.perspective);
-  auto new_cam = p * inverse(this_cam.pri_cam_T_cam);
 
   switch_to_merc2(render_state);
   set_uniform(m_merc_uniforms.hvdf_offset, m_low_memory.hvdf_offset);
   set_uniform(m_merc_uniforms.fog, m_low_memory.fog);
-  glUniformMatrix4fv(m_merc_uniforms.perspective_matrix, 1, GL_FALSE, new_cam.data());
+  glUniformMatrix4fv(m_merc_uniforms.perspective_matrix, 1, GL_FALSE, p.data());
   switch_to_emerc(render_state);
   set_uniform(m_emerc_uniforms.hvdf_offset, m_low_memory.hvdf_offset);
   set_uniform(m_emerc_uniforms.fog, m_low_memory.fog);
-  glUniformMatrix4fv(m_emerc_uniforms.perspective_matrix, 1, GL_FALSE, new_cam.data());
+  glUniformMatrix4fv(m_emerc_uniforms.perspective_matrix, 1, GL_FALSE, p.data());
 
   // 1 qw with another 4 vifcodes.
   u32 vifcode_final_data[4];

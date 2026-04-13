@@ -239,13 +239,9 @@ void ShadowRenderer::render(DmaFollower& dma,
     ASSERT(v1.kind == VifCode::Kind::UNPACK_V4_32);
     ASSERT(v1.immediate == Vu1Data::MATRIX);
     ASSERT(v1.num == 4);
-    // Apply per-camera perspective transform for split-screen.
-    // Shadow works in clip space, so we right-multiply by inverse(pri_cam_T_cam).
-    math::Matrix4f p;
-    memcpy(p.data(), constants.data, v1.num * 16);
-    auto& this_cam = render_state->cameras[render_state->camera_idx];
-    auto new_cam = p * inverse(this_cam.pri_cam_T_cam);
-    memcpy(m_vu_data + v1.immediate, new_cam.data(), 16 * 4);
+    // Phase 3F: per-camera shadow matrix override deleted. constants.data is
+    // authored per-pass by GOAL with whichever math-camera is active.
+    memcpy(m_vu_data + v1.immediate, constants.data, v1.num * 16);
   }
 
   {
