@@ -79,6 +79,12 @@ int curlx_nonblock(curl_socket_t sockfd,    /* operate on this */
   return setsockopt(sockfd, SOL_SOCKET, SO_NONBLOCK, &b, sizeof(b));
 
 #else
-#  error "no non-blocking method was found/used/set"
+  /* Fallback: non-blocking not supported on this platform */
+  (void)sockfd;
+  (void)nonblock;
+#ifdef ENOSYS
+  errno = ENOSYS;
+#endif
+  return -1;
 #endif
 }
