@@ -446,7 +446,8 @@ void Tie3::setup_tree(int idx,
   }
 
   if (!m_debug_all_visible) {
-    // need culling data
+    // Phase 3F: culling runs per pass because settings.camera.planes are now
+    // authored by whichever GOAL *math-camera* was active for this pass.
     cull_check_all_slow(settings.camera.planes, tree.vis->vis_nodes, settings.occlusion_culling,
                         tree.vis_temp.data());
   }
@@ -500,10 +501,26 @@ namespace {
 void set_uniform(GLuint uniform, const math::Vector4f& val) {
   glUniform4f(uniform, val.x(), val.y(), val.z(), val.w());
 }
+
+math::Matrix4f matrix_from_col_vectors(const math::Vector4f* vectors) {
+  math::Matrix4f ret;
+  for (int c = 0; c < 4; c++) {
+    for (int r = 0; r < 4; r++) {
+      ret(r, c) = vectors[c][r];
+    }
+  }
+  return ret;
+}
 }  // namespace
 
-void init_etie_cam_uniforms(const EtieUniforms& uniforms, const GoalBackgroundCameraData& data) {
-  glUniformMatrix4fv(uniforms.cam_no_persp, 1, GL_FALSE, data.rot[0].data());
+void init_etie_cam_uniforms(const EtieUniforms& uniforms,
+                            const GoalBackgroundCameraData& data,
+                            SharedRenderState* /*render_state*/) {
+  // Phase 3F: per-camera uniform overrides deleted. The DMA data now comes
+  // from a per-camera GOAL draw pass and is already correct for whichever
+  // viewport we're currently rendering.
+  auto cam_no_persp = matrix_from_col_vectors(data.rot);
+  glUniformMatrix4fv(uniforms.cam_no_persp, 1, GL_FALSE, cam_no_persp.data());
 
   math::Vector4f perspective[2];
   float inv_fog = 1.f / data.fog[0];
@@ -548,7 +565,7 @@ void Tie3::draw_matching_draws_for_tree(int idx,
 
   if (use_envmap) {
     // if we use envmap, use the envmap-style math for the base draw to avoid rounding issue.
-    init_etie_cam_uniforms(m_etie_base_uniforms, m_common_data.settings.camera);
+    init_etie_cam_uniforms(m_etie_base_uniforms, m_common_data.settings.camera, render_state);
   }
 
   glBindVertexArray(tree.vao);
@@ -656,7 +673,7 @@ void Tie3::envmap_second_pass_draw(const Tree& tree,
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
                render_state->no_multidraw ? tree.single_draw_index_buffer : tree.index_buffer);
 
-  init_etie_cam_uniforms(m_etie_uniforms, m_common_data.settings.camera);
+  init_etie_cam_uniforms(m_etie_uniforms, m_common_data.settings.camera, render_state);
   set_uniform(m_etie_uniforms.envmap_tod_tint, m_common_data.envmap_color);
 
   int last_texture = -1;
@@ -893,11 +910,10 @@ void Tie3::render_tree_wind(int idx,
   // note: this isn't the most efficient because we might compute wind matrices for invisible
   // instances. TODO: add vis ids to the instance info to avoid this
   memset(tree.wind_matrix_cache.data(), 0, sizeof(float) * 16 * tree.wind_matrix_cache.size());
-  auto& cam_bad = settings.camera.camera;
-  std::array<math::Vector4f, 4> cam;
-  for (int i = 0; i < 4; i++) {
-    cam[i] = cam_bad[i];
-  }
+  // Phase 3F: per-camera wind matrix override deleted. settings.camera.camera
+  // was authored by the GOAL pass for whichever math-camera is active.
+  (void)render_state;
+  auto cam = settings.camera.camera;
 
   for (size_t inst_id = 0; inst_id < tree.instance_info->size(); inst_id++) {
     auto& info = tree.instance_info->operator[](inst_id);

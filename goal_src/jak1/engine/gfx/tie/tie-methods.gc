@@ -1,6 +1,8 @@
 ;;-*-Lisp-*-
 (in-package goal)
 (bundles "ENGINE.CGO" "GAME.CGO")
+;; Phase 3F: needed to offset bucket lookups into the second half for P2's pass.
+(define-extern *active-render-cam* int)
 (require "engine/gfx/tie/tie.gc")
 (require "engine/gfx/background/wind-h.gc")
 (require "engine/level/bsp.gc")
@@ -37,7 +39,8 @@
   It will skip setup if there is nothing drawn."
   ;; the TIE buckets are only used by TIE - so we can safely splice things at the beginning/end without
   ;; messing things up.
-  (let ((gp-0 (-> *display* frames (-> *display* on-screen) frame bucket-group (bucket-id tie-0))))
+  (let ((gp-0 (-> *display* frames (-> *display* on-screen) frame bucket-group
+                  (+ (the-as int (bucket-id tie-0)) (* *active-render-cam* BUCKET_COUNT)))))
     ;; only if we have something in the bucket.
     (when (!= gp-0 (-> gp-0 last))
       (let* ((s5-0 (-> *display* frames (-> *display* on-screen) frame global-buf))
@@ -51,7 +54,8 @@
           (set! (-> (the-as dma-packet v1-8) vif1) (new 'static 'vif-tag))
           (set! (-> s5-0 base) (&+ (the-as pointer v1-8) 16)))
         (set! (-> gp-0 next) (the-as uint s4-1)))))
-  (let ((gp-1 (-> *display* frames (-> *display* on-screen) frame bucket-group (bucket-id tie-0))))
+  (let ((gp-1 (-> *display* frames (-> *display* on-screen) frame bucket-group
+                  (+ (the-as int (bucket-id tie-0)) (* *active-render-cam* BUCKET_COUNT)))))
     ;; only if we have something in teh bucket
     (when (!= gp-1 (-> gp-1 last))
       (let* ((s4-2 (-> *display* frames (-> *display* on-screen) frame global-buf))
@@ -67,7 +71,8 @@
           (set! (-> (the-as (pointer uint32) (-> gp-1 last)) 1) (the-as uint s5-1))
           (set! (-> gp-1 last) (the-as (pointer dma-tag) v1-19))))))
   ;; same as above, but for level 1's tie.
-  (let ((gp-2 (-> *display* frames (-> *display* on-screen) frame bucket-group (bucket-id tie-1))))
+  (let ((gp-2 (-> *display* frames (-> *display* on-screen) frame bucket-group
+                  (+ (the-as int (bucket-id tie-1)) (* *active-render-cam* BUCKET_COUNT)))))
     (when (!= gp-2 (-> gp-2 last))
       (let* ((s5-2 (-> *display* frames (-> *display* on-screen) frame global-buf))
              (s4-4 (-> s5-2 base)))
@@ -78,7 +83,8 @@
           (set! (-> (the-as dma-packet v1-28) vif1) (new 'static 'vif-tag))
           (set! (-> s5-2 base) (&+ (the-as pointer v1-28) 16)))
         (set! (-> gp-2 next) (the-as uint s4-4)))))
-  (let ((gp-3 (-> *display* frames (-> *display* on-screen) frame bucket-group (bucket-id tie-1))))
+  (let ((gp-3 (-> *display* frames (-> *display* on-screen) frame bucket-group
+                  (+ (the-as int (bucket-id tie-1)) (* *active-render-cam* BUCKET_COUNT)))))
     (when (!= gp-3 (-> gp-3 last))
       (let* ((s4-5 (-> *display* frames (-> *display* on-screen) frame global-buf))
              (s5-3 (-> s4-5 base)))

@@ -1,6 +1,8 @@
 ;;-*-Lisp-*-
 (in-package goal)
 (bundles "ENGINE.CGO" "GAME.CGO")
+;; Phase 3F: needed to offset bucket lookups into the second half for P2's pass.
+(define-extern *active-render-cam* int)
 (require "engine/entity/res.gc")
 (require "engine/gfx/merc/merc-h.gc")
 (require "engine/gfx/merc/merc-vu1.gc")
@@ -313,7 +315,8 @@
   ;; The advantage of this is that we can check if nothing was drawn, then skip this.
   ;; NOTE: This runs as part of display-frame-finish, so after previous DMA is synced.
   ;; grab out bucket directly.
-  (let ((bucket (-> *display* frames (-> *display* on-screen) frame bucket-group dma-bucket)))
+  (let ((bucket (-> *display* frames (-> *display* on-screen) frame bucket-group
+                    (+ (the-as int dma-bucket) (* *active-render-cam* BUCKET_COUNT)))))
     ;; only if we draw anything.
     (when (!= bucket (-> bucket last))
       (let* ((dma-buf (-> *display* frames (-> *display* on-screen) frame global-buf))

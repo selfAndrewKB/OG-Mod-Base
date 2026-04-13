@@ -234,6 +234,8 @@ void Sprite3::render_2d_group0(DmaFollower& dma,
   // glUniform4fv(glGetUniformLocation(shid, "hmge_scale"), 1, m_frame_data.hmge_scale.data());
   glUniform1f(glGetUniformLocation(shid, "deg_to_rad"), m_frame_data.deg_to_rad);
   glUniform1f(glGetUniformLocation(shid, "inv_area"), m_frame_data.inv_area);
+  // Phase 3F: per-camera sprite override deleted. m_3d_matrix_data.camera is
+  // authored per-pass by GOAL with whichever math-camera is active.
   glUniformMatrix4fv(glGetUniformLocation(shid, "camera"), 1, GL_FALSE,
                      m_3d_matrix_data.camera.data());
   glUniform4fv(glGetUniformLocation(shid, "xy_array"), 8, m_frame_data.xy_array[0].data());

@@ -40,6 +40,8 @@ struct SharedRenderState {
   u32 offset_of_s7;
 
   bool use_sky_cpu = true;
+  // Phase 3F: dual-pass split-screen authors per-camera vis bits, so
+  // occlusion culling is correct for both viewports. Re-enabled.
   bool use_occlusion_culling = true;
   math::Vector<u8, 4> fog_color = math::Vector<u8, 4>{0, 0, 0, 0};
   float fog_intensity = 1.f;
@@ -87,6 +89,12 @@ struct SharedRenderState {
   u64 frame_idx = 0;
 
   bool stencil_dirty = false;
+
+  // Phase 3F: native dual-pass split-screen. In single-player and for pass 1
+  // of split-screen, camera_idx is 0. For pass 2, camera_idx is 1. Renderers
+  // use this only as a debug/identity tag — all per-camera data now rides in
+  // the per-pass DMA chain, not in C++ overrides.
+  int camera_idx = 0;
 };
 
 /*!

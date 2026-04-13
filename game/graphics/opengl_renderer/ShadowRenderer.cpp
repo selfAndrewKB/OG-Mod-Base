@@ -2,6 +2,8 @@
 
 #include <cfloat>
 
+#include "common/math/geometry.h"
+
 #include "third-party/imgui/imgui.h"
 
 ShadowRenderer::ShadowRenderer(const std::string& name, int my_id) : BucketRenderer(name, my_id) {
@@ -237,6 +239,8 @@ void ShadowRenderer::render(DmaFollower& dma,
     ASSERT(v1.kind == VifCode::Kind::UNPACK_V4_32);
     ASSERT(v1.immediate == Vu1Data::MATRIX);
     ASSERT(v1.num == 4);
+    // Phase 3F: per-camera shadow matrix override deleted. constants.data is
+    // authored per-pass by GOAL with whichever math-camera is active.
     memcpy(m_vu_data + v1.immediate, constants.data, v1.num * 16);
   }
 

@@ -2,6 +2,7 @@
 
 #include "common/goal_constants.h"
 #include "common/log/log.h"
+#include "common/math/geometry.h"
 #include "common/util/FileUtil.h"
 
 #include "game/graphics/opengl_renderer/BlitDisplays.h"
@@ -75,6 +76,9 @@ OpenGLRenderer::OpenGLRenderer(std::shared_ptr<TexturePool> texture_pool,
     : m_render_state(texture_pool, loader, version),
       m_collide_renderer(version),
       m_version(version) {
+  // Phase 3F: MultiCameraMatrixGrabber and m_skip_multi_buckets deleted.
+  // The native dual-pass dispatch in dispatch_buckets_jak1 consumes the
+  // second half of the bucket array authored by GOAL's multi-draw.gc.
   // requires OpenGL 4.3
 #ifndef __APPLE__
   // setup OpenGL errors
@@ -667,7 +671,10 @@ void OpenGLRenderer::init_bucket_renderers_jak1() {
   //-------------
   // 0 : ??
   // 1 : ??
-  // 2 : ??
+  // 2 : BUCKET2_RESERVED — placeholder slot, kept so the enum indices don't shift.
+  //     Phase 3F removed the MultiCameraMatrixGrabber that used to live here.
+  init_bucket_renderer<EmptyBucketRenderer>("bucket2-reserved", BucketCategory::OTHER,
+                                            BucketId::BUCKET2);
   // 3 : SKY_DRAW
   init_bucket_renderer<SkyRenderer>("sky", BucketCategory::OTHER, BucketId::SKY_DRAW);
   // 4 : OCEAN_MID_AND_FAR
@@ -1323,31 +1330,70 @@ void OpenGLRenderer::dispatch_buckets_jak1(DmaFollower dma,
   ASSERT(dma.current_tag_offset() == m_render_state.next_bucket);
   m_render_state.next_bucket += 16;
 
-  // loop over the buckets!
-  for (size_t bucket_id = 0; bucket_id < m_bucket_renderers.size(); bucket_id++) {
-    auto& renderer = m_bucket_renderers[bucket_id];
-    auto bucket_prof = prof.make_scoped_child(renderer->name_and_id());
-    g_current_renderer = renderer->name_and_id();
-    // lg::info("Render: {} start", g_current_renderer);
-    renderer->render(dma, &m_render_state, bucket_prof);
-    if (sync_after_buckets) {
-      auto pp = scoped_prof("finish");
-      glFinish();
-    }
+  GLint old_viewport[4];
+  glGetIntegerv(GL_VIEWPORT, old_viewport);
 
-    // lg::info("Render: {} end", g_current_renderer);
-    //  should have ended at the start of the next chain
-    ASSERT(dma.current_tag_offset() == m_render_state.next_bucket);
-    m_render_state.next_bucket += 16;
-    vif_interrupt_callback(bucket_id);
-    m_category_times[(int)m_bucket_categories[bucket_id]] += bucket_prof.get_elapsed_time();
+  // Phase 3F: native dual-pass split-screen dispatch.
+  //
+  // GOAL allocates BUCKET_COUNT_TOTAL (= 2 * BUCKET_COUNT) buckets. In
+  // single-player, only the first half is written to with real DMA; the
+  // second half holds only the display-frame-finish default-regs call+next
+  // that every bucket gets unconditionally. In split-screen, P1 emits into
+  // the first half and P2 emits into the second half, each via a full
+  // draw-world-pass with *math-camera* swapped.
+  //
+  // We dispatch all num_renderers renderers once per pass. Each renderer is
+  // invoked fresh for each pass and reads only its own bucket's DMA. In
+  // split-screen, pass 0 renders into the left half and pass 1 into the
+  // right half; in single-player, pass 0 fills the full viewport and pass
+  // 1 drains the empty second half of the bucket array (renderers handle
+  // empty buckets gracefully).
+  const bool split = Gfx::g_global_settings.split_screen;
+  const size_t num_renderers = m_bucket_renderers.size();
 
-    // hack to draw the collision mesh in the middle the drawing
-    if (bucket_id == 31 - 1 && Gfx::g_global_settings.collision_enable) {
-      auto p = prof.make_scoped_child("collision-draw");
-      m_collide_renderer.render(&m_render_state, p);
+  auto run_pass = [&](int cam_idx) {
+    m_render_state.camera_idx = cam_idx;
+    for (size_t bucket_id = 0; bucket_id < num_renderers; bucket_id++) {
+      auto& renderer = m_bucket_renderers[bucket_id];
+      auto bucket_prof = prof.make_scoped_child(renderer->name_and_id());
+      g_current_renderer = renderer->name_and_id();
+      renderer->render(dma, &m_render_state, bucket_prof);
+      if (sync_after_buckets) {
+        auto pp = scoped_prof("finish");
+        glFinish();
+      }
+      ASSERT(dma.current_tag_offset() == m_render_state.next_bucket);
+      m_render_state.next_bucket += 16;
+      vif_interrupt_callback(bucket_id);
+      m_category_times[(int)m_bucket_categories[bucket_id]] += bucket_prof.get_elapsed_time();
+
+      // Collision debug draw — pass 0 only, once per frame.
+      if (cam_idx == 0 && bucket_id == 31 - 1 && Gfx::g_global_settings.collision_enable) {
+        auto p = prof.make_scoped_child("collision-draw");
+        m_collide_renderer.render(&m_render_state, p);
+      }
     }
+  };
+
+  if (split) {
+    // Pass 0: P1 → left half.
+    glViewport(old_viewport[0], old_viewport[1], old_viewport[2] / 2, old_viewport[3]);
+    run_pass(0);
+    // Pass 1: P2 → right half.
+    glViewport(old_viewport[0] + old_viewport[2] / 2, old_viewport[1], old_viewport[2] / 2,
+               old_viewport[3]);
+    run_pass(1);
+  } else {
+    // Single-player: pass 0 draws at full viewport, pass 1 silently drains
+    // the empty second half of the bucket array so the DMA follower ends at
+    // the expected final offset.
+    glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
+    run_pass(0);
+    run_pass(1);
   }
+
+  // Restore original viewport.
+  glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
 
   // TODO ending data.
 }

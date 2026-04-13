@@ -97,6 +97,13 @@ struct GfxGlobalSettings {
   bool collision_enable = false;
   bool collision_wireframe = true;
 
+  // Phase 3F: native dual-camera draw pipeline. Set from GOAL via
+  // __pc-set-split-screen-active whenever a secondary target is alive.
+  // When true, dispatch_buckets_jak1 runs the bucket dispatch twice —
+  // pass 0 consumes buckets 0..BUCKET_COUNT-1 into the left viewport,
+  // pass 1 consumes BUCKET_COUNT..BUCKET_COUNT_TOTAL-1 into the right.
+  bool split_screen = false;
+
   // matching enum in kernel-defs.gc !!
   enum CollisionRendererMode { None, Mode, Event, Material, Skip, SkipHide } collision_mode = Mode;
   std::array<u32, (PAT_MOD_COUNT + 31) / 32> collision_mode_mask = {UINT32_MAX};

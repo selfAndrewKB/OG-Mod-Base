@@ -1,0 +1,307 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; Forward declaration — target-alive? is defined in engine/mods/localmulti.gc
+;; which compiles after this file. We only need its signature here.
+(define-extern target-alive? (function target basic))
+
+;; name: multi-draw.gc
+;; name in dgo: multi-draw
+;; dgos: GAME
+
+;; Phase 3F — Native dual-camera draw pipeline.
+;;
+;; The entire GOAL draw pipeline runs twice per frame with *math-camera*
+;; swapped between P1 and P2. Every GOAL culling system (BSP traversal,
+;; frustum tests, vis-cells, draw-nodes) reads *math-camera* and thus
+;; operates correctly for whichever camera is active in that pass.
+;;
+;; dma-bucket-insert-tag shifts its effective bucket index by
+;; *active-render-cam* * BUCKET_COUNT, so P2's DMA lands in the second half
+;; of the bucket array. C++ dispatch_buckets_jak1 auto-detects dual-pass by
+;; checking if the second half was written to, and dispatches each half to
+;; its own viewport.
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Globals
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; P2's full math-camera state, persistent across frames.
+(define *p2-math-camera* (new 'global 'math-camera))
+
+;; Scratch save slot for P1 while pass 2 runs, so we can restore it for
+;; post-draw code (HUD, actors-update, cutscene reads).
+(define *math-camera-backup* (new 'global 'math-camera))
+
+;; 0 during pass 1 (P1), 1 during pass 2 (P2). Read by dma-bucket-insert-tag
+;; to offset bucket indices into the second half of the bucket array.
+(define *active-render-cam* 0)
+
+;; P2's smoothed follow-cam position (independent spring lag so the camera
+;; doesn't rigidly track P2's character).
+(define *p2-cam-pos* (new 'global 'vector))
+(define *p2-cam-initialized?* #f)
+(define *p2-cam-spring* 0.08)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; math-camera blob copy
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun math-camera-copy! ((dst math-camera) (src math-camera))
+  "Bulk-copy all fields from src to dst. math-camera contains only inline
+   matrices/vectors and primitives (no outbound pointers), and both sides
+   have identical type tags, so a raw mem-copy is safe and fast."
+  (mem-copy! (the pointer dst) (the pointer src) (size-of math-camera))
+  dst)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; P2 math-camera derivation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun sync-p2-math-camera-from-p1! ()
+  "Rebuild *p2-math-camera* from the current *math-camera* (P1) plus P2's
+   independent pose. Inherits all intrinsics (perspective, fov, fog,
+   hmge-scale, hvdf-off, sprite-2d, etc.) via bulk copy, then overwrites
+   pose-dependent fields with values derived from P2's spring-lerped
+   position and P2 target's facing."
+  ;; Step 1: inherit P1's intrinsics via blob copy.
+  (math-camera-copy! *p2-math-camera* *math-camera*)
+
+  (let ((p2 (get-target 1))
+        (icr (-> *p2-math-camera* inv-camera-rot)))
+    (cond
+      ((not (target-alive? p2))
+       ;; P2 not alive: leave P2 camera identical to P1 (mem-copy already did it).
+       #f)
+      (else
+       ;; Step 2: compute P2's world position (spring-lerped behind P2).
+       (let ((p2-pos (-> p2 control trans))
+             (p2-fwd (new 'stack-no-clear 'vector))
+             (behind (new 'stack-no-clear 'vector))
+             (desired (new 'stack-no-clear 'vector))
+             (look-at (new 'stack-no-clear 'vector))
+             (fwd (new 'stack-no-clear 'vector))
+             (down (new 'stack-no-clear 'vector)))
+
+         (vector-z-quaternion! p2-fwd (-> p2 control quat))
+
+         (vector-negate! behind p2-fwd)
+         (set! (-> behind y) 0.0)
+         (let ((len (vector-length behind)))
+           (if (< len 0.001)
+               (set-vector! behind 0.0 0.0 -1.0 0.0)
+               (vector-normalize! behind 1.0)))
+
+         (let ((dist (-> *CAMERA-bank* default-string-max-z))
+               (height (-> *CAMERA-bank* default-string-max-y)))
+           (vector-float*! desired behind dist)
+           (vector+! desired desired p2-pos)
+           (+! (-> desired y) height))
+
+         (cond
+           ((not *p2-cam-initialized?*)
+            (vector-copy! *p2-cam-pos* desired)
+            (set! *p2-cam-initialized?* #t))
+           (else
+            (vector-lerp! *p2-cam-pos* *p2-cam-pos* desired *p2-cam-spring*)))
+
+         (vector-copy! look-at p2-pos)
+         (+! (-> look-at y) (meters 1))
+         (vector-! fwd look-at *p2-cam-pos*)
+         (vector-normalize! fwd 1.0)
+
+         ;; Gravity points UP in GOAL; negate for "down".
+         (vector-negate! down (-> *standard-dynamics* gravity))
+         (vector-normalize! down 1.0)
+
+         ;; Build inv-camera-rot from fwd+down (zeroes row 3).
+         (forward-down->inv-matrix icr fwd down)
+
+         ;; P2's world position.
+         (vector-copy! (-> *p2-math-camera* trans) *p2-cam-pos*)
+         (set! (-> *p2-math-camera* trans w) 1.0))
+
+       ;; camera-rot = transpose(inv-camera-rot); see cam-update.gc:318.
+       (matrix-transpose! (-> *p2-math-camera* camera-rot) icr)
+
+       ;; P2 has no smoothing system.
+       (matrix-copy! (-> *p2-math-camera* inv-camera-rot-smooth) icr)
+
+       ;; Step 3: rebuild camera-temp (inlined from cam-update.gc:356-368).
+       (let ((ct (-> *p2-math-camera* camera-temp))
+             (cr (-> *p2-math-camera* camera-rot))
+             (tr (-> *p2-math-camera* trans)))
+         (let ((neg-tr (new-stack-vector0)))
+           (set! (-> neg-tr x) (- (-> tr x)))
+           (set! (-> neg-tr y) (- (-> tr y)))
+           (set! (-> neg-tr z) (- (-> tr z)))
+           (set! (-> neg-tr w) 1.0)
+           (vector-matrix*! neg-tr neg-tr cr)
+           (set! (-> cr vector 3 quad) (-> neg-tr quad)))
+         (matrix*! ct cr (-> *p2-math-camera* perspective))
+         (set! (-> icr vector 3 quad) (-> tr quad)))
+
+       ;; Step 4: rebuild frustum planes for P2's camera.
+       (update-view-planes *p2-math-camera* (-> *p2-math-camera* plane) 1.0)
+       (update-view-planes *p2-math-camera* (-> *p2-math-camera* guard-plane) 4.0))))
+  (none))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; TIE/Shrub work-struct mirroring
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun sync-instance-work-mirrors-from! ((cam math-camera))
+  "Mirror camera-dependent cached fields from cam into *instance-tie-work*
+   and *instance-shrub-work*. Must be called whenever the active math-camera
+   changes. Mirrors the block in cam-update.gc:382-409."
+  (let ((f0 (-> cam fog-min))
+        (f1 (-> cam fog-max)))
+    (let ((f2 (-> cam d)))
+      (set! (-> *instance-tie-work* hmge-d x) f0)
+      (set! (-> *instance-tie-work* hmge-d y) f1)
+      (set! (-> *instance-tie-work* hmge-d z) (* 32.0 f2))
+      (set! (-> *instance-tie-work* hmge-d w) (* f2 (-> cam hmge-scale w)))
+      (set! (-> *instance-tie-work* hvdf-offset quad) (-> cam hvdf-off quad))
+      (set! (-> *instance-shrub-work* hmge-d x) f0)
+      (set! (-> *instance-shrub-work* hmge-d y) f1)
+      (set! (-> *instance-shrub-work* hmge-d z) (* 3.0 f2))
+      (set! (-> *instance-shrub-work* hmge-d w) (* f2 (-> cam hmge-scale w)))
+      (set! (-> *instance-shrub-work* billboard-const x)
+            (/ (-> cam x-pix) (* f2 (-> cam x-ratio))))
+      (set! (-> *instance-shrub-work* billboard-const y)
+            (/ (-> cam y-pix) (* f2 (-> cam y-ratio)))))
+    (set! (-> *instance-shrub-work* billboard-const z) f0)
+    (set! (-> *instance-shrub-work* billboard-const w) f1))
+  (set! (-> *instance-shrub-work* constants w) (the-as float (-> cam vis-gifs 0 fog0)))
+  (set! (-> *instance-shrub-work* hvdf-offset quad) (-> cam hvdf-off quad))
+  (dotimes (i 4)
+    (set! (-> *instance-shrub-work* guard-plane i quad) (-> cam guard-plane i quad))
+    (set! (-> *instance-tie-work* guard-plane i quad) (-> cam guard-plane i quad)))
+  (none))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Activate a camera for the upcoming draw pass
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun activate-math-camera! ((src math-camera))
+  "Swap src into the live *math-camera* slot, refresh all derived work-struct
+   mirrors, and recompute visibility. After this call the draw pipeline sees
+   src as the primary camera."
+  (math-camera-copy! *math-camera* src)
+  (sync-instance-work-mirrors-from! *math-camera*)
+  (update-visible *math-camera*)
+  (none))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; One draw pass — body extracted from real-main-draw-hook
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun draw-world-pass ()
+  "Render one complete view: sky, ocean, background, foreground, bones,
+   gmerc, shadow, eyes, sprite. Reads whichever math-camera is currently
+   live. Called once in single-player and twice in split-screen."
+  ;; sky
+  (with-profiler "sky"
+    (when (zero? (logand *vu1-enable-user* (vu1-renderer-mask sky)))
+      (with-dma-buffer-add-bucket ((dma-buf (-> (current-frame) global-buf)) (bucket-id sky-draw))
+        (dma-buffer-add-gs-set dma-buf
+                               (zbuf-1 (new 'static 'gs-zbuf :zbp #x1c0 :psm (gs-psm ct24)))
+                               (test-1 (new 'static 'gs-test :ate #x1 :atst (gs-atest always) :zte #x1 :ztst (gs-ztest always)))
+                               (alpha-1 (new 'static 'gs-alpha :b #x1 :d #x1)))
+        (screen-gradient dma-buf
+                         (-> *display* bg-clear-color 0)
+                         (-> *display* bg-clear-color 1)
+                         (-> *display* bg-clear-color 2)
+                         (-> *display* bg-clear-color 3))))
+    (when (logtest? *vu1-enable-user* (vu1-renderer-mask sky))
+      (cond
+        ((and (-> *time-of-day-context* sky) *sky-drawn*) (render-sky-tng *time-of-day-context*))
+        (else
+         (with-dma-buffer-add-bucket ((dma-buf (-> (current-frame) global-buf)) (bucket-id sky-draw))
+           (dma-buffer-add-gs-set dma-buf
+                                  (zbuf-1 (new 'static 'gs-zbuf :zbp #x1c0 :psm (gs-psm ct24)))
+                                  (test-1 (new 'static 'gs-test :ate #x1 :atst (gs-atest always) :zte #x1 :ztst (gs-ztest always)))
+                                  (alpha-1 (new 'static 'gs-alpha :b #x1 :d #x1)))
+           (screen-gradient dma-buf
+                            (-> *time-of-day-context* erase-color)
+                            (-> *time-of-day-context* erase-color)
+                            (-> *time-of-day-context* erase-color)
+                            (-> *time-of-day-context* erase-color)))))))
+
+  ;; ocean
+  (with-profiler "ocean"
+    (update-ocean)
+    (draw-ocean))
+
+  ;; Phase 3F: reset the shadow queue per-pass so each camera's shadow bucket
+  ;; contains only its own visible shadows. shadow-execute-all drains but does
+  ;; not clear cur-run, so without this reset pass 2's queue would still hold
+  ;; pass 1's entries and draw every shadow twice into P2's viewport.
+  (set! (-> *shadow-queue* cur-run) (the-as uint 0))
+
+  ;; background
+  (with-profiler "background"
+    ;; generic-init-buffers emits bucket-init DMA for the generic foreground sinks.
+    ;; Must run before execute-connections so sinks are ready when renderers write to them.
+    ;; Moved here from real-main-draw-hook so it runs once per camera pass under the correct
+    ;; *active-render-cam*, routing each pass's init to the right bucket half.
+    (generic-init-buffers)
+    (init-background)
+    (execute-connections *background-draw-engine* (-> *display* frames (-> *display* on-screen) frame))
+    (reset! (-> *perf-stats* data 3))
+    (finish-background)
+    (read! (-> *perf-stats* data 3))
+    (update-wait-stats (-> *perf-stats* data 3) (-> *background-work* wait-to-vu0) (the-as uint 0) (the-as uint 0)))
+
+  ;; foreground engines
+  (with-profiler "foreground-engines"
+    (foreground-engine-execute (-> *level* level-default foreground-draw-engine 0)
+                               (-> *display* frames (-> *display* on-screen) frame)
+                               2
+                               0)
+    (foreground-engine-execute (-> *level* level-default foreground-draw-engine 1)
+                               (-> *display* frames (-> *display* on-screen) frame)
+                               2
+                               1))
+
+  ;; bones / gmerc / shadow / eyes
+  (let ((gp-9 (-> *display* frames (-> *display* on-screen) frame global-buf)))
+    (with-profiler "bones"
+      (bones-mtx-calc-execute))
+    (with-profiler "gmerc"
+      (generic-merc-execute-all gp-9))
+    (with-profiler "shadow"
+      (shadow-execute-all gp-9 *shadow-queue*))
+    (with-profiler "eyes"
+      (update-eyes)))
+
+  ;; sprite (swap-fake-shadow-buffers is a flip-flop, hoisted out of this pass)
+  (when (logtest? (vu1-renderer-mask sprite) *vu1-enable-user*)
+    (with-profiler "sprite"
+      (sprite-draw *display*)))
+  (none))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Dual-pass orchestration
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun multi-draw-both-cameras ()
+  "Run draw-world-pass twice, once per camera. On entry, *math-camera* holds
+   P1 (updated by cam-update). On exit, *math-camera* holds P1 again so
+   post-draw code sees consistent state."
+  (sync-p2-math-camera-from-p1!)
+
+  ;; Pass 1: P1 (already live).
+  (set! *active-render-cam* 0)
+  (draw-world-pass)
+
+  ;; Save P1, activate P2, run pass 2.
+  (math-camera-copy! *math-camera-backup* *math-camera*)
+  (activate-math-camera! *p2-math-camera*)
+  (set! *active-render-cam* 1)
+  (draw-world-pass)
+
+  ;; Restore P1 for post-draw code.
+  (activate-math-camera! *math-camera-backup*)
+  (set! *active-render-cam* 0)
+  (none))

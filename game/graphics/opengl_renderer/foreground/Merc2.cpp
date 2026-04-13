@@ -1,5 +1,6 @@
 #include "Merc2.h"
 
+#include "common/math/geometry.h"
 #include "common/global_profiler/GlobalProfiler.h"
 #include "common/util/fnv.h"
 #include "common/util/simd_util.h"
@@ -858,6 +859,15 @@ void set_uniform(GLuint uniform, const math::Vector3f& val) {
 void set_uniform(GLuint uniform, const math::Vector4f& val) {
   glUniform4f(uniform, val.x(), val.y(), val.z(), val.w());
 }
+math::Matrix4f matrix_from_col_vectors(const math::Vector4f* vectors) {
+  math::Matrix4f ret;
+  for (int c = 0; c < 4; c++) {
+    for (int r = 0; r < 4; r++) {
+      ret(r, c) = vectors[c][r];
+    }
+  }
+  return ret;
+}
 }  // namespace
 
 void Merc2::handle_setup_dma(DmaFollower& dma, SharedRenderState* render_state) {
@@ -902,16 +912,18 @@ void Merc2::handle_setup_dma(DmaFollower& dma, SharedRenderState* render_state) 
   // 8 qw's of low memory data
   memcpy(&m_low_memory, first.data + 16, sizeof(LowMemory));
 
+  // Phase 3F: per-camera perspective override deleted. m_low_memory is
+  // authored per-pass by GOAL with whichever math-camera is active.
+  math::Matrix4f p = matrix_from_col_vectors(m_low_memory.perspective);
+
   switch_to_merc2(render_state);
   set_uniform(m_merc_uniforms.hvdf_offset, m_low_memory.hvdf_offset);
   set_uniform(m_merc_uniforms.fog, m_low_memory.fog);
-  glUniformMatrix4fv(m_merc_uniforms.perspective_matrix, 1, GL_FALSE,
-                     &m_low_memory.perspective[0].x());
+  glUniformMatrix4fv(m_merc_uniforms.perspective_matrix, 1, GL_FALSE, p.data());
   switch_to_emerc(render_state);
   set_uniform(m_emerc_uniforms.hvdf_offset, m_low_memory.hvdf_offset);
   set_uniform(m_emerc_uniforms.fog, m_low_memory.fog);
-  glUniformMatrix4fv(m_emerc_uniforms.perspective_matrix, 1, GL_FALSE,
-                     &m_low_memory.perspective[0].x());
+  glUniformMatrix4fv(m_emerc_uniforms.perspective_matrix, 1, GL_FALSE, p.data());
 
   // 1 qw with another 4 vifcodes.
   u32 vifcode_final_data[4];
