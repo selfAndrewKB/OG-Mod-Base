@@ -13,6 +13,14 @@
 ;; Needed here
 (define-extern camera-master-debug (function camera-master none))
 
+;; Phase 3G: indirection pointer for cam-update.gc output. Each frame,
+;; cam-master sets this to (-> self output-cam) so update-camera writes to
+;; the correct math-camera. Defined in multi-draw.gc; forward-declared here.
+(define-extern *cam-out* math-camera)
+
+;; Phase 3G diagnostic: multi-debug logging module lives in GAME.CGO.
+(define-extern multi-log-enabled? (function symbol symbol))
+
 ;; DECOMP BEGINS
 
 (deftype camera-master-bank (basic)
@@ -374,12 +382,12 @@
     (set! (-> self stringMinLength) (-> *CAMERA-bank* default-string-min-z))
     (set! (-> self stringMaxLength) (-> *CAMERA-bank* default-string-max-z))
     (set! (-> self stringCliffHeight) 163840.0)
-    (send-event *camera* 'point-of-interest #f)
-    (set! (-> *camera-combiner* tracking point-of-interest-blend target) 0.0)
-    (if (not (send-event *camera* 'query-state *camera-base-mode*))
-      (send-event *camera* 'change-state *camera-base-mode* (seconds 1.5)))
-    (set! (-> *camera-combiner* tracking tilt-adjust target) (-> *CAMERA-bank* default-tilt-adjust))
-    (send-event *camera* 'clear-slave-option #x10000)))
+    (send-event self 'point-of-interest #f)
+    (set! (-> (-> self my-combiner) tracking point-of-interest-blend target) 0.0)
+    (if (not (send-event self 'query-state *camera-base-mode*))
+      (send-event self 'change-state *camera-base-mode* (seconds 1.5)))
+    (set! (-> (-> self my-combiner) tracking tilt-adjust target) (-> *CAMERA-bank* default-tilt-adjust))
+    (send-event self 'clear-slave-option #x10000)))
 
 (defbehavior master-base-region camera-master ((arg0 entity))
   (logior! (-> self master-options) 64)
@@ -389,13 +397,13 @@
   (set! (-> self stringMaxLength) (cam-slave-get-float arg0 'stringMaxLength (-> *CAMERA-bank* default-string-max-z)))
   (let ((s5-0 (new 'stack-no-clear 'vector)))
     (if (cam-slave-get-vector-with-offset (the-as entity-actor arg0) s5-0 'interesting)
-      (send-event *camera* 'point-of-interest s5-0)))
+      (send-event self 'point-of-interest s5-0)))
   (if (< 405504.0 (-> self stringMaxLength)) (set! (-> self stringMaxLength) (-> *CAMERA-bank* default-string-max-z)))
   (set! (-> self stringCliffHeight) (cam-slave-get-float arg0 'stringCliffHeight 163840.0))
-  (if (not (send-event *camera* 'query-state *camera-base-mode*))
-    (send-event *camera* 'change-state *camera-base-mode* (seconds 1.5)))
-  (if (logtest? #x10000 (cam-slave-get-flags (-> self cam-entity) 'flags)) (send-event *camera* 'set-slave-option #x10000))
-  (set! (-> *camera-combiner* tracking tilt-adjust target)
+  (if (not (send-event self 'query-state *camera-base-mode*))
+    (send-event self 'change-state *camera-base-mode* (seconds 1.5)))
+  (if (logtest? #x10000 (cam-slave-get-flags (-> self cam-entity) 'flags)) (send-event self 'set-slave-option #x10000))
+  (set! (-> (-> self my-combiner) tracking tilt-adjust target)
         (cam-slave-get-float arg0 'tiltAdjust (-> *CAMERA-bank* default-tilt-adjust))))
 
 (defun setup-slave-for-hopefull ((arg0 camera-slave))
@@ -405,10 +413,10 @@
   (none))
 
 (defbehavior master-is-hopeful-better? camera-master ((arg0 camera-slave) (arg1 camera-slave))
-  (if (not *camera-combiner*)
+  (if (not (-> self my-combiner))
     #f
-    (< (vector-dot (-> arg0 tracking inv-mat vector 2) (-> *camera-combiner* inv-camera-rot vector 2))
-       (vector-dot (-> arg1 tracking inv-mat vector 2) (-> *camera-combiner* inv-camera-rot vector 2)))))
+    (< (vector-dot (-> arg0 tracking inv-mat vector 2) (-> (-> self my-combiner) inv-camera-rot vector 2))
+       (vector-dot (-> arg1 tracking inv-mat vector 2) (-> (-> self my-combiner) inv-camera-rot vector 2)))))
 
 (defbehavior master-switch-to-entity camera-master ((arg0 entity))
   (local-vars (v0-21 object) (gp-0 (pointer process)) (sv-16 res-tag) (sv-112 process) (sv-128 string) (sv-144 string))
@@ -474,12 +482,12 @@
                      (let ((a3-8 (res-lump-struct arg0 'name structure))) (s2-1 s1-2 s0-2 sv-144 a3-8))))))))))
   (let ((v1-48 (the int (* 300.0 (cam-slave-get-interp-time (-> (the-as camera-slave (-> gp-0 0)) cam-entity))))))
     (if (nonzero? (-> self force-blend)) (set! v1-48 (min v1-48 (the-as int (-> self force-blend-time)))))
-    (send-event *camera* 'change-state (ppointer->process gp-0) v1-48))
+    (send-event self 'change-state (ppointer->process gp-0) v1-48))
   #t)
 
 (defbehavior master-check-regions camera-master ()
   (cond
-    ((send-event *camera* 'query-state cam-eye) #f)
+    ((send-event self 'query-state cam-eye) #f)
     ((or (not *target*) (logtest? (-> self master-options) 1)) (master-unset-region))
     ((and (logtest? (-> self master-options) 4)
           (not (-> self on-ground))
@@ -531,15 +539,15 @@
             ((= v1-0 'dist-from-interp-src)
              (set! v0-0
                    (cond
-                     ((not *camera-combiner*) 409600.0)
-                     ((= (-> *camera-combiner* interp-val) 0.0) 0.0)
-                     (else (-> *camera-combiner* dist-from-src)))))
+                     ((not (-> self my-combiner)) 409600.0)
+                     ((= (-> (-> self my-combiner) interp-val) 0.0) 0.0)
+                     (else (-> (-> self my-combiner) dist-from-src)))))
             ((= v1-0 'dist-from-interp-dest)
              (set! v0-0
                    (cond
-                     ((not *camera-combiner*) 0.0)
-                     ((= (-> *camera-combiner* interp-val) 0.0) 409600.0)
-                     (else (-> *camera-combiner* dist-from-dest)))))
+                     ((not (-> self my-combiner)) 0.0)
+                     ((= (-> (-> self my-combiner) interp-val) 0.0) 409600.0)
+                     (else (-> (-> self my-combiner) dist-from-dest)))))
             ((= v1-0 'level-deactivate)
              (set! v0-0
                    (if (and (-> self cam-entity) (= (-> (get-level (-> self cam-entity)) name) (-> block param 0))) (master-unset-region))))
@@ -560,10 +568,10 @@
                      (send-event self 'teleport))))
             ((= v1-0 'teleport-to-other-start-string)
              (let ((gp-2 (new 'stack-no-clear 'vector)))
-               (set! (-> *camera-combiner* trans quad) (-> *camera-other-trans* quad))
+               (set! (-> (-> self my-combiner) trans quad) (-> *camera-other-trans* quad))
                (vector-! gp-2 (-> self tpos-curr-adj) *camera-other-trans*)
                (vector-normalize! gp-2 1.0)
-               (forward-down->inv-matrix (-> *camera-combiner* inv-camera-rot) gp-2 (new 'static 'vector :y -1.0)))
+               (forward-down->inv-matrix (-> (-> self my-combiner) inv-camera-rot) gp-2 (new 'static 'vector :y -1.0)))
              (send-event self 'change-state cam-free-floating 0)
              (send-event self 'teleport)
              (let ((a1-10 (new 'stack-no-clear 'event-message-block)))
@@ -578,10 +586,10 @@
                    (when (> argc 0)
                      (let ((v1-43 (the-as object (-> block param 0)))
                            (gp-3 (new 'stack-no-clear 'vector)))
-                       (set! (-> *camera-combiner* trans quad) (-> (the-as vector v1-43) quad))
+                       (set! (-> (-> self my-combiner) trans quad) (-> (the-as vector v1-43) quad))
                        (vector-! gp-3 (-> self tpos-curr-adj) (the-as vector v1-43))
                        (vector-normalize! gp-3 1.0)
-                       (forward-down->inv-matrix (-> *camera-combiner* inv-camera-rot) gp-3 (new 'static 'vector :y -1.0)))
+                       (forward-down->inv-matrix (-> (-> self my-combiner) inv-camera-rot) gp-3 (new 'static 'vector :y -1.0)))
                      (send-event self 'change-state cam-free-floating 0)
                      (send-event self 'change-state *camera-base-mode* 0))))
             ((= v1-0 'change-pov)
@@ -596,29 +604,41 @@
             ((= v1-0 'change-target-bone) (set! v0-0 (-> block param 0)) (set! (-> self which-bone) (the-as int v0-0)))
             ((= v1-0 'change-target)
              (let ((v1-56 (the-as object (-> block param 0))))
+               (when (multi-log-enabled? 'camera)
+                 (format 0 "[MULTI:camera] cam-master change-target: old=~A new=~A (*target*=~A)~%"
+                         (handle->process (-> self drawable-target))
+                         (the-as process v1-56)
+                         *target*))
                (cond
                  ((< argc 2) (set! (-> self which-bone) 0) 0)
                  (else (set! (-> self which-bone) (the-as int (-> block param 1)))))
                (cond
-                 ((not (the-as process v1-56)) (set! (-> self drawable-target) (the-as handle #f)) (logand! (-> self master-options) -3))
+                 ((not (the-as process v1-56))
+                  (when (multi-log-enabled? 'camera)
+                    (format 0 "[MULTI:camera]   -> nil branch (clear drawable-target)~%"))
+                  (set! (-> self drawable-target) (the-as handle #f)) (logand! (-> self master-options) -3))
                  ((= (the-as process v1-56) *target*)
+                  (when (multi-log-enabled? 'camera)
+                    (format 0 "[MULTI:camera]   -> *target* branch (reset-target-tracking)~%"))
                   (set! (-> self drawable-target) (the-as handle #f))
                   (logior! (-> self master-options) 2)
                   (reset-target-tracking))
                  (else
+                  (when (multi-log-enabled? 'camera)
+                    (format 0 "[MULTI:camera]   -> else branch (reset-drawable-tracking) — JOLT~%"))
                   (set! (-> self drawable-target) (process->handle (the-as process v1-56)))
                   (logior! (-> self master-options) 2)
                   (reset-drawable-tracking))))
-             (set! (-> *camera-combiner* tracking no-follow) #f)
+             (set! (-> (-> self my-combiner) tracking no-follow) #f)
              (set! v0-0 #f))
             ((= v1-0 'reset-root)
              (dotimes (gp-4 (-> self num-slaves))
                (set! (-> self slave gp-4 0 trans quad) (the-as uint128 0))
                (matrix-identity! (the-as matrix (-> self slave gp-4 0 tracking))))
-             (vector-reset! (-> *camera-combiner* trans))
-             (set! v0-0 (matrix-identity! (the-as matrix (-> *camera-combiner* tracking)))))
+             (vector-reset! (-> (-> self my-combiner) trans))
+             (set! v0-0 (matrix-identity! (the-as matrix (-> (-> self my-combiner) tracking)))))
             ((= v1-0 'set-fov)
-             (set! (-> *camera-combiner* fov) (the-as float (-> block param 0)))
+             (set! (-> (-> self my-combiner) fov) (the-as float (-> block param 0)))
              (dotimes (v1-86 (-> self num-slaves))
                (set! (-> self slave v1-86 0 fov) (the-as float (-> block param 0))))
              (set! v0-0 #f))
@@ -683,9 +703,9 @@
                          (s2-0)
                          (else (format 0 "ERROR <GMJ>: replacement slave failed to activate~%")))))
                     (when s2-0
-                      (send-event *camera-combiner* 'stop-tracking)
+                      (send-event (-> self my-combiner) 'stop-tracking)
                       (if (= (-> (the-as camera-slave (-> s2-0 0)) blend-to-type) 2)
-                        (send-event *camera-combiner* 'start-tracking (if s2-0 (-> (the-as camera-slave (-> s2-0 0)) self))))))
+                        (send-event (-> self my-combiner) 'start-tracking (if s2-0 (-> (the-as camera-slave (-> s2-0 0)) self))))))
                    ((zero? (-> block param 1))
                     (if *math-camera* (set! (-> *math-camera* reset) 1))
                     (when (< 1 (-> self num-slaves))
@@ -709,14 +729,14 @@
                        (set! s3-0 s1-0)
                        (set! s2-0 (-> self slave 0))))
                     (when s2-0
-                      (send-event *camera-combiner* 'stop-tracking)
+                      (send-event (-> self my-combiner) 'stop-tracking)
                       (when (= (-> (the-as camera-slave (-> s2-0 0)) blend-to-type) 2)
                         (let ((a1-36 (new 'stack-no-clear 'event-message-block)))
                           (set! (-> a1-36 from) self)
                           (set! (-> a1-36 num-params) 1)
                           (set! (-> a1-36 message) 'start-tracking)
                           (let ((v1-191 s2-0)) (set! (-> a1-36 param 0) (the-as uint (if v1-191 (-> (the-as camera-slave (-> v1-191 0)) self)))))
-                          (send-event-function *camera-combiner* a1-36)))))
+                          (send-event-function (-> self my-combiner) a1-36)))))
                    (else
                     (when (< 1 (-> self num-slaves))
                       (if (= (-> self changer) (-> self slave 0)) (set! s5-2 (-> self slave 0)) (deactivate (-> self slave 0 0)))
@@ -750,15 +770,15 @@
                            (s2-0)
                            (else (format #t "ERROR <GMJ>: secondary slave activate failed~%")))))
                       (when s2-0
-                        (send-event *camera-combiner* 'set-interpolation (-> block param 1))
+                        (send-event (-> self my-combiner) 'set-interpolation (-> block param 1))
                         (set! s4-1 (-> self slave 0))
                         (cond
                           ((zero? (-> self slave 0 0 blend-from-type))
                            (send-event (ppointer->process (-> self slave 0)) 'change-state-no-go cam-fixed)
-                           (send-event *camera-combiner* 'stop-tracking)
+                           (send-event (-> self my-combiner) 'stop-tracking)
                            (set! s3-0 cam-fixed))
                           (else (send-event (ppointer->process (-> self slave 0)) 'change-state-no-go cam-decel) (set! s3-0 cam-decel)))
-                        (let ((v1-261 (-> *camera-combiner* tracking-status)))
+                        (let ((v1-261 (-> (-> self my-combiner) tracking-status)))
                           (cond
                             ((zero? v1-261)
                              (let ((v1-263 (-> (the-as camera-slave (-> s2-0 0)) blend-to-type)))
@@ -767,27 +787,27 @@
                                  ((= v1-263 1))
                                  ((= v1-263 2)
                                   (if (= (-> self slave 0 0 blend-from-type) 1)
-                                    (send-event *camera-combiner* 'copy-tracking (ppointer->process (-> self slave 0)))
-                                    (send-event *camera-combiner* 'start-tracking (ppointer->process (-> self slave 0))))
-                                  (set! (-> *camera-combiner* tracking-status) (the-as uint 2))))))
+                                    (send-event (-> self my-combiner) 'copy-tracking (ppointer->process (-> self slave 0)))
+                                    (send-event (-> self my-combiner) 'start-tracking (ppointer->process (-> self slave 0))))
+                                  (set! (-> (-> self my-combiner) tracking-status) (the-as uint 2))))))
                             ((= v1-261 1)
                              (let ((v1-280 (-> (the-as camera-slave (-> s2-0 0)) blend-to-type)))
                                (cond
-                                 ((zero? v1-280) (set! (-> *camera-combiner* tracking-status) (the-as uint 3)))
-                                 ((= v1-280 1) (set! (-> *camera-combiner* tracking-status) (the-as uint 3)))
+                                 ((zero? v1-280) (set! (-> (-> self my-combiner) tracking-status) (the-as uint 3)))
+                                 ((= v1-280 1) (set! (-> (-> self my-combiner) tracking-status) (the-as uint 3)))
                                  ((= v1-280 2)))))
                             ((= v1-261 2)
                              (let ((v1-286 (-> (the-as camera-slave (-> s2-0 0)) blend-to-type)))
                                (cond
-                                 ((zero? v1-286) (set! (-> *camera-combiner* tracking-status) (the-as uint 0)) 0)
-                                 ((= v1-286 1) (set! (-> *camera-combiner* tracking-status) (the-as uint 0)) 0)
+                                 ((zero? v1-286) (set! (-> (-> self my-combiner) tracking-status) (the-as uint 0)) 0)
+                                 ((= v1-286 1) (set! (-> (-> self my-combiner) tracking-status) (the-as uint 0)) 0)
                                  ((= v1-286 2)))))
                             ((= v1-261 3)
                              (let ((v1-295 (-> (the-as camera-slave (-> s2-0 0)) blend-to-type)))
                                (cond
-                                 ((zero? v1-295) (set! (-> *camera-combiner* tracking-status) (the-as uint 0)) 0)
-                                 ((= v1-295 1) (set! (-> *camera-combiner* tracking-status) (the-as uint 0)) 0)
-                                 ((= v1-295 2) (set! (-> *camera-combiner* tracking-status) (the-as uint 2))))))))))))
+                                 ((zero? v1-295) (set! (-> (-> self my-combiner) tracking-status) (the-as uint 0)) 0)
+                                 ((= v1-295 1) (set! (-> (-> self my-combiner) tracking-status) (the-as uint 0)) 0)
+                                 ((= v1-295 2) (set! (-> (-> self my-combiner) tracking-status) (the-as uint 2))))))))))))
                  (if s4-1 (send-event (if s4-1 (-> (the-as camera-slave (-> s4-1 0)) self)) 'go s3-0)))
                (if s5-2 (deactivate (-> s5-2 0))))
              (set! v0-0 #t))
@@ -799,7 +819,7 @@
                             (the-as (pointer camera-slave) (process->ppointer (the-as process (-> block param 0)))))
                       (+! (-> self num-slaves) 1)
                       (logior! (-> self master-options) 8)
-                      (set! (-> *camera-combiner* tracking tilt-adjust target) (-> (the-as projectile (-> block param 0)) max-turn)))
+                      (set! (-> (-> self my-combiner) tracking tilt-adjust target) (-> (the-as projectile (-> block param 0)) max-turn)))
                      (else
                       (format 0 "ERROR: ERROR <GMJ>: Exceeded maximum number of camera slaves!~%")
                       (deactivate (the-as camera-slave (-> block param 0)))))))
@@ -829,7 +849,7 @@
                (set! (-> a1-54 from) self)
                (set! (-> a1-54 num-params) 0)
                (set! (-> a1-54 message) message)
-               (set! v0-0 (send-event-function *camera-combiner* a1-54))))
+               (set! v0-0 (send-event-function (-> self my-combiner) a1-54))))
             ((= v1-0 'toggle-slave-option)
              (logxor! (-> self slave-options) (-> block param 0))
              (let ((a0-193 (-> self slave 0))
@@ -859,13 +879,13 @@
                       (when (nonzero? (-> self num-slaves))
                         (set! (-> self slave (+ (-> self num-slaves) -1) 0 tracking no-follow) #t)
                         (vector-reset! (-> self slave (+ (-> self num-slaves) -1) 0 tracking follow-off)))
-                      (set! (-> *camera-combiner* tracking no-follow) #t)
-                      (set! v0-0 (-> *camera-combiner* tracking follow-off))
+                      (set! (-> (-> self my-combiner) tracking no-follow) #t)
+                      (set! v0-0 (-> (-> self my-combiner) tracking follow-off))
                       (.svf (&-> (the-as vector v0-0) quad) vf0)
                       v0-0)
                      ((= v1-0 'yes-follow)
                       (if (nonzero? (-> self num-slaves)) (set! (-> self slave (+ (-> self num-slaves) -1) 0 tracking no-follow) #f))
-                      (set! (-> *camera-combiner* tracking no-follow) #f)
+                      (set! (-> (-> self my-combiner) tracking no-follow) #f)
                       #f)
                      ((= v1-0 'blend-from-as-fixed)
                       (when (nonzero? (-> self num-slaves))
@@ -896,7 +916,7 @@
                         (set! (-> a1-61 param 4) (-> block param 4))
                         (set! (-> a1-61 param 5) (-> block param 5))
                         (set! (-> a1-61 param 6) (-> block param 6))
-                        (send-event-function *camera-combiner* a1-61)))
+                        (send-event-function (-> self my-combiner) a1-61)))
                      ((= v1-0 'part-water-drip)
                       (set-time! (-> self water-drip-time))
                       (set! (-> self water-drip-mult) (the-as float (-> block param 0)))
@@ -929,6 +949,12 @@
   :code
     (behavior ()
       (loop
+        ;; Phase 3G: register self as active camera and set output destination.
+        ;; In split-screen, cam-master-P1 and cam-master-P2 both run this loop
+        ;; each frame — whichever ran most recently is the "active" *camera*.
+        ;; cam-update.gc writes its output to *cam-out* (redirected via Phase 3G).
+        (set! *camera* self)
+        (set! *cam-out* (-> self output-cam))
         (if (and *dproc* *debug-segment*)
           (add-frame (-> *display* frames (-> *display* on-screen) frame profile-bar 0)
                      'camera
@@ -941,7 +967,7 @@
         (master-track-target)
         (set! (-> last-try-to-look-at-data horz) 0.0)
         (set! (-> last-try-to-look-at-data vert) 0.0)
-        (when (send-event *camera* 'slave-option? #x4000)
+        (when (send-event self 'slave-option? #x4000)
           (set! (-> self string-min target y) 18432.0)
           (set! (-> self string-max target y) 18432.041))
         (when (not (paused?))
@@ -973,6 +999,17 @@
 
 (defbehavior cam-master-init camera-master ()
   (set! *camera* self)
+  ;; Phase 3G: default output is the primary *math-camera*. P2's camera-master
+  ;; overrides this to *p2-math-camera* after spawn (see localmulti.gc).
+  (set! (-> self output-cam) *math-camera*)
+  ;; Phase 3G.2: bind this master to its combiner via back-ref. cam-master-active
+  ;; reads (-> self my-combiner) on the hot path instead of the camera-combiner global.
+  (set! (-> self my-combiner) *camera-combiner*)
+  ;; And wire the combiner's source-master back-ref to this master. Note cam-combiner
+  ;; spawns BEFORE cam-master in cam-start.gc, so source-master is null for one tick —
+  ;; cam-combiner-active has a (when (-> self source-master) ...) guard covering that window.
+  (when *camera-combiner*
+    (set! (-> *camera-combiner* source-master) self))
   (stack-size-set! (-> self main-thread) 512)
   (logclear! (-> self mask) (process-mask menu))
   (set! (-> self master-options) (the-as uint 4))

@@ -588,6 +588,10 @@
 
 (defbehavior cam-slave-init camera-slave ((arg0 state) (arg1 entity))
   (stack-size-set! (-> self main-thread) 512)
+  ;; Phase 3G.2: bind slave to its owning master via parent back-ref.
+  ;; Slaves are spawned :to master in cam-master.gc, so parent 0 is always the camera-master.
+  ;; All cam-states.gc slave code reads (-> self my-master) instead of *camera*.
+  (set! (-> self my-master) (the-as camera-master (ppointer->process (the-as (pointer process) (-> self parent)))))
   (change-to-last-brother self)
   (if (and (nonzero? camera-slave-debug) *debug-segment*) (add-connection *debug-engine* self camera-slave-debug self #f #f))
   (cam-slave-init-vars)

@@ -258,7 +258,8 @@
    (velocity          vector :inline)
    (tracking-status   uint64)
    (tracking-options  int32)
-   (tracking          cam-rotation-tracker :inline))
+   (tracking          cam-rotation-tracker :inline)
+   (source-master     camera-master))  ;; Phase 3G.2: back-ref to owning master (replaces *camera* global reads in cam-combiner :code loop)
   (:states
    cam-combiner-active))
 
@@ -313,7 +314,9 @@
    (phony-joystick-y              float)
    (string-min-val                vector :inline)
    (string-max-val                vector :inline)
-   (string-val-locked             basic))
+   (string-val-locked             basic)
+   (pad-index                     uint32)  ;; Phase 3G: controller port (0=P1, 1=P2)
+   (my-master                     camera-master))  ;; Phase 3G.2: back-ref to owning master (replaces *camera* global reads)
   (:states
    *camera-base-mode*
    cam-bike
@@ -395,7 +398,9 @@
    (water-drip-time     time-frame)
    (water-drip          sparticle-launch-control)
    (water-drip-mult     float)
-   (water-drip-speed    float))
+   (water-drip-speed    float)
+   (output-cam          math-camera)  ;; Phase 3G: which math-camera this master writes to
+   (my-combiner         camera-combiner))  ;; Phase 3G.2: back-ref to owning combiner (replaces *camera-combiner* global)
   (:states
    cam-master-active
    list-keeper-active))
