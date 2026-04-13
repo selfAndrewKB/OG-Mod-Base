@@ -1137,8 +1137,8 @@
         (vector+! (-> self trans) (-> self trans) (-> self view-flat))
         (set! (-> self blend-from-type) (the-as uint 0))
         (set! (-> self blend-to-type) (the-as uint 0))
-        (cam-calc-follow! (-> self tracking) (-> self trans) #f)
-        (slave-set-rotation! (-> self tracking) (-> self trans) (the-as float (-> self options)) (-> self fov) #f)))
+        (cam-calc-follow! (-> self tracking) (-> self trans) #f (-> self my-master))
+        (slave-set-rotation! (-> self tracking) (-> self trans) (the-as float (-> self options)) (-> self fov) #f (-> self my-master))))
   :trans
     (behavior ()
       (if (not (logtest? (-> *camera* master-options) 2)) (cam-slave-go cam-free-floating))
@@ -1179,7 +1179,7 @@
                            (-> self tracking follow-pt)
                            (-> *camera* local-down)
                            (-> *camera* target-height))
-          (slave-set-rotation! (-> self tracking) (-> self trans) (the-as float (-> self options)) (-> self fov) #f)
+          (slave-set-rotation! (-> self tracking) (-> self trans) (the-as float (-> self options)) (-> self fov) #f (-> self my-master))
           (suspend)))))
 
 (defstate launcher-idle (launcher)

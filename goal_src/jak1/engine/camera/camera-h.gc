@@ -23,9 +23,9 @@
 ;; TODO - for camera
 (define-extern camera-line-rel-len (function vector vector float vector4w none))
 
-(define-extern cam-calc-follow! (function cam-rotation-tracker vector symbol vector))
+(define-extern cam-calc-follow! (function cam-rotation-tracker vector symbol camera-master vector))
 
-(define-extern slave-set-rotation! (function cam-rotation-tracker vector float float symbol none))
+(define-extern slave-set-rotation! (function cam-rotation-tracker vector float float symbol camera-master none))
 
 ;; TODO - for cam-combiner
 (define-extern paused? (function symbol))
@@ -99,7 +99,7 @@
    (vec   vector 2 :inline :offset 16))
   (:methods
    (cam-index-method-9 (_type_ symbol entity vector curve) symbol)
-   (cam-index-method-10 (_type_ vector) float)))
+   (cam-index-method-10 (_type_ vector camera-master) float)))
 
 (deftype tracking-point (structure)
   ((position    vector :inline)

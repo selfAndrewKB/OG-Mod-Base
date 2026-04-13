@@ -408,8 +408,8 @@
 
 (defun setup-slave-for-hopefull ((arg0 camera-slave))
   (when (= (-> arg0 blend-to-type) 2)
-    (cam-calc-follow! (-> arg0 tracking) (-> arg0 trans) #f)
-    (slave-set-rotation! (-> arg0 tracking) (-> arg0 trans) (the-as float (-> arg0 options)) (-> arg0 fov) #f))
+    (cam-calc-follow! (-> arg0 tracking) (-> arg0 trans) #f (-> arg0 my-master))
+    (slave-set-rotation! (-> arg0 tracking) (-> arg0 trans) (the-as float (-> arg0 options)) (-> arg0 fov) #f (-> arg0 my-master)))
   (none))
 
 (defbehavior master-is-hopeful-better? camera-master ((arg0 camera-slave) (arg1 camera-slave))
