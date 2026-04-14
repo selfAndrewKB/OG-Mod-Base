@@ -22,6 +22,8 @@
 (define-extern *camera-dead-pool* dead-pool)
 (define-extern *camera-master-dead-pool* dead-pool)
 (define-extern *camera-pool* process-tree)
+;; Session 18: shared pad-aware spawn helper defined in cam-start.gc
+(define-extern cam-start-for-pad (function int none))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Controller routing hook (called from init-target for every spawned target)
@@ -179,42 +181,36 @@
   ;; cam-start #t, which runs cam-stop → kill-by-name for all camera processes)
   ;; wiped the P2 camera pipeline. Respawn it and re-wire to P2's target.
   (let ((p2-tgt (get-target 1)))
+    ;; Respawn P2 pipeline if cam-stop wiped it (e.g. P1's target-continue → cam-start #t)
     (when (and p2-tgt (target-alive? p2-tgt) (not *camera-p2*))
       (when (multi-log-enabled? 'camera)
-        (format 0 "[MULTI:camera]  P2 camera pipeline missing — respawning~%"))
-      (process-spawn camera-combiner :init cam-combiner-init 1 :from *camera-dead-pool* :to *camera-pool*)
-      (process-spawn camera-master   :init cam-master-init   1 :from *camera-master-dead-pool* :to *camera-pool*))
+        (format 0 "[MULTI:camera]  P2 pipeline missing — respawning via cam-start-for-pad~%"))
+      (cam-start-for-pad 1))
 
-    ;; Session 17 fix: (go cam-master-active) inside cam-master-init does NOT install
-    ;; the event-hook — gstate.gc:292 schedules enter-state for the next scheduler
-    ;; dispatch and throws out of init. So any send-event that fires during the same
-    ;; frame as the master's spawn hits the null-event-hook guard in send-event-function
-    ;; and is silently dropped. We can't send the wiring events from start-extra-target
-    ;; or from the respawn block above — we must defer until the master has been
-    ;; scheduled at least once. This per-frame self-healing block handles both the
-    ;; initial spawn and every respawn-after-cam-stop without needing a flag.
-    (when (and p2-tgt (target-alive? p2-tgt) *camera-p2*)
-      ;; (1) change-target: one-shot, ends when drawable-target is non-#f.
-      (when (not (-> *camera-p2* drawable-target))
-        (when (multi-log-enabled? 'camera)
-          (format 0 "[MULTI:camera]  deferred wire: change-target P2~%"))
-        (send-event *camera-p2* 'change-target p2-tgt))
-      ;; (2) change-state cam-string: self-terminates once the first slave is out of
-      ;; cam-free-floating. Must guard num-slaves>0 because the initial slave is spawned
-      ;; async inside cam-master-active's :code and doesn't exist on the very first frame.
-      ;; Param 1 MUST be 0 to take the direct (non-blend) path in cam-master's change-state
-      ;; handler. With unset param 1, (zero? param 1) reads uninit stack garbage and
-      ;; almost always falls into the blend path, which spawns a second slave in cam-string
-      ;; and decels the existing cam-free-floating slave — producing a combiner output
-      ;; that drifts from origin instead of snapping to P2's position.
-      (when (> (-> *camera-p2* num-slaves) 0)
-        (let ((s0 (-> *camera-p2* slave 0)))
-          (when (and s0
-                     (-> (the-as (pointer camera-slave) s0) 0 next-state)
-                     (= (-> (the-as (pointer camera-slave) s0) 0 next-state name) 'cam-free-floating))
-            (when (multi-log-enabled? 'camera)
-              (format 0 "[MULTI:camera]  deferred wire: change-state cam-string P2~%"))
-            (send-event *camera-p2* 'change-state cam-string 0))))))
+    ;; Session 18: rewritten to mirror P1's full init sequence from target-continue lines 124–145.
+    ;; Gate: master has run at least one tick (num-slaves > 0, set inside cam-master-active :code)
+    ;;        AND wiring has not yet happened (drawable-target is #f).
+    ;; This is structurally equivalent to P1's "after two suspends" window — cam-master-init
+    ;; has completed, my-combiner/source-master are wired, and the event-hook is installed.
+    ;; Applies to both the initial spawn from start-extra-target and every respawn-after-cam-stop.
+    (when (and p2-tgt (target-alive? p2-tgt) *camera-p2*
+               (> (-> *camera-p2* num-slaves) 0)
+               (not (-> *camera-p2* drawable-target)))
+      (when (multi-log-enabled? 'camera)
+        (format 0 "[MULTI:camera]  P2 init: seeding combiner from P1 + full event sequence~%"))
+      ;; Seed P2's combiner from P1's live camera state. P2 spawns physically near P1 so
+      ;; this is the best approximation of P1's saved continue-point seed in target-continue.
+      (set! (-> *camera-combiner-p2* trans quad) (-> *camera-combiner* trans quad))
+      (matrix-copy! (-> *camera-combiner-p2* inv-camera-rot) (-> *camera-combiner* inv-camera-rot))
+      ;; Send the exact event sequence that target-continue sends after cam-start #t for P1
+      ;; (target-death.gc lines 140–145): change-target → no-intro → clear-entity →
+      ;; force-blend 0 → change-state cam-fixed 0 → change-state cam-string 0
+      (send-event *camera-p2* 'change-target p2-tgt)
+      (send-event *camera-p2* 'no-intro)
+      (send-event *camera-p2* 'clear-entity)
+      (send-event *camera-p2* 'force-blend 0)
+      (send-event *camera-p2* 'change-state cam-fixed 0)
+      (send-event *camera-p2* 'change-state cam-string 0)))
   (none)
   )
 
@@ -225,14 +221,13 @@
 (defun start-extra-target ((idx int))
   "Spawn, configure, and register a new target process for player slot idx.
    Assigns the correct controller, color, and handle. Returns the target."
-  ;; Phase 3G.2 Session B: spawn P2's native camera pipeline (combiner first,
-  ;; then master — matching the cam-start.gc P1 spawn order so dispatch order
-  ;; is deterministic). This replaces the old *p2-cam-initialized?* spring reset.
+  ;; Session 18: delegate to cam-start-for-pad so P2 uses the same spawn structure as
+  ;; P1 (combiner sync, master async via process-spawn-function). The async master
+  ;; mirrors the two-suspend window that target-continue relies on after cam-start #t.
   (when (= idx 1)
     (when (multi-log-enabled? 'camera)
-      (format 0 "[MULTI:camera]  spawning P2 camera pipeline~%"))
-    (process-spawn camera-combiner :init cam-combiner-init 1 :from *camera-dead-pool* :to *camera-pool*)
-    (process-spawn camera-master   :init cam-master-init   1 :from *camera-master-dead-pool* :to *camera-pool*))
+      (format 0 "[MULTI:camera]  cam-start-for-pad 1 — async master mirrors P1 two-suspend window~%"))
+    (cam-start-for-pad 1))
   (when (multi-log-enabled? 'spawn)
     (format 0 "[MULTI:spawn]   start-extra-target idx=~D~%" idx)
     )

@@ -36,18 +36,42 @@
   (set! *camera-base-mode* cam-string)
   (none))
 
+(defun cam-start-for-pad ((pad-idx int))
+  "Spawn the combiner (sync) and master (async) for the given pad index.
+   Does NOT call cam-stop or reset-cameras — caller is responsible for those.
+   Used by P2 init (localmulti.gc) to mirror the exact spawn structure that
+   cam-start uses for P1: combiner sync, master async via process-spawn-function.
+   The async master means cam-master-init runs on the NEXT scheduler tick, which
+   is what creates the two-suspend window that target-continue relies on for P1."
+  ;; Combiner first, sync — globals and back-refs set immediately in cam-combiner-init
+  (process-spawn camera-combiner :init cam-combiner-init pad-idx :from *camera-dead-pool* :to *camera-pool*)
+  ;; Master second, async — cam-master-init is scheduled for next tick
+  (cond
+    ((= pad-idx 0)
+     (set! *camera*
+           (the-as camera-master
+                   (ppointer->process (process-spawn-function camera-master
+                                        cam-master-init
+                                        0
+                                        :from
+                                        *camera-master-dead-pool*
+                                        :to
+                                        *camera-pool*)))))
+    ((= pad-idx 1)
+     (set! *camera-p2*
+           (the-as camera-master
+                   (ppointer->process (process-spawn-function camera-master
+                                        cam-master-init
+                                        1
+                                        :from
+                                        *camera-master-dead-pool*
+                                        :to
+                                        *camera-pool*))))))
+  (none))
+
 (defun cam-start ((arg0 symbol))
   (cam-stop)
-  (process-spawn camera-combiner :init cam-combiner-init 0 :from *camera-dead-pool* :to *camera-pool*)
-  (set! *camera*
-        (the-as camera-master
-                (ppointer->process (process-spawn-function camera-master
-                                     cam-master-init
-                                     0
-                                     :from
-                                     *camera-master-dead-pool*
-                                     :to
-                                     *camera-pool*))))
+  (cam-start-for-pad 0)
   (if arg0 (reset-cameras))
   0
   (none))
