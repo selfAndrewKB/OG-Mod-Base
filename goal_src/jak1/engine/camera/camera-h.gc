@@ -373,6 +373,7 @@
    (force-blend-time    uint32)
    (local-down          vector :inline)
    (drawable-target     handle)
+   (tracked-target      target)             ;; Session 19: rich-path tracked process (P1=*target*, P2=p2-tgt)
    (which-bone          int32)
    (pov-handle          handle)
    (pov-bone            int32)

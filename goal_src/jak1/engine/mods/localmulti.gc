@@ -189,13 +189,14 @@
 
     ;; Session 18: rewritten to mirror P1's full init sequence from target-continue lines 124–145.
     ;; Gate: master has run at least one tick (num-slaves > 0, set inside cam-master-active :code)
-    ;;        AND wiring has not yet happened (drawable-target is #f).
-    ;; This is structurally equivalent to P1's "after two suspends" window — cam-master-init
-    ;; has completed, my-combiner/source-master are wired, and the event-hook is installed.
-    ;; Applies to both the initial spawn from start-extra-target and every respawn-after-cam-stop.
+    ;;        AND wiring has not yet happened (tracked-target is #f).
+    ;; Session 19: switched from drawable-target to tracked-target. With the new change-target
+    ;; handler, type-target processes stay out of drawable-target (it's for non-target drawables
+    ;; only now). tracked-target is what change-target sets for target-type processes, so
+    ;; `(not tracked-target)` is the correct "not yet initialized" predicate.
     (when (and p2-tgt (target-alive? p2-tgt) *camera-p2*
                (> (-> *camera-p2* num-slaves) 0)
-               (not (-> *camera-p2* drawable-target)))
+               (not (-> *camera-p2* tracked-target)))
       (when (multi-log-enabled? 'camera)
         (format 0 "[MULTI:camera]  P2 init: seeding combiner from P1 + full event sequence~%"))
       ;; Seed P2's combiner from P1's live camera state. P2 spawns physically near P1 so
