@@ -590,9 +590,15 @@
 (defbehavior cam-slave-init camera-slave ((arg0 state) (arg1 entity))
   (stack-size-set! (-> self main-thread) 512)
   ;; Phase 3G.2: bind slave to its owning master via parent back-ref.
-  ;; Slaves are spawned :to master in cam-master.gc, so parent 0 is always the camera-master.
-  ;; All cam-states.gc slave code reads (-> self my-master) instead of *camera*.
-  (set! (-> self my-master) (the-as camera-master (ppointer->process (the-as (pointer process) (-> self parent)))))
+  ;; CAVEAT: camera-voicebox (a camera-slave subclass) is spawned :to a
+  ;; process-drawable in voicebox-spawn (voicebox.gc:165), NOT to a camera-master.
+  ;; For those, leave my-master nil — the slave's :code body must use *camera*
+  ;; instead. This was the root cause of the Geyser Rock warp-portal crash.
+  (let ((parent-proc (ppointer->process (the-as (pointer process) (-> self parent)))))
+    (when (and parent-proc (= (-> parent-proc type) camera-master))
+      (set! (-> self my-master) (the-as camera-master parent-proc))))
+  ;; Inherit controller port from master so cam-stick reads the right pad.
+  (set! (-> self pad-index) (if *camera* (-> *camera* pad-index) (the-as uint 0)))
   (change-to-last-brother self)
   (if (and (nonzero? camera-slave-debug) *debug-segment*) (add-connection *debug-engine* self camera-slave-debug self #f #f))
   (cam-slave-init-vars)
