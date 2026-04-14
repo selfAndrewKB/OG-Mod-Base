@@ -24,6 +24,7 @@
 (define *multi-dbg-vehicle* #t)  ;; racer?/flutflut? transitions
 (define *multi-dbg-warp*   #f)   ;; warp teleports, distance checks
 (define *multi-dbg-detail* #t)   ;; verbose struct dumps (heavy)
+(define *multi-dbg-draw*   #f)   ;; Session 20: draw-pass camera dumps (per-pass throttled)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Logging helpers
@@ -38,6 +39,7 @@
       (('vehicle) (when *multi-dbg-vehicle* (format 0 "[MULTI:vehicle] ~A~%" msg)))
       (('warp)    (when *multi-dbg-warp*    (format 0 "[MULTI:warp]    ~A~%" msg)))
       (('detail)  (when *multi-dbg-detail*  (format 0 "[MULTI:detail]  ~A~%" msg)))
+      (('draw)    (when *multi-dbg-draw*    (format 0 "[MULTI:draw]    ~A~%" msg)))
       (else       (format 0 "[MULTI] ~A~%" msg))
       )
     )
@@ -54,6 +56,7 @@
       (('vehicle) *multi-dbg-vehicle*)
       (('warp)    *multi-dbg-warp*)
       (('detail)  *multi-dbg-detail*)
+      (('draw)    *multi-dbg-draw*)
       (else #t)
       )
     )

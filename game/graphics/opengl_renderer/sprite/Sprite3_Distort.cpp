@@ -1,4 +1,5 @@
 #include "Sprite3.h"
+#include "game/graphics/gfx.h"
 #include "game/graphics/opengl_renderer/dma_helpers.h"
 
 namespace {
@@ -497,6 +498,14 @@ void Sprite3::distort_draw(SharedRenderState* render_state, ScopedProfilerNode& 
                              m_sprite_distorter_sine_tables.color.w() / 255.0f);
   glUniform4fv(glGetUniformLocation(shader->id(), "u_color"), 1, colorf.data());
 
+  // Split-screen: remap distort UVs so each player samples from their own half.
+  {
+    const bool split = Gfx::g_global_settings.split_screen;
+    glUniform1f(glGetUniformLocation(shader->id(), "u_distort_x_scale"), split ? 0.5f : 1.0f);
+    glUniform1f(glGetUniformLocation(shader->id(), "u_distort_x_offset"),
+                (split && render_state->camera_idx == 1) ? 0.5f : 0.0f);
+  }
+
   // Bind vertex array
   glBindVertexArray(m_distort_ogl.vao);
 
@@ -550,6 +559,14 @@ void Sprite3::distort_draw_instanced(SharedRenderState* render_state, ScopedProf
                              m_sprite_distorter_sine_tables.color.z() / 255.0f,
                              m_sprite_distorter_sine_tables.color.w() / 255.0f);
   glUniform4fv(glGetUniformLocation(shader->id(), "u_color"), 1, colorf.data());
+
+  // Split-screen: remap distort UVs so each player samples from their own half.
+  {
+    const bool split = Gfx::g_global_settings.split_screen;
+    glUniform1f(glGetUniformLocation(shader->id(), "u_distort_x_scale"), split ? 0.5f : 1.0f);
+    glUniform1f(glGetUniformLocation(shader->id(), "u_distort_x_offset"),
+                (split && render_state->camera_idx == 1) ? 0.5f : 0.0f);
+  }
 
   // Bind vertex array
   glBindVertexArray(m_distort_instanced_ogl.vao);

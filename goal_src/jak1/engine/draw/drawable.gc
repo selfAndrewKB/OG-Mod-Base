@@ -1059,10 +1059,23 @@
     ;; *active-render-cam* is restored to 0 before the dotimes loop below, which is required
     ;; because that loop iterates bucket-idx 0..BUCKET_COUNT_TOTAL-1 with offset 0.
     (when (nonzero? (-> *target-list* 1))
+      ;; Phase 3G.2 Session 20 fix: merc-vu1-initialize-chain reads *math-camera*
+      ;; directly to write perspective/hvdf/fog into the Merc LowMemory struct that
+      ;; C++ Merc2 reads for shader uniforms. At this point in the frame,
+      ;; multi-draw-both-cameras has already restored P1's camera to *math-camera*,
+      ;; so without a temporary swap both init passes would write P1's perspective
+      ;; into P2's merc buckets — causing P2's characters/world geometry to render
+      ;; with P1's FOV (visible as grow/shrink when P1 is in cam-circular).
+      ;; Raw math-camera-copy! instead of activate-math-camera! because we don't
+      ;; need the expensive update-visible / work-struct sync side-effects here —
+      ;; just the field reads inside merc-vu1-initialize-chain.
+      (math-camera-copy! *math-camera-backup* *math-camera*)
+      (math-camera-copy! *math-camera* *p2-math-camera*)
       (set! *active-render-cam* 1)
       (tie-init-buffers this-calc-buf)
       (merc-vu1-init-buffers)
-      (set! *active-render-cam* 0))
+      (set! *active-render-cam* 0)
+      (math-camera-copy! *math-camera* *math-camera-backup*))
     (*post-draw-hook* (-> disp frames (-> disp on-screen) frame calc-buf))
     ;; iterate through all buckets and append a final GS state reset.
     (dotimes (bucket-idx BUCKET_COUNT_TOTAL)

@@ -368,6 +368,15 @@ bool Tie3::set_up_common_data_from_dma(DmaFollower& dma, SharedRenderState* rend
  * Does common setup for all category, but only renderers default_category.
  */
 void Tie3::render(DmaFollower& dma, SharedRenderState* render_state, ScopedProfilerNode& prof) {
+  // Split-screen fix: invalidate the cached frame_idx before attempting DMA setup.
+  // set_up_common_data_from_dma only updates frame_idx on success (non-empty bucket).
+  // In dual-pass, if pass 0 populated m_common_data with P1's camera and pass 1's bucket
+  // is empty, frame_idx would still match render_state->frame_idx, causing
+  // render_from_another (envmap draw) to reuse pass 0's P1 camera for P2's viewport.
+  // Resetting it here ensures render_from_another bails out unless the current pass
+  // actually set up fresh camera data.
+  m_common_data.frame_idx = render_state->frame_idx - 1;
+
   if (!m_enabled) {
     while (dma.current_tag_offset() != render_state->next_bucket) {
       dma.read_and_advance();

@@ -5,6 +5,10 @@
 ;; which compiles after this file. We only need its signature here.
 (define-extern target-alive? (function target basic))
 
+;; Forward declaration — multi-log-enabled? lives in engine/mods/multi-debug.gc
+;; (GAME.CGO, compiles after this file). Used by the Session 20 draw diagnostic.
+(define-extern multi-log-enabled? (function symbol symbol))
+
 ;; name: multi-draw.gc
 ;; name in dgo: multi-draw
 ;; dgos: GAME
@@ -139,6 +143,22 @@
   "Render one complete view: sky, ocean, background, foreground, bones,
    gmerc, shadow, eyes, sprite. Reads whichever math-camera is currently
    live. Called once in single-player and twice in split-screen."
+  ;; Phase 3G.2 Session 20 diagnostic: dump both camera states at the top of
+  ;; each pass. Enabled via (set! *multi-dbg-draw* #t) — throttled to every 32
+  ;; frames via base-frame-counter low bits to keep log noise manageable.
+  ;; Expected when P1 is in cam-circular and P2 is stationary in cam-string:
+  ;;   pass=0 should show P1's cam-circular persp/trans (unique values),
+  ;;   pass=1 should show P2's cam-string persp/trans (different values),
+  ;;   *p2-math-camera* should stay stable between frames.
+  (when (and (multi-log-enabled? 'draw)
+             (zero? (logand (the-as int (-> *display* base-frame-counter)) #x1f)))
+    (format 0 "[MULTI:draw] pass=~D m-cam persp00=~f trans=~f ~f ~f~%"
+            *active-render-cam*
+            (-> *math-camera* perspective vector 0 x)
+            (-> *math-camera* trans x) (-> *math-camera* trans y) (-> *math-camera* trans z))
+    (format 0 "[MULTI:draw]        p2    persp00=~f trans=~f ~f ~f~%"
+            (-> *p2-math-camera* perspective vector 0 x)
+            (-> *p2-math-camera* trans x) (-> *p2-math-camera* trans y) (-> *p2-math-camera* trans z)))
   ;; sky
   (with-profiler "sky"
     (when (zero? (logand *vu1-enable-user* (vu1-renderer-mask sky)))

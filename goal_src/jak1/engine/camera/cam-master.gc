@@ -498,48 +498,70 @@
     (send-event self 'change-state (ppointer->process gp-0) v1-48))
   #t)
 
+(defun path-cam-entity? ((ent entity))
+  ;; Phase 3G.2 Session 20: detect zero-radius cam-region entities — entity 'pivot
+  ;; and 'trans at the same world point collapse cam-circular to a spline-indexed
+  ;; point-camera. master.tpos-curr-adj indexes the campath and self.trans slides
+  ;; through 3D space as the tracked-target walks. Authored for P1's scripted path;
+  ;; P2 walking independently produces erratic spline sampling and "sliding world"
+  ;; artifacts. Returns #t if the entity should be skipped for P2.
+  (let ((piv (new 'stack-no-clear 'vector))
+        (trn (new 'stack-no-clear 'vector)))
+    (cond
+      ((not (cam-slave-get-vector-with-offset (the-as entity-actor ent) piv 'pivot)) #f)
+      (else
+       (cam-slave-get-vector-with-offset (the-as entity-actor ent) trn 'trans)
+       (< (vector-length (vector-! trn trn piv)) 4096.0)))))
+
 (defbehavior master-check-regions camera-master ()
-  (cond
-    ((send-event self 'query-state cam-eye) #f)
-    ((or (not *target*) (logtest? (-> self master-options) 1)) (master-unset-region))
-    ((and (logtest? (-> self master-options) 4)
-          (not (-> self on-ground))
-          (or (not (-> self cam-entity)) (not (logtest? #x20000 (cam-slave-get-flags (-> self cam-entity) 'flags)))))
-     #f)
-    ((and (-> self cam-entity)
-          (not (in-cam-entity-volume? (target-pos 0) (-> self cam-entity) 0.0 'cutoutvol))
-          (or (in-cam-entity-volume? (target-pos 0) (-> self cam-entity) 1024.0 'pvol)
-              (in-cam-entity-volume? (target-pos 0) (-> self cam-entity) 1024.0 'vol)
-              (and (not ((method-of-type res-lump get-property-data)
-                         (-> self cam-entity)
-                         'pvol
-                         'exact
-                         0.0
-                         (the-as pointer #f)
-                         (the-as (pointer res-tag) #f)
-                         *res-static-buf*))
-                   (not ((method-of-type res-lump get-property-data)
-                         (-> self cam-entity)
-                         'vol
-                         'exact
-                         0.0
-                         (the-as pointer #f)
-                         (the-as (pointer res-tag) #f)
-                         *res-static-buf*)))))
-     #f)
-    (else
-     (let ((v1-17 (-> *camera-engine* alive-list next0)))
-       *camera-engine*
-       (let ((gp-5 (-> v1-17 next0)))
-         (while (!= v1-17 (-> *camera-engine* alive-list-end))
-           (let ((s5-1 (-> (the-as connection v1-17) param1)))
-             (when (and (not (in-cam-entity-volume? (target-pos 0) (the-as entity s5-1) 1024.0 'cutoutvol))
-                        (in-cam-entity-volume? (target-pos 0) (the-as entity s5-1) 0.0 'vol))
-               (if (master-switch-to-entity (the-as entity s5-1)) (return #t))))
-           (set! v1-17 gp-5)
-           *camera-engine*
-           (set! gp-5 (-> gp-5 next0)))))
-     (master-unset-region))))
+  ;; Phase 3G.2 Session 20: use tracked-target so P2's master reacts to its own
+  ;; cam-region volumes rather than P1's position. tgt-pos fallback matches target-pos's
+  ;; nil-target behaviour (returns camera-pos).
+  (let ((tgt-pos (if (-> self tracked-target) (-> (-> self tracked-target) control trans) (camera-pos))))
+    (cond
+      ((send-event self 'query-state cam-eye) #f)
+      ((or (not (-> self tracked-target)) (logtest? (-> self master-options) 1)) (master-unset-region))
+      ((and (logtest? (-> self master-options) 4)
+            (not (-> self on-ground))
+            (or (not (-> self cam-entity)) (not (logtest? #x20000 (cam-slave-get-flags (-> self cam-entity) 'flags)))))
+       #f)
+      ((and (-> self cam-entity)
+            (not (in-cam-entity-volume? tgt-pos (-> self cam-entity) 0.0 'cutoutvol))
+            (or (in-cam-entity-volume? tgt-pos (-> self cam-entity) 1024.0 'pvol)
+                (in-cam-entity-volume? tgt-pos (-> self cam-entity) 1024.0 'vol)
+                (and (not ((method-of-type res-lump get-property-data)
+                           (-> self cam-entity)
+                           'pvol
+                           'exact
+                           0.0
+                           (the-as pointer #f)
+                           (the-as (pointer res-tag) #f)
+                           *res-static-buf*))
+                     (not ((method-of-type res-lump get-property-data)
+                           (-> self cam-entity)
+                           'vol
+                           'exact
+                           0.0
+                           (the-as pointer #f)
+                           (the-as (pointer res-tag) #f)
+                           *res-static-buf*)))))
+       #f)
+      (else
+       (let ((v1-17 (-> *camera-engine* alive-list next0)))
+         *camera-engine*
+         (let ((gp-5 (-> v1-17 next0)))
+           (while (!= v1-17 (-> *camera-engine* alive-list-end))
+             (let ((s5-1 (-> (the-as connection v1-17) param1)))
+               (when (and (not (in-cam-entity-volume? tgt-pos (the-as entity s5-1) 1024.0 'cutoutvol))
+                          (in-cam-entity-volume? tgt-pos (the-as entity s5-1) 0.0 'vol)
+                          ;; Phase 3G.2 Session 20: P2 skips path-cam entities. P1 still
+                          ;; enters them since its scripted gameplay indexes the spline smoothly.
+                          (or (zero? (-> self pad-index)) (not (path-cam-entity? (the-as entity s5-1)))))
+                 (if (master-switch-to-entity (the-as entity s5-1)) (return #t))))
+             (set! v1-17 gp-5)
+             *camera-engine*
+             (set! gp-5 (-> gp-5 next0)))))
+       (master-unset-region)))))
 
 (defstate cam-master-active (camera-master)
   :event
@@ -981,11 +1003,9 @@
         (when (not (paused?))
           (update! (-> self string-min) (the-as vector #f))
           (update! (-> self string-max) (the-as vector #f))
-          ;; Phase 3G.2 Session B: level-triggered region cameras (cam-fixed/cam-special)
-          ;; are scoped to P1. master-check-regions reads *target* / (target-pos 0),
-          ;; so running it for P2 would react to P1's trigger volumes. P2 stays in cam-string.
-          (when (= (-> self pad-index) (the-as uint 0))
-            (master-check-regions)))
+          ;; Phase 3G.2 Session 20: master-check-regions now reads from tracked-target, so
+          ;; both P1 and P2 masters independently react to their own cam-region volumes.
+          (master-check-regions))
         (set! (-> self string-min value x) (fmin (-> self string-min value x) (+ -4.096 (-> self string-max value x))))
         (set! (-> self string-min value y) (fmin (-> self string-min value y) (+ -4.096 (-> self string-max value y))))
         (set! (-> self string-min value z) (fmin (-> self string-min value z) (+ -4.096 (-> self string-max value z))))

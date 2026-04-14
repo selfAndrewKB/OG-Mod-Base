@@ -1376,13 +1376,22 @@ void OpenGLRenderer::dispatch_buckets_jak1(DmaFollower dma,
   };
 
   if (split) {
+    glEnable(GL_SCISSOR_TEST);
     // Pass 0: P1 → left half.
     glViewport(old_viewport[0], old_viewport[1], old_viewport[2] / 2, old_viewport[3]);
+    glScissor(old_viewport[0], old_viewport[1], old_viewport[2] / 2, old_viewport[3]);
     run_pass(0);
+    // Reset has_pc_data so pass 1 reads its own camera matrices from DMA rather
+    // than inheriting pass 0's data (which may have a different FOV/projection
+    // when P1 is in a cam-circular state).
+    m_render_state.has_pc_data = false;
     // Pass 1: P2 → right half.
     glViewport(old_viewport[0] + old_viewport[2] / 2, old_viewport[1], old_viewport[2] / 2,
                old_viewport[3]);
+    glScissor(old_viewport[0] + old_viewport[2] / 2, old_viewport[1], old_viewport[2] / 2,
+              old_viewport[3]);
     run_pass(1);
+    glDisable(GL_SCISSOR_TEST);
   } else {
     // Single-player: pass 0 draws at full viewport, pass 1 silently drains
     // the empty second half of the bucket array so the DMA follower ends at
