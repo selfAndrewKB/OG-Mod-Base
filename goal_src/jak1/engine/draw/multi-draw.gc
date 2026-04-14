@@ -23,6 +23,12 @@
 ;; its own viewport.
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Debug flag — enable via REPL: (set! *debug-multi-draw* #t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define *debug-multi-draw* #f)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Globals
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -40,29 +46,14 @@
 ;; swaps it to *p2-math-camera* while its processes run.
 (define *cam-out* *math-camera*)
 
-;; Phase 3G: P2's camera-master process (nil until P2 target spawns).
-;; Owns P2's cam-slave (which reads cpad 1) and writes to *p2-math-camera*.
-;; Declared as basic so this file doesn't need a hard dep on camera-h.
-(define *camera-p2* #f)
+;; Phase 3G.2 Session B: *camera-p2* and *camera-combiner-p2* are defined in
+;; cam-start.gc (load-order reason — cam-start's top-level (cam-start #f) call
+;; touches them via cam-stop at startup). cam-master-init / cam-combiner-init
+;; populate them when spawned with pad-idx = 1 from localmulti.gc.
 
 ;; 0 during pass 1 (P1), 1 during pass 2 (P2). Read by dma-bucket-insert-tag
 ;; to offset bucket indices into the second half of the bucket array.
 (define *active-render-cam* 0)
-
-;; P2's smoothed follow-cam position (independent spring lag so the camera
-;; doesn't rigidly track P2's character).
-(define *p2-cam-pos* (new 'global 'vector))
-(define *p2-cam-initialized?* #f)
-(define *p2-cam-spring* 0.08)
-
-;; P2 right-stick camera state.
-;; *p2-cam-yaw-dir* is a unit XZ vector pointing from P2 toward the camera
-;; (i.e. the camera sits at p2-pos + yaw-dir*dist). Rotated each frame by
-;; controller-2 right-stick X. Reset to behind P2's facing on respawn.
-(define *p2-cam-yaw-dir* (new 'global 'vector))
-;; 0..1 blend from (min-y, min-z) → (max-y, max-z) CAMERA-bank string values.
-;; Driven by controller-2 right-stick Y. 0.5 = midpoint on respawn.
-(define *p2-cam-pitch-param* 0.5)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; math-camera blob copy
@@ -85,129 +76,14 @@
   (-> *p2-math-camera* inv-camera-rot-smooth))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; P2 math-camera derivation
+;; P2 math-camera derivation — DELETED in Phase 3G.2 Session B
+;;
+;; sync-p2-math-camera-from-p1! was Phase 3F's hand-rolled spring-follow +
+;; right-stick yaw/pitch patchwork. Deleted when the native P2 cam-master +
+;; cam-combiner pipeline took over. P2's math-camera is now fully computed by
+;; update-camera-inner(*camera-combiner-p2*, *p2-math-camera*) in cam-update.gc,
+;; driven by P2's own cam-string/cam-stick slave states reading cpad 1.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defun sync-p2-math-camera-from-p1! ()
-  "Rebuild *p2-math-camera* from the current *math-camera* (P1) plus P2's
-   independent pose. Inherits all intrinsics (perspective, fov, fog,
-   hmge-scale, hvdf-off, sprite-2d, etc.) via bulk copy, then overwrites
-   pose-dependent fields with values derived from P2's spring-lerped
-   position and P2 target's facing."
-  ;; Step 1: inherit P1's intrinsics via blob copy.
-  (math-camera-copy! *p2-math-camera* *math-camera*)
-
-  (let ((p2 (get-target 1))
-        (icr (-> *p2-math-camera* inv-camera-rot)))
-    (cond
-      ((not (target-alive? p2))
-       ;; P2 not alive: leave P2 camera identical to P1 (mem-copy already did it).
-       #f)
-      (else
-       ;; Step 2: compute P2's world position (spring-lerped from *p2-cam-yaw-dir*).
-       (let ((p2-pos (-> p2 control trans))
-             (p2-fwd (new 'stack-no-clear 'vector))
-             (desired (new 'stack-no-clear 'vector))
-             (look-at (new 'stack-no-clear 'vector))
-             (fwd (new 'stack-no-clear 'vector))
-             (down (new 'stack-no-clear 'vector)))
-
-         ;; On first frame after spawn: initialise yaw-dir behind P2's facing
-         ;; and reset pitch to the mid-point.
-         (when (not *p2-cam-initialized?*)
-           (vector-z-quaternion! p2-fwd (-> p2 control quat))
-           (vector-negate! *p2-cam-yaw-dir* p2-fwd)
-           (set! (-> *p2-cam-yaw-dir* y) 0.0)
-           (let ((len (vector-length *p2-cam-yaw-dir*)))
-             (if (< len 0.001)
-               (set-vector! *p2-cam-yaw-dir* 0.0 0.0 -1.0 0.0)
-               (vector-normalize! *p2-cam-yaw-dir* 1.0)))
-           (set! *p2-cam-pitch-param* 0.5))
-
-         ;; Controller-2 right stick X → rotate *p2-cam-yaw-dir* around world-Y-down.
-         ;; Same scale and deadzone as vanilla cam-stick horizontal input.
-         (let ((yaw-delta (analog-input-horizontal-third
-                            (the-as int (-> *cpad-list* cpads 1 rightx))
-                            128.0 32.0 110.0
-                            (* 21845.334 (seconds-per-frame)))))
-           (when (!= yaw-delta 0.0)
-             (let ((rot-m (new-stack-matrix0))
-                   (world-down (new 'stack-no-clear 'vector)))
-               (set-vector! world-down 0.0 -1.0 0.0 0.0)
-               (matrix-axis-angle! rot-m world-down yaw-delta)
-               (vector-matrix*! *p2-cam-yaw-dir* *p2-cam-yaw-dir* rot-m))))
-
-         ;; Controller-2 right stick Y → adjust pitch param (dist/height blend).
-         ;; Same clamped-accumulator pattern as vanilla cam-stick vertical input.
-         (let ((pitch-delta (analog-input-vertical-third
-                              (the-as int (-> *cpad-list* cpads 1 righty))
-                              128.0 32.0 110.0 0.05)))
-           (cond
-             ((< (* 0.05 (- 1.0 *p2-cam-pitch-param*)) pitch-delta)
-              (+! *p2-cam-pitch-param* (* 0.05 (- 1.0 *p2-cam-pitch-param*))))
-             ((< pitch-delta (* 0.05 (- *p2-cam-pitch-param*)))
-              (+! *p2-cam-pitch-param* (* 0.05 (- *p2-cam-pitch-param*))))
-             (else (+! *p2-cam-pitch-param* pitch-delta))))
-         (set! *p2-cam-pitch-param* (fmax 0.0 (fmin 1.0 *p2-cam-pitch-param*)))
-
-         ;; Compute desired camera position from accumulated yaw/pitch.
-         (let ((dist   (lerp (-> *CAMERA-bank* default-string-min-z)
-                             (-> *CAMERA-bank* default-string-max-z)
-                             *p2-cam-pitch-param*))
-               (height (lerp (-> *CAMERA-bank* default-string-min-y)
-                             (-> *CAMERA-bank* default-string-max-y)
-                             *p2-cam-pitch-param*)))
-           (vector-float*! desired *p2-cam-yaw-dir* dist)
-           (vector+! desired desired p2-pos)
-           (+! (-> desired y) height))
-
-         (cond
-           ((not *p2-cam-initialized?*)
-            (vector-copy! *p2-cam-pos* desired)
-            (set! *p2-cam-initialized?* #t))
-           (else
-            (vector-lerp! *p2-cam-pos* *p2-cam-pos* desired *p2-cam-spring*)))
-
-         (vector-copy! look-at p2-pos)
-         (+! (-> look-at y) (meters 1))
-         (vector-! fwd look-at *p2-cam-pos*)
-         (vector-normalize! fwd 1.0)
-
-         ;; Gravity points UP in GOAL; negate for "down".
-         (vector-negate! down (-> *standard-dynamics* gravity))
-         (vector-normalize! down 1.0)
-
-         ;; Build inv-camera-rot from fwd+down (zeroes row 3).
-         (forward-down->inv-matrix icr fwd down)
-
-         ;; P2's world position.
-         (vector-copy! (-> *p2-math-camera* trans) *p2-cam-pos*)
-         (set! (-> *p2-math-camera* trans w) 1.0))
-
-       ;; camera-rot = transpose(inv-camera-rot); see cam-update.gc:318.
-       (matrix-transpose! (-> *p2-math-camera* camera-rot) icr)
-
-       ;; P2 has no smoothing system.
-       (matrix-copy! (-> *p2-math-camera* inv-camera-rot-smooth) icr)
-
-       ;; Step 3: rebuild camera-temp (inlined from cam-update.gc:356-368).
-       (let ((ct (-> *p2-math-camera* camera-temp))
-             (cr (-> *p2-math-camera* camera-rot))
-             (tr (-> *p2-math-camera* trans)))
-         (let ((neg-tr (new-stack-vector0)))
-           (set! (-> neg-tr x) (- (-> tr x)))
-           (set! (-> neg-tr y) (- (-> tr y)))
-           (set! (-> neg-tr z) (- (-> tr z)))
-           (set! (-> neg-tr w) 1.0)
-           (vector-matrix*! neg-tr neg-tr cr)
-           (set! (-> cr vector 3 quad) (-> neg-tr quad)))
-         (matrix*! ct cr (-> *p2-math-camera* perspective))
-         (set! (-> icr vector 3 quad) (-> tr quad)))
-
-       ;; Step 4: rebuild frustum planes for P2's camera.
-       (update-view-planes *p2-math-camera* (-> *p2-math-camera* plane) 1.0)
-       (update-view-planes *p2-math-camera* (-> *p2-math-camera* guard-plane) 4.0))))
-  (none))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; TIE/Shrub work-struct mirroring
@@ -349,11 +225,10 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun multi-draw-both-cameras ()
-  "Run draw-world-pass twice, once per camera. On entry, *math-camera* holds
-   P1 (updated by cam-update). On exit, *math-camera* holds P1 again so
-   post-draw code sees consistent state."
-  (sync-p2-math-camera-from-p1!)
-
+  "Run draw-world-pass twice, once per camera. On entry *math-camera* holds
+   P1 (finalized by update-camera-inner in cam-update.gc). *p2-math-camera*
+   holds P2 (also finalized by update-camera-inner). On exit *math-camera*
+   holds P1 again so post-draw code sees consistent state."
   ;; Pass 1: P1 (already live).
   (set! *active-render-cam* 0)
   (draw-world-pass)

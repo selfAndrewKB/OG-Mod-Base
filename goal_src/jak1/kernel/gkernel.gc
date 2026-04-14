@@ -2011,7 +2011,8 @@
 
 (define *camera-dead-pool* (new 'global 'dead-pool 7 (* 4 1024) '*camera-dead-pool*))
 
-(define *camera-master-dead-pool* (new 'global 'dead-pool 1 (* 8 1024) '*camera-master-dead-pool*))
+;; Expanded from 1→2 to hold both P1's and P2's camera-master instances.
+(define *camera-master-dead-pool* (new 'global 'dead-pool 2 (* 8 1024) '*camera-master-dead-pool*))
 
 ;; used if other pools run out of space in debug mode
 (if *debug-segment* (define *debug-dead-pool* (new 'debug 'dead-pool-heap '*debug-dead-pool* 768 (* 1024 1024))))

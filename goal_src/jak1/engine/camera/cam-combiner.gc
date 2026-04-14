@@ -250,9 +250,12 @@
           (add-frame (-> *display* frames (-> *display* on-screen) frame profile-bar 0) 'camera (new 'static 'rgba :b #xff :a #x80)))
         (suspend))))
 
-(defbehavior cam-combiner-init camera-combiner ()
+(defbehavior cam-combiner-init camera-combiner ((pad-idx int))
   (stack-size-set! (-> self main-thread) 512)
-  (set! *camera-combiner* self)
+  ;; Primary combiner sets the P1 global; secondary sets the P2 global.
+  (if (= pad-idx 0)
+    (set! *camera-combiner* self)
+    (set! *camera-combiner-p2* self))
   (vector-reset! (-> self trans))
   (matrix-identity! (-> self inv-camera-rot))
   (if *math-camera* (set! (-> self fov) (-> *math-camera* fov)) (set! (-> self fov) 11650.845))

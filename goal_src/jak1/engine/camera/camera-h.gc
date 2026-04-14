@@ -30,8 +30,15 @@
 ;; TODO - for cam-combiner
 (define-extern paused? (function symbol))
 
-;; TODO - for cam-start
-(define-extern cam-master-init (function none :behavior camera-master))
+;; Phase 3G.2 Session B: cam-master-init and cam-combiner-init now take a pad-idx.
+(define-extern cam-master-init (function int none :behavior camera-master))
+(define-extern cam-combiner-init (function int none :behavior camera-combiner))
+
+;; Phase 3G.2 Session B: P2 pipeline globals. *camera-p2* / *camera-combiner-p2*
+;; are defined in cam-start.gc (load-order), *p2-math-camera* in multi-draw.gc.
+(define-extern *camera-p2* camera-master)
+(define-extern *camera-combiner-p2* camera-combiner)
+(define-extern *p2-math-camera* math-camera)
 
 (defenum cam-slave-options
   :bitfield #t
@@ -400,6 +407,7 @@
    (water-drip-mult     float)
    (water-drip-speed    float)
    (output-cam          math-camera)  ;; Phase 3G: which math-camera this master writes to
+   (pad-index           uint32)        ;; Phase 3G.2 Session B: controller port (0=P1, 1=P2)
    (my-combiner         camera-combiner))  ;; Phase 3G.2: back-ref to owning combiner (replaces *camera-combiner* global)
   (:states
    cam-master-active

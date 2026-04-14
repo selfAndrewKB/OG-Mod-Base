@@ -3,24 +3,47 @@
 (bundles "ENGINE.CGO" "GAME.CGO")
 (require "engine/camera/cam-combiner.gc")
 
+;; Phase 3G.2 Session B: P2 pipeline nullable globals. Declared here (rather than
+;; in multi-draw.gc) so cam-start's top-level (cam-start #f) call can safely
+;; clear them via cam-stop at initial game load. multi-draw.gc and cam-update.gc
+;; see the types via camera-h.gc's define-extern declarations.
+(define *camera-p2* (the-as camera-master #f))
+(define *camera-combiner-p2* (the-as camera-combiner #f))
+
 ;; DECOMP BEGINS
 
 (defun cam-stop ()
+  ;; Session B: tear down back-refs BEFORE kill-by-name. Session A's my-combiner /
+  ;; source-master back-refs survive the kill and point into recycled memory on the
+  ;; very next frame; the combiner's :code loop then dereferences a stale pointer
+  ;; that can land inside the JIT code heap (type-confusion crash on portal warp).
+  (when *camera-combiner*
+    (set! (-> *camera-combiner* source-master) (the-as camera-master #f)))
+  (when *camera-combiner-p2*
+    (set! (-> *camera-combiner-p2* source-master) (the-as camera-master #f)))
+  (when *camera*
+    (set! (-> *camera* my-combiner) (the-as camera-combiner #f)))
+  (when *camera-p2*
+    (set! (-> *camera-p2* my-combiner) (the-as camera-combiner #f)))
   (kill-by-name 'camera-master *active-pool*)
   (kill-by-name 'camera-slave *active-pool*)
   (kill-by-name 'camera-combiner *active-pool*)
   (set! *camera* #f)
   (set! *camera-combiner* #f)
+  ;; Phase 3G.2 Session B: also tear down P2 pipeline on level transitions.
+  (set! *camera-p2* (the-as camera-master #f))
+  (set! *camera-combiner-p2* (the-as camera-combiner #f))
   (set! *camera-base-mode* cam-string)
   (none))
 
 (defun cam-start ((arg0 symbol))
   (cam-stop)
-  (process-spawn camera-combiner :init cam-combiner-init :from *camera-dead-pool* :to *camera-pool*)
+  (process-spawn camera-combiner :init cam-combiner-init 0 :from *camera-dead-pool* :to *camera-pool*)
   (set! *camera*
         (the-as camera-master
                 (ppointer->process (process-spawn-function camera-master
                                      cam-master-init
+                                     0
                                      :from
                                      *camera-master-dead-pool*
                                      :to

@@ -819,7 +819,7 @@
                             (the-as (pointer camera-slave) (process->ppointer (the-as process (-> block param 0)))))
                       (+! (-> self num-slaves) 1)
                       (logior! (-> self master-options) 8)
-                      (set! (-> (-> self my-combiner) tracking tilt-adjust target) (-> (the-as projectile (-> block param 0)) max-turn)))
+                      (set! (-> *camera-combiner* tracking tilt-adjust target) (-> (the-as projectile (-> block param 0)) max-turn)))
                      (else
                       (format 0 "ERROR: ERROR <GMJ>: Exceeded maximum number of camera slaves!~%")
                       (deactivate (the-as camera-slave (-> block param 0)))))))
@@ -849,7 +849,7 @@
                (set! (-> a1-54 from) self)
                (set! (-> a1-54 num-params) 0)
                (set! (-> a1-54 message) message)
-               (set! v0-0 (send-event-function (-> self my-combiner) a1-54))))
+               (set! v0-0 (send-event-function *camera-combiner* a1-54))))
             ((= v1-0 'toggle-slave-option)
              (logxor! (-> self slave-options) (-> block param 0))
              (let ((a0-193 (-> self slave 0))
@@ -879,13 +879,13 @@
                       (when (nonzero? (-> self num-slaves))
                         (set! (-> self slave (+ (-> self num-slaves) -1) 0 tracking no-follow) #t)
                         (vector-reset! (-> self slave (+ (-> self num-slaves) -1) 0 tracking follow-off)))
-                      (set! (-> (-> self my-combiner) tracking no-follow) #t)
-                      (set! v0-0 (-> (-> self my-combiner) tracking follow-off))
+                      (set! (-> *camera-combiner* tracking no-follow) #t)
+                      (set! v0-0 (-> *camera-combiner* tracking follow-off))
                       (.svf (&-> (the-as vector v0-0) quad) vf0)
                       v0-0)
                      ((= v1-0 'yes-follow)
                       (if (nonzero? (-> self num-slaves)) (set! (-> self slave (+ (-> self num-slaves) -1) 0 tracking no-follow) #f))
-                      (set! (-> (-> self my-combiner) tracking no-follow) #f)
+                      (set! (-> *camera-combiner* tracking no-follow) #f)
                       #f)
                      ((= v1-0 'blend-from-as-fixed)
                       (when (nonzero? (-> self num-slaves))
@@ -916,7 +916,7 @@
                         (set! (-> a1-61 param 4) (-> block param 4))
                         (set! (-> a1-61 param 5) (-> block param 5))
                         (set! (-> a1-61 param 6) (-> block param 6))
-                        (send-event-function (-> self my-combiner) a1-61)))
+                        (send-event-function *camera-combiner* a1-61)))
                      ((= v1-0 'part-water-drip)
                       (set-time! (-> self water-drip-time))
                       (set! (-> self water-drip-mult) (the-as float (-> block param 0)))
@@ -949,12 +949,13 @@
   :code
     (behavior ()
       (loop
-        ;; Phase 3G: register self as active camera and set output destination.
-        ;; In split-screen, cam-master-P1 and cam-master-P2 both run this loop
-        ;; each frame — whichever ran most recently is the "active" *camera*.
-        ;; cam-update.gc writes its output to *cam-out* (redirected via Phase 3G).
-        (set! *camera* self)
-        (set! *cam-out* (-> self output-cam))
+        ;; Phase 3G.2 Session B: only the primary (P1) master owns *camera* and
+        ;; *cam-out*. P2's master is reached via *camera-p2* and its own output-cam
+        ;; field. *cam-out* is still needed for the level-distance loop (P1-only)
+        ;; and the external-cam-mode debug paths in cam-update.gc.
+        (when (= (-> self pad-index) (the-as uint 0))
+          (set! *camera* self)
+          (set! *cam-out* (-> self output-cam)))
         (if (and *dproc* *debug-segment*)
           (add-frame (-> *display* frames (-> *display* on-screen) frame profile-bar 0)
                      'camera
@@ -973,7 +974,11 @@
         (when (not (paused?))
           (update! (-> self string-min) (the-as vector #f))
           (update! (-> self string-max) (the-as vector #f))
-          (master-check-regions))
+          ;; Phase 3G.2 Session B: level-triggered region cameras (cam-fixed/cam-special)
+          ;; are scoped to P1. master-check-regions reads *target* / (target-pos 0),
+          ;; so running it for P2 would react to P1's trigger volumes. P2 stays in cam-string.
+          (when (= (-> self pad-index) (the-as uint 0))
+            (master-check-regions)))
         (set! (-> self string-min value x) (fmin (-> self string-min value x) (+ -4.096 (-> self string-max value x))))
         (set! (-> self string-min value y) (fmin (-> self string-min value y) (+ -4.096 (-> self string-max value y))))
         (set! (-> self string-min value z) (fmin (-> self string-min value z) (+ -4.096 (-> self string-max value z))))
@@ -997,19 +1002,24 @@
   0
   (none))
 
-(defbehavior cam-master-init camera-master ()
-  (set! *camera* self)
-  ;; Phase 3G: default output is the primary *math-camera*. P2's camera-master
-  ;; overrides this to *p2-math-camera* after spawn (see localmulti.gc).
-  (set! (-> self output-cam) *math-camera*)
-  ;; Phase 3G.2: bind this master to its combiner via back-ref. cam-master-active
-  ;; reads (-> self my-combiner) on the hot path instead of the camera-combiner global.
-  (set! (-> self my-combiner) *camera-combiner*)
-  ;; And wire the combiner's source-master back-ref to this master. Note cam-combiner
-  ;; spawns BEFORE cam-master in cam-start.gc, so source-master is null for one tick —
-  ;; cam-combiner-active has a (when (-> self source-master) ...) guard covering that window.
-  (when *camera-combiner*
-    (set! (-> *camera-combiner* source-master) self))
+(defbehavior cam-master-init camera-master ((pad-idx int))
+  ;; Phase 3G.2 Session B: pad-idx=0 → primary (P1), pad-idx=1 → secondary (P2).
+  ;; Primary sets *camera* / *camera-combiner* globals and outputs to *math-camera*.
+  ;; Secondary sets *camera-p2* / *camera-combiner-p2* and outputs to *p2-math-camera*.
+  (set! (-> self pad-index) (the-as uint pad-idx))
+  (cond
+    ((= pad-idx 0)
+     (set! *camera* self)
+     (set! (-> self output-cam) *math-camera*)
+     (set! (-> self my-combiner) *camera-combiner*)
+     (when *camera-combiner*
+       (set! (-> *camera-combiner* source-master) self)))
+    (else
+     (set! *camera-p2* self)
+     (set! (-> self output-cam) *p2-math-camera*)
+     (set! (-> self my-combiner) *camera-combiner-p2*)
+     (when *camera-combiner-p2*
+       (set! (-> *camera-combiner-p2* source-master) self))))
   (stack-size-set! (-> self main-thread) 512)
   (logclear! (-> self mask) (process-mask menu))
   (set! (-> self master-options) (the-as uint 4))

@@ -1,5 +1,6 @@
 ;;-*-Lisp-*-
 (in-package goal)
+(require "engine/camera/camera-h.gc")
 
 ;; name: localmulti.gc
 ;; name in dgo: localmulti
@@ -16,9 +17,11 @@
 
 (define *multi-cheat-temp* (the-as (pointer int32) (malloc 'global 16)))  ;; 4 int32s (indices 0-3)
 
-;; Defined in engine/draw/multi-draw.gc (Phase 3F). Reset on P2 respawn so the
-;; spring camera snaps to the new position.
-(define-extern *p2-cam-initialized?* symbol)
+;; Phase 3G.2 Session B: *camera-p2* and *camera-combiner-p2* come from camera-h.gc
+;; via the require above. Process pools live in gkernel.gc and need forward decls here.
+(define-extern *camera-dead-pool* dead-pool)
+(define-extern *camera-master-dead-pool* dead-pool)
+(define-extern *camera-pool* process-tree)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Controller routing hook (called from init-target for every spawned target)
@@ -91,9 +94,9 @@
 ;; Camera helpers
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Phase 3F: *p2-cam-pos* / *p2-cam-initialized?* / *p2-cam-spring* and
-;; p2-camera-update moved into engine/draw/multi-draw.gc where the P2
-;; math-camera is authored.
+;; Phase 3G.2 Session B: P2 camera is now fully handled by its own native
+;; cam-master + cam-combiner + cam-slave pipeline. Slave reads cpad 1 directly
+;; via (-> self pad-index) (propagated from master in cam-slave-init).
 
 (defun camera-slave-state-name ()
   "Return the camera slave's current state name, or #f if no slave exists."
@@ -178,7 +181,24 @@
       )
     )
 
-  ;; Phase 3F: P2 camera is derived inside multi-draw.gc at draw time, not here.
+  ;; Phase 3G.2 Session B: P2 camera finalization runs inside update-camera's
+  ;; wrapper (cam-update.gc) via update-camera-inner(*camera-combiner-p2*, *p2-math-camera*).
+  ;;
+  ;; Detect and repair a stale P2 pipeline. If P2's target
+  ;; is alive but *camera-p2* is nil, something (e.g. P1's target-continue calling
+  ;; cam-start #t, which runs cam-stop → kill-by-name for all camera processes)
+  ;; wiped the P2 camera pipeline. Respawn it and re-wire to P2's target.
+  (let ((p2-tgt (get-target 1)))
+    (when (and p2-tgt (target-alive? p2-tgt) (not *camera-p2*))
+      (when (multi-log-enabled? 'camera)
+        (format 0 "[MULTI:camera]  P2 camera pipeline missing — respawning~%"))
+      (process-spawn camera-combiner :init cam-combiner-init 1 :from *camera-dead-pool* :to *camera-pool*)
+      (process-spawn camera-master   :init cam-master-init   1 :from *camera-master-dead-pool* :to *camera-pool*)
+      ;; Wire P2 cam to P2 target on the next frame (cam-master-init's spawned slaves need to exist first).
+      ;; change-target + change-state can still dispatch this frame via event queue.
+      (when *camera-p2*
+        (send-event *camera-p2* 'change-target p2-tgt)
+        (send-event *camera-p2* 'change-state cam-string))))
   (none)
   )
 
@@ -189,10 +209,14 @@
 (defun start-extra-target ((idx int))
   "Spawn, configure, and register a new target process for player slot idx.
    Assigns the correct controller, color, and handle. Returns the target."
-  ;; Reset P2 spring camera so it snaps to the new spawn position
+  ;; Phase 3G.2 Session B: spawn P2's native camera pipeline (combiner first,
+  ;; then master — matching the cam-start.gc P1 spawn order so dispatch order
+  ;; is deterministic). This replaces the old *p2-cam-initialized?* spring reset.
   (when (= idx 1)
-    (set! *p2-cam-initialized?* #f)
-    )
+    (when (multi-log-enabled? 'camera)
+      (format 0 "[MULTI:camera]  spawning P2 camera pipeline~%"))
+    (process-spawn camera-combiner :init cam-combiner-init 1 :from *camera-dead-pool* :to *camera-pool*)
+    (process-spawn camera-master   :init cam-master-init   1 :from *camera-master-dead-pool* :to *camera-pool*))
   (when (multi-log-enabled? 'spawn)
     (format 0 "[MULTI:spawn]   start-extra-target idx=~D~%" idx)
     )
@@ -217,6 +241,15 @@
       (format 0 "[MULTI:spawn]   sidekick: ~A~%" (ppointer->process (-> tgt sidekick)))
       )
     (multi-dump-target "post-spawn" tgt)
+    ;; Wire P2's cam-master to track P2's target process.
+    ;; change-target hits the else branch (reset-drawable-tracking) since tgt ≠ *target*.
+    ;; This is the desired behavior: snap P2's camera to P2's spawn position immediately.
+    ;; Follow with change-state cam-string so the slave starts the elastic-follow state.
+    (when (and (= idx 1) *camera-p2*)
+      (when (multi-log-enabled? 'camera)
+        (format 0 "[MULTI:camera]  wiring P2 cam-master to P2 target~%"))
+      (send-event *camera-p2* 'change-target tgt)
+      (send-event *camera-p2* 'change-state cam-string))
     tgt
     )
   )

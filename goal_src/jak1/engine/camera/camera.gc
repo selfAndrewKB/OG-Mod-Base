@@ -592,13 +592,18 @@
   ;; Phase 3G.2: bind slave to its owning master via parent back-ref.
   ;; CAVEAT: camera-voicebox (a camera-slave subclass) is spawned :to a
   ;; process-drawable in voicebox-spawn (voicebox.gc:165), NOT to a camera-master.
-  ;; For those, leave my-master nil — the slave's :code body must use *camera*
-  ;; instead. This was the root cause of the Geyser Rock warp-portal crash.
+  ;; For voicebox slaves, fall back to *camera* (P1's master). cam-states.gc
+  ;; readers dereference my-master unconditionally, so it MUST be non-nil and
+  ;; point at a real camera-master. This was the root cause of the Geyser Rock
+  ;; warp-portal crash.
   (let ((parent-proc (ppointer->process (the-as (pointer process) (-> self parent)))))
-    (when (and parent-proc (= (-> parent-proc type) camera-master))
-      (set! (-> self my-master) (the-as camera-master parent-proc))))
+    (cond
+      ((and parent-proc (= (-> parent-proc type) camera-master))
+       (set! (-> self my-master) (the-as camera-master parent-proc)))
+      (else
+       (set! (-> self my-master) *camera*))))
   ;; Inherit controller port from master so cam-stick reads the right pad.
-  (set! (-> self pad-index) (if *camera* (-> *camera* pad-index) (the-as uint 0)))
+  (set! (-> self pad-index) (if (-> self my-master) (-> self my-master pad-index) (the-as uint 0)))
   (change-to-last-brother self)
   (if (and (nonzero? camera-slave-debug) *debug-segment*) (add-connection *debug-engine* self camera-slave-debug self #f #f))
   (cam-slave-init-vars)
