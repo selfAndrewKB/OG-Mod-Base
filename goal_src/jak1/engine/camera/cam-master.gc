@@ -498,21 +498,6 @@
     (send-event self 'change-state (ppointer->process gp-0) v1-48))
   #t)
 
-(defun path-cam-entity? ((ent entity))
-  ;; Phase 3G.2 Session 20: detect zero-radius cam-region entities — entity 'pivot
-  ;; and 'trans at the same world point collapse cam-circular to a spline-indexed
-  ;; point-camera. master.tpos-curr-adj indexes the campath and self.trans slides
-  ;; through 3D space as the tracked-target walks. Authored for P1's scripted path;
-  ;; P2 walking independently produces erratic spline sampling and "sliding world"
-  ;; artifacts. Returns #t if the entity should be skipped for P2.
-  (let ((piv (new 'stack-no-clear 'vector))
-        (trn (new 'stack-no-clear 'vector)))
-    (cond
-      ((not (cam-slave-get-vector-with-offset (the-as entity-actor ent) piv 'pivot)) #f)
-      (else
-       (cam-slave-get-vector-with-offset (the-as entity-actor ent) trn 'trans)
-       (< (vector-length (vector-! trn trn piv)) 4096.0)))))
-
 (defbehavior master-check-regions camera-master ()
   ;; Phase 3G.2 Session 20: use tracked-target so P2's master reacts to its own
   ;; cam-region volumes rather than P1's position. tgt-pos fallback matches target-pos's
@@ -553,10 +538,7 @@
            (while (!= v1-17 (-> *camera-engine* alive-list-end))
              (let ((s5-1 (-> (the-as connection v1-17) param1)))
                (when (and (not (in-cam-entity-volume? tgt-pos (the-as entity s5-1) 1024.0 'cutoutvol))
-                          (in-cam-entity-volume? tgt-pos (the-as entity s5-1) 0.0 'vol)
-                          ;; Phase 3G.2 Session 20: P2 skips path-cam entities. P1 still
-                          ;; enters them since its scripted gameplay indexes the spline smoothly.
-                          (or (zero? (-> self pad-index)) (not (path-cam-entity? (the-as entity s5-1)))))
+                          (in-cam-entity-volume? tgt-pos (the-as entity s5-1) 0.0 'vol))
                  (if (master-switch-to-entity (the-as entity s5-1)) (return #t))))
              (set! v1-17 gp-5)
              *camera-engine*
