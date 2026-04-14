@@ -98,16 +98,6 @@
 ;; cam-master + cam-combiner + cam-slave pipeline. Slave reads cpad 1 directly
 ;; via (-> self pad-index) (propagated from master in cam-slave-init).
 
-(defun camera-slave-state-name ()
-  "Return the camera slave's current state name, or #f if no slave exists."
-  (let ((child (-> *camera* child)))
-    (if child
-      (-> (the-as (pointer camera-slave) child) 0 state name)
-      #f
-      )
-    )
-  )
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Per-frame logic (hooked into runs-every-frame)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -193,12 +183,38 @@
       (when (multi-log-enabled? 'camera)
         (format 0 "[MULTI:camera]  P2 camera pipeline missing — respawning~%"))
       (process-spawn camera-combiner :init cam-combiner-init 1 :from *camera-dead-pool* :to *camera-pool*)
-      (process-spawn camera-master   :init cam-master-init   1 :from *camera-master-dead-pool* :to *camera-pool*)
-      ;; Wire P2 cam to P2 target on the next frame (cam-master-init's spawned slaves need to exist first).
-      ;; change-target + change-state can still dispatch this frame via event queue.
-      (when *camera-p2*
-        (send-event *camera-p2* 'change-target p2-tgt)
-        (send-event *camera-p2* 'change-state cam-string))))
+      (process-spawn camera-master   :init cam-master-init   1 :from *camera-master-dead-pool* :to *camera-pool*))
+
+    ;; Session 17 fix: (go cam-master-active) inside cam-master-init does NOT install
+    ;; the event-hook — gstate.gc:292 schedules enter-state for the next scheduler
+    ;; dispatch and throws out of init. So any send-event that fires during the same
+    ;; frame as the master's spawn hits the null-event-hook guard in send-event-function
+    ;; and is silently dropped. We can't send the wiring events from start-extra-target
+    ;; or from the respawn block above — we must defer until the master has been
+    ;; scheduled at least once. This per-frame self-healing block handles both the
+    ;; initial spawn and every respawn-after-cam-stop without needing a flag.
+    (when (and p2-tgt (target-alive? p2-tgt) *camera-p2*)
+      ;; (1) change-target: one-shot, ends when drawable-target is non-#f.
+      (when (not (-> *camera-p2* drawable-target))
+        (when (multi-log-enabled? 'camera)
+          (format 0 "[MULTI:camera]  deferred wire: change-target P2~%"))
+        (send-event *camera-p2* 'change-target p2-tgt))
+      ;; (2) change-state cam-string: self-terminates once the first slave is out of
+      ;; cam-free-floating. Must guard num-slaves>0 because the initial slave is spawned
+      ;; async inside cam-master-active's :code and doesn't exist on the very first frame.
+      ;; Param 1 MUST be 0 to take the direct (non-blend) path in cam-master's change-state
+      ;; handler. With unset param 1, (zero? param 1) reads uninit stack garbage and
+      ;; almost always falls into the blend path, which spawns a second slave in cam-string
+      ;; and decels the existing cam-free-floating slave — producing a combiner output
+      ;; that drifts from origin instead of snapping to P2's position.
+      (when (> (-> *camera-p2* num-slaves) 0)
+        (let ((s0 (-> *camera-p2* slave 0)))
+          (when (and s0
+                     (-> (the-as (pointer camera-slave) s0) 0 next-state)
+                     (= (-> (the-as (pointer camera-slave) s0) 0 next-state name) 'cam-free-floating))
+            (when (multi-log-enabled? 'camera)
+              (format 0 "[MULTI:camera]  deferred wire: change-state cam-string P2~%"))
+            (send-event *camera-p2* 'change-state cam-string 0))))))
   (none)
   )
 
@@ -241,15 +257,11 @@
       (format 0 "[MULTI:spawn]   sidekick: ~A~%" (ppointer->process (-> tgt sidekick)))
       )
     (multi-dump-target "post-spawn" tgt)
-    ;; Wire P2's cam-master to track P2's target process.
-    ;; change-target hits the else branch (reset-drawable-tracking) since tgt ≠ *target*.
-    ;; This is the desired behavior: snap P2's camera to P2's spawn position immediately.
-    ;; Follow with change-state cam-string so the slave starts the elastic-follow state.
-    (when (and (= idx 1) *camera-p2*)
-      (when (multi-log-enabled? 'camera)
-        (format 0 "[MULTI:camera]  wiring P2 cam-master to P2 target~%"))
-      (send-event *camera-p2* 'change-target tgt)
-      (send-event *camera-p2* 'change-state cam-string))
+    ;; Session 17: wiring-event sends removed from here. They were firing during the
+    ;; same frame as cam-master-init, but (go cam-master-active) from init doesn't
+    ;; install the event-hook until the next scheduler dispatch (gstate.gc:292), so
+    ;; the events were silently dropped. Wiring now happens from localmulti-run-eachframe
+    ;; via self-healing conditional sends gated on drawable-target=#f and slave=cam-free-floating.
     tgt
     )
   )

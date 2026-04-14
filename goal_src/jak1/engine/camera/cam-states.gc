@@ -1369,7 +1369,9 @@
 ;; main third-person camera
 (defbehavior cam-string-joystick camera-slave ()
   (logand! (-> self options) -257)
-  (let ((f28-0 (cam-dist-analog-input (the-as int (-> *cpad-list* cpads 0 righty)) (the-as float 0.05)))
+  ;; Session 17: route by pad-index so P2's right stick controls P2's cam-string
+  ;; and P1's right stick does not cross-talk to P2.
+  (let ((f28-0 (cam-dist-analog-input (the-as int (-> *cpad-list* cpads (-> self pad-index) righty)) (the-as float 0.05)))
         (f0-2 (/ (- (vector-length (-> self view-flat)) (-> self string-min-val z))
                  (- (-> self string-max-val z) (-> self string-min-val z))))
         (f30-0 (-> self view-off-param)))
@@ -1411,8 +1413,8 @@
       (set! (-> self view-off z) (lerp (-> self string-min-val z) (-> self string-max-val z) (-> self view-off-param))))
     (if (-> (-> self my-master) being-attacked) (set! (-> self view-off-param) f30-0)))
   (when *camera-read-analog*
-    (let ((f0-29 (analog-input-horizontal-third ;; changed for pc port
-                   (the-as int (-> *cpad-list* cpads 0 rightx))
+    (let ((f0-29 (analog-input-horizontal-third ;; changed for pc port; Session 17: route by pad-index
+                   (the-as int (-> *cpad-list* cpads (-> self pad-index) rightx))
                    (the-as float 128.0)
                    (the-as float 32.0)
                    (the-as float 110.0)

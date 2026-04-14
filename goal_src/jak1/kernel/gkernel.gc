@@ -2009,7 +2009,10 @@
 (define *target-dead-pool* (new 'global 'dead-pool NUM_MAX_TARGET (* 48 1024) '*target-dead-pool*))
 (format 0 "[MULTI] pools scaled: 16k-count=~D target-count=~D~%" NUM_MAX_TARGET NUM_MAX_TARGET)
 
-(define *camera-dead-pool* (new 'global 'dead-pool 7 (* 4 1024) '*camera-dead-pool*))
+;; Phase 3G.2 Session 17: expanded from 7→14 for split-screen. Each P1/P2 pipeline needs
+;; 1 combiner + 1 list-keeper + up to 2 slaves (blend transitions) + voicebox slaves.
+;; 2 players × 4 base slots = 8, + headroom for voiceboxes / multi-slave transitions = 14.
+(define *camera-dead-pool* (new 'global 'dead-pool 14 (* 4 1024) '*camera-dead-pool*))
 
 ;; Expanded from 1→2 to hold both P1's and P2's camera-master instances.
 (define *camera-master-dead-pool* (new 'global 'dead-pool 2 (* 8 1024) '*camera-master-dead-pool*))

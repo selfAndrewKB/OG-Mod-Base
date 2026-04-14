@@ -282,14 +282,19 @@
         (else (cam-standard-event-handler proc argc message block))))
   :enter
     (behavior ()
+      ;; Phase 3G.2 Session 17: send 'stop-tracking via the slave's own master-back-ref
+      ;; (my-master my-combiner), not the *camera-combiner* global. When a P2 slave
+      ;; spawns in cam-free-floating (which happens on every cam-master-init via the
+      ;; initial process-spawn-function), the old code hit P1's combiner and froze
+      ;; P1's rotation by zeroing tracking-status.
       (when (not (-> self enter-has-run))
         (set! (-> self blend-from-type) (the-as uint 1))
         (set! (-> self blend-to-type) (the-as uint 1))
-        (send-event *camera-combiner* 'stop-tracking)))
+        (send-event (-> self my-master my-combiner) 'stop-tracking)))
   :code
     (behavior ()
       (loop
-        (let ((a2-0 (-> *camera* local-down)))
+        (let ((a2-0 (-> self my-master local-down)))
           (if (logtest? (-> self options) 8) (set! a2-0 (the-as vector #f)))
           (cam-free-floating-move (the-as matrix (-> self tracking)) (-> self trans) a2-0 (the-as int (-> *CAMERA-bank* joypad))))
         (suspend))))

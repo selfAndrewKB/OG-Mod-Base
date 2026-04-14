@@ -115,9 +115,6 @@
       (new 'stack 'transformq)
       (cond
         ((not (string= (-> arg0 name) "default"))
-         (when (multi-log-enabled? 'camera)
-           (format 0 "[MULTI:camera] target-continue(named) self=~A is-primary?=~A~%"
-                   (-> self name) (= self *target*)))
          ;; Phase 3G: the entire named-branch camera init — cam-start, the direct
          ;; *camera-combiner* trans/rot write, and the change-target/state events —
          ;; must only run for the primary player. Secondary targets spawned via
@@ -147,9 +144,6 @@
            (send-event *camera* 'change-state cam-fixed 0)
            (send-event *camera* 'change-state cam-string 0)))
         (else
-         (when (multi-log-enabled? 'camera)
-           (format 0 "[MULTI:camera] target-continue(default) self=~A is-primary?=~A~%"
-                   (-> self name) (= self *target*)))
          (when (= self *target*)
            (send-event *camera* 'change-target self)
            (send-event *camera* 'change-state cam-string 0)
