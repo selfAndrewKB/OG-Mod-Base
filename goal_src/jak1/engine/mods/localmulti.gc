@@ -72,6 +72,48 @@
   (vector-copy! (-> jakA control trans) (-> jakB control trans))
   )
 
+(defun multi-warp-all-to-p1 ()
+  "Teleport every alive secondary player to P1's current position, unconditionally.
+   General-purpose primitive; most call sites should prefer multi-warp-secondaries-in-level
+   to avoid yanking a player who happens to be somewhere unrelated to the trigger."
+  (when *target*
+    (let ((idx 1))
+      (while (< idx (-> *target-list* length))
+        (let ((tgt (get-target idx)))
+          (when (target-alive? tgt)
+            (warp-jakA-to-jakB tgt *target*)))
+        (set! idx (+ idx 1)))))
+  (none))
+
+(defun target-in-level? ((tgt target) (lev level))
+  "Return #t if tgt's world position is physically inside lev's BSP boxes.
+   Uses the engine's own point-in-boxes? test — the same function the engine
+   calls every frame against *math-camera* to set (-> lev inside-boxes?) for P1.
+   This is an exact AABB containment check, not a distance approximation, so it
+   gives an authoritative answer regardless of how large/overlapping bspheres are.
+   Returns #f if lev has no BSP or no boxes (e.g. during loading transitions)."
+  (and (-> lev bsp)
+       (nonzero? (-> lev bsp boxes))
+       (point-in-boxes? lev (-> tgt control trans))))
+
+(defun multi-warp-secondaries-in-level ((lev level))
+  "Teleport each alive secondary player to P1 ONLY if their world position is
+   physically inside lev's BSP boxes (via target-in-level? → point-in-boxes?).
+   Used by the three level-unload hook points in engine/level/level.gc
+   (special-vis transition, turn off / deactivate, and final discard) so that a
+   P2 peacefully exploring the Village is not yanked to P1 just because the
+   Beach is unloading. No-op in single-player."
+  (when *target*
+    (let ((idx 1))
+      (while (< idx (-> *target-list* length))
+        (let ((tgt (get-target idx)))
+          (when (and (target-alive? tgt) (target-in-level? tgt lev))
+            (when (multi-log-enabled? 'warp)
+              (format 0 "[MULTI:warp]    lev-unload ~A → warping tgt ~D~%" (-> lev name) idx))
+            (warp-jakA-to-jakB tgt *target*)))
+        (set! idx (+ idx 1)))))
+  (none))
+
 (defun check-multi-jak-dist ((jak target))
   "Return #t if jak is too far from *target* and should be warped back.
    Suppressed during launch / high-jump states to avoid mid-air teleports."

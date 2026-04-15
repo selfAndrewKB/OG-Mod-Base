@@ -1134,6 +1134,10 @@
               (if (= (-> s4-0 name) (-> this want a1-2 name)) (set! a0-6 #t)))
             (when (not a0-6)
               (format 0 "Discarding level ~A~%" (-> s4-0 name))
+              ;; Split-screen safety: warp secondary players to P1 before the level
+              ;; geometry unloads. Only players actually standing in s4-0 get warped;
+              ;; a P2 in an unrelated active level is left alone.
+              (multi-warp-secondaries-in-level s4-0)
               (level-status-set! s4-0 'inactive)
               (set! v1-0 #t)
               (#when PC_PORT
@@ -1191,9 +1195,18 @@
                      ((not (-> this want s5-2 display?))
                       (set! (-> s3-1 display?) #f)
                       (format 0 "Turning level ~A off~%" (-> s3-1 name))
+                      ;; Split-screen: level is being deactivated — entities killed,
+                      ;; some levels lose their floor here. Only warp players actually
+                      ;; standing in s3-1; leave players in other active levels alone.
+                      (multi-warp-secondaries-in-level s3-1)
                       (deactivate s3-1))
                      (else
                       (format 0 "Setting level ~A display command to ~A~%" (-> this want s5-2 name) (-> this want s5-2 display?))
+                      ;; Split-screen: transitioning to special-vis makes the level a
+                      ;; low-poly shell with entities gone and some floors missing.
+                      ;; Only warp players actually standing in s3-1.
+                      (when (= (-> this want s5-2 display?) 'special-vis)
+                        (multi-warp-secondaries-in-level s3-1))
                       (set! (-> s3-1 display?) (-> this want s5-2 display?)))))))
               (when (!= (-> s3-1 force-all-visible?) (-> this want s5-2 force-vis?))
                 (set! (-> s3-1 force-all-visible?) (-> this want s5-2 force-vis?))

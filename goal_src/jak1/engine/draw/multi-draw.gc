@@ -257,7 +257,7 @@
   (none))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Vis-bits save / merge helpers
+;; Vis-bits save / merge / all-visible helpers
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun vis-bits-snapshot! ((buf pointer))
@@ -296,6 +296,25 @@
             (set! (-> dst j) (logior (-> p1-src j) (-> p2-src j))))))))
   (none))
 
+(defun vis-bits-set-all-visible! ()
+  "For each active level, copy bsp.all-visible-list into lev.vis-bits.
+   This tells the per-pass background renderer (finish-background →
+   add-pc-port-background-data) that every BSP cell is potentially visible,
+   effectively disabling BSP occlusion culling for the upcoming draw pass.
+   Frustum culling still operates normally per-pass via *math-camera*.
+   Called once per camera pass in split-screen mode (Option A fix)."
+  (dotimes (i (-> *level* length))
+    (let ((lev (-> *level* level i)))
+      (when (and (= (-> lev status) 'active)
+                 (-> lev vis-bits)
+                 (nonzero? (-> lev bsp)))
+        (let ((qwords (min 128 (/ (+ (-> lev bsp visible-list-length) 15) 16))))
+          (when (> qwords 0)
+            (quad-copy! (-> lev vis-bits)
+                        (-> lev bsp all-visible-list)
+                        qwords))))))
+  (none))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Dual-pass orchestration
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -304,34 +323,43 @@
   "Run draw-world-pass twice, once per camera. On entry *math-camera* holds
    P1 (finalized by update-camera-inner in cam-update.gc). *p2-math-camera*
    holds P2 (also finalized by update-camera-inner). On exit *math-camera*
-   holds P1 again so post-draw code sees consistent state."
-  ;; Pass 1: P1 (already live).
+   holds P1 again so post-draw code sees consistent state.
+
+   Split-screen vis-bits strategy (Session 22.1 + 22.2):
+   - Snapshot each camera's actual (leaf-specific) vis-bits BEFORE widening,
+     so vis-bits-merge-restore! can give actors-update the P1|P2 union.
+   - Widen lev.vis-bits to all-visible BEFORE each draw pass so the background
+     renderer (finish-background → add-pc-port-background-data) uploads an
+     unconstrained vis-string and walls/crates render regardless of which BSP
+     leaf either camera currently occupies."
+  ;; Pass 1: P1 camera is already live in *math-camera* (finalized by update-camera).
   (set! *active-render-cam* 0)
+  ;; Snapshot P1's camera-specific vis-bits BEFORE widening so actors-update
+  ;; later receives the real P1 visible set (not all-visible).
+  (vis-bits-snapshot! (the pointer *p1-vis-save*))
+  ;; Widen to all-visible so the background renderer draws all geometry that
+  ;; falls inside P1's frustum, regardless of BSP leaf boundaries.
+  (vis-bits-set-all-visible!)
   (draw-world-pass)
 
-  ;; Save P1's vis-bits NOW, before activate-math-camera! for P2 overwrites them.
-  ;; The camera system already ran update-visible for P1 this frame; these are
-  ;; the canonical P1-camera vis-bits. We must snapshot them here because P1's
-  ;; restore update-visible may or may not succeed later.
-  (vis-bits-snapshot! (the pointer *p1-vis-save*))
-
-  ;; Save P1 math-camera, activate P2, run pass 2.
+  ;; Activate P2 camera: update-visible writes P2's leaf-specific vis into
+  ;; lev.vis-bits, replacing the all-visible state we just set.
   (math-camera-copy! *math-camera-backup* *math-camera*)
   (activate-math-camera! *p2-math-camera*)
+  ;; Snapshot P2's camera-specific vis-bits BEFORE widening.
+  (vis-bits-snapshot! (the pointer *p2-vis-save*))
+  ;; Widen to all-visible for P2's background pass.
+  (vis-bits-set-all-visible!)
   (set! *active-render-cam* 1)
   (draw-world-pass)
 
-  ;; Save P2's vis-bits (written by activate-math-camera! P2 → update-visible).
-  (vis-bits-snapshot! (the pointer *p2-vis-save*))
-
-  ;; Restore P1 for post-draw code (update-visible for P1 camera runs here, but
-  ;; we do not rely on its result — vis-bits-merge-restore! overwrites it below).
+  ;; Restore P1 for post-draw code (update-visible for P1 runs here, but we
+  ;; do not rely on its result — vis-bits-merge-restore! overwrites it below).
   (activate-math-camera! *math-camera-backup*)
   (set! *active-render-cam* 0)
 
   ;; Forcefully set vis-bits = P1_saved | P2_saved.  actors-update now sees the
-  ;; union of both cameras' visible sets regardless of whether P1's restore
-  ;; update-visible succeeded.  An entity visible to either player is kept alive;
-  ;; an entity invisible to both is correctly culled.
+  ;; union of both cameras' real visible sets — actors near either player stay
+  ;; alive.  An entity invisible to both cameras is correctly culled.
   (vis-bits-merge-restore!)
   (none))
