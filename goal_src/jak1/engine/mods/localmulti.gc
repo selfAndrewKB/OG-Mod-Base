@@ -33,6 +33,11 @@
 ;; Forward decl: start-extra-target is defined later in this file but called
 ;; from localmulti-run-eachframe (which appears earlier).
 (define-extern start-extra-target (function int target))
+;; One-shot hand-off to init-target: set both before calling start-extra-target
+;; and init-target will end in (go target-warp-in dst launch) instead of
+;; (go target-continue arg0). See engine/target/logic-target.gc.
+(define-extern *multi-spawn-warp-dst* vector)
+(define-extern *multi-spawn-warp-launch* vector)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Controller routing hook (called from init-target for every spawned target)
@@ -54,19 +59,6 @@
 (defun target-alive? ((tgt target))
   "Return #t if the given target process is live."
   (and tgt (nonzero? (-> tgt state)))
-  )
-
-(defun extra-target-alive? ()
-  "Return #t if any secondary target (index 1+) is currently alive."
-  (let ((idx 1))
-    (while (< idx (-> *target-list* length))
-      (when (target-alive? (get-target idx))
-        (return #t)
-        )
-      (set! idx (+ idx 1))
-      )
-    )
-  #f
   )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -108,19 +100,6 @@
   ;; landing is guaranteed soft.
   (set! (-> jakA control ground-impact-vel) 0.0)
   )
-
-(defun multi-warp-all-to-p1 ()
-  "Teleport every alive secondary player to P1's current position, unconditionally.
-   General-purpose primitive; most call sites should prefer multi-warp-secondaries-in-level
-   to avoid yanking a player who happens to be somewhere unrelated to the trigger."
-  (when *target*
-    (let ((idx 1))
-      (while (< idx (-> *target-list* length))
-        (let ((tgt (get-target idx)))
-          (when (target-alive? tgt)
-            (warp-jakA-to-jakB tgt *target*)))
-        (set! idx (+ idx 1)))))
-  (none))
 
 (defun target-in-level? ((tgt target) (lev level))
   "Return #t if tgt's world position is physically inside lev's BSP boxes.
@@ -218,34 +197,6 @@
         (set! idx (+ idx 1)))))
   (none))
 
-(defun check-multi-jak-dist ((jak target))
-  "Return #t if jak is too far from *target* and should be warped back.
-   Suppressed during launch / high-jump states to avoid mid-air teleports."
-  (case (-> jak state)
-    ((target-launch target-duck-high-jump target-duck-high-jump-jump)
-      #f
-      )
-    (else
-      (> (vector-vector-distance (-> jak control trans) (target-pos 0)) (meters 75.0))
-      )
-    )
-  )
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Vehicle-section state detection
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(define *multi-racer?* #f)
-(define *multi-flutflut?* #f)
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Camera helpers
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; Phase 3G.2 Session B: P2 camera is now fully handled by its own native
-;; cam-master + cam-combiner + cam-slave pipeline. Slave reads cpad 1 directly
-;; via (-> self pad-index) (propagated from master in cam-slave-init).
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Per-frame logic (hooked into runs-every-frame)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -295,54 +246,35 @@
     (when (multi-log-enabled? 'spawn)
       (format 0 "[MULTI:spawn]   co-op active — P2 missing, respawning (P1 state: ~A)~%"
               (-> *target* state name)))
-    (start-extra-target 1))
-
-  ;; Update racer / flutflut flags based on *target*'s current state
-  (set! *multi-racer?*
-    (aif *target*
-      (case (-> it state name)
-        (('target-racing
-          'target-racing-bounce
-          'target-racing-death
-          'target-racing-falling
-          'target-racing-grab
-          'target-racing-hit
-          'target-racing-jump
-          'target-racing-smack
-          'target-racing-start) #t)
-        )
-      )
-    )
-  (set! *multi-flutflut?*
-    (aif *target*
-      (case (-> it state name)
-        (('target-flut-air-attack
-          'target-flut-air-attack-hit-ground
-          'target-flut-double-jump
-          'target-flut-falling
-          'target-flut-grab
-          'target-flut-hit
-          'target-flut-hit-ground
-          'target-flut-jump
-          'target-flut-running-attack
-          'target-flut-stance
-          'target-flut-start
-          'target-flut-walk) #t)
-        )
-      )
-    )
-
-  ;; Phase 3G: drawable-target override removed. Forcing *camera* drawable-target
-  ;; every frame triggered reset-drawable-tracking in cam-master, snapping all
-  ;; smoothing accumulators and causing a visible jolt on P2 spawn. P1's camera
-  ;; already tracks *target* through the normal cam-master path — no override needed. In the Phase 3F dual-pass
-  ;; architecture P2's camera is fully independent of P1's, so there is
-  ;; no reason to alter P1's camera state (cam-string → cam-stick) or
-  ;; to reset the camera during racer/flutflut sections.  P1's camera
-  ;; is now handled entirely by vanilla cam-update.
-  ;;
-  ;; *multi-racer?* / *multi-flutflut?* are still updated above in case
-  ;; we need them for future vehicle-mode logic (e.g. spring tuning).
+    ;; If P1 is mid-portal (in target-warp-in), hand P1's portal anchors to
+    ;; init-target via the warp-anchors globals so P2's init-target ends in
+    ;; (go target-warp-in ...) and plays the hop-out animation in sync.
+    ;; Otherwise, normal target-continue spawn.
+    (let ((p1-in-warp (= (-> *target* state name) 'target-warp-in))
+          (dst (new 'stack-no-clear 'vector))
+          (launch (new 'stack-no-clear 'vector)))
+      (when p1-in-warp
+        ;; dst = P1's v102 with the -4096 y offset pre-compensated
+        ;; (target-warp-out's :enter re-applies that offset on P2).
+        (vector-copy! dst (-> *target* control unknown-vector102))
+        (+! (-> dst y) 4096.0)
+        ;; launch = dst + P1's forward vector * ~1m.
+        ;;
+        ;; target-warp-in's :trans computes transv from xz-normalize(v103 - v102)
+        ;; every frame, and :code calls set-heading-vec! transv at the end of
+        ;; the hop-out to derive yaw. For a near-vertical portal (P1's real
+        ;; v103 ≈ v102 in XZ), that normalization is float-unstable and P2 can
+        ;; end up facing the opposite way from P1. Constructing launch as a
+        ;; P1-forward offset guarantees (v103 - v102) XZ is non-zero and
+        ;; points exactly in P1's forward direction, so P2's final heading
+        ;; matches P1's facing cleanly.
+        (let ((p1-fwd (vector-z-quaternion! (new 'stack-no-clear 'vector)
+                                            (-> *target* control quat))))
+          (vector-copy! launch dst)
+          (vector+float*! launch launch p1-fwd (meters 1.0)))
+        (set! *multi-spawn-warp-dst* dst)
+        (set! *multi-spawn-warp-launch* launch))
+      (start-extra-target 1)))
 
   ;; Warp secondary players to *target* only on explicit request (all four
   ;; shoulder buttons held). Auto-warp on distance was removed Session 22:
@@ -486,16 +418,6 @@
       )
     )
   (none)
-  )
-
-(defun localmulti-start-all ((x int))
-  "Spawn extra targets for player slots 1 through x-1."
-  (let ((idx 1))
-    (while (< idx x)
-      (localmulti-start idx)
-      (set! idx (+ idx 1))
-      )
-    )
   )
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

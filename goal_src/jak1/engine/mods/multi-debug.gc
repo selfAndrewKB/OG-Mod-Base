@@ -10,50 +10,37 @@
 ;;   (set! *multi-dbg* #t)          ;; master switch
 ;;   (set! *multi-dbg-spawn* #t)    ;; spawn/despawn events
 ;;   (set! *multi-dbg-camera* #t)   ;; camera management
-;;   (set! *multi-dbg-vehicle* #t)  ;; racer/flutflut detection
-;;   (set! *multi-dbg-warp* #t)     ;; warp/distance checks
+;;   (set! *multi-dbg-warp* #t)     ;; warp teleports
 ;;   (set! *multi-dbg-detail* #t)   ;; verbose field dumps
+;;   (set! *multi-dbg-draw* #t)     ;; split-screen draw-pass transitions
+;;
+;; Gate all log calls through multi-log-enabled? and emit inline via format;
+;; do NOT build intermediate strings — the helper that did so was removed.
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Switches
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define *multi-dbg*        #t)   ;; master — #f silences everything
-(define *multi-dbg-spawn*  #t)   ;; spawn, despawn, sidekick lifecycle
-(define *multi-dbg-camera* #t)   ;; camera target changes, mode switches (Phase 3G observation run)
-(define *multi-dbg-vehicle* #t)  ;; racer?/flutflut? transitions
+;; All categories default to #f — toggle individually from the REPL when
+;; observing a specific system. Leaving any of these #t ships verbose logs.
+(define *multi-dbg*        #f)   ;; master — #f silences everything
+(define *multi-dbg-spawn*  #f)   ;; spawn, despawn, sidekick lifecycle
+(define *multi-dbg-camera* #f)   ;; camera target changes, mode switches
 (define *multi-dbg-warp*   #f)   ;; warp teleports, distance checks
-(define *multi-dbg-detail* #t)   ;; verbose struct dumps (heavy)
+(define *multi-dbg-detail* #f)   ;; verbose struct dumps (heavy)
 (define *multi-dbg-draw*   #f)   ;; split-screen activation transitions + per-pass dumps
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Logging helpers
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun multi-log ((cat symbol) (msg string))
-  "Print [MULTI:<cat>] msg if the master switch AND category are enabled."
-  (when *multi-dbg*
-    (case cat
-      (('spawn)   (when *multi-dbg-spawn*   (format 0 "[MULTI:spawn]   ~A~%" msg)))
-      (('camera)  (when *multi-dbg-camera*  (format 0 "[MULTI:camera]  ~A~%" msg)))
-      (('vehicle) (when *multi-dbg-vehicle* (format 0 "[MULTI:vehicle] ~A~%" msg)))
-      (('warp)    (when *multi-dbg-warp*    (format 0 "[MULTI:warp]    ~A~%" msg)))
-      (('detail)  (when *multi-dbg-detail*  (format 0 "[MULTI:detail]  ~A~%" msg)))
-      (('draw)    (when *multi-dbg-draw*    (format 0 "[MULTI:draw]    ~A~%" msg)))
-      (else       (format 0 "[MULTI] ~A~%" msg))
-      )
-    )
-  (none)
-  )
-
 (defun multi-log-enabled? ((cat symbol))
-  "Return #t if master + category are both enabled. Use for gating expensive
-   format calls that build strings inline."
+  "Return #t if master + category are both enabled. Gate inline `format` calls
+   with this so the hot path does no work when logging is off."
   (and *multi-dbg*
     (case cat
       (('spawn)   *multi-dbg-spawn*)
       (('camera)  *multi-dbg-camera*)
-      (('vehicle) *multi-dbg-vehicle*)
       (('warp)    *multi-dbg-warp*)
       (('detail)  *multi-dbg-detail*)
       (('draw)    *multi-dbg-draw*)

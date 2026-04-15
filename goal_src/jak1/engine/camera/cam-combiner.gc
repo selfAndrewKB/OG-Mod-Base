@@ -21,7 +21,10 @@
          (set! (-> self interp-val) 0.0)
          (set! (-> self interp-step) (/ 5.0 (the float (-> block param 0)))))
         (('teleport)
-         (when (nonzero? (-> self tracking-status))
+         ;; source-master nil guard: narrow race between cam-stop clearing
+         ;; source-master and kill-by-name destroying the combiner. Without
+         ;; it, a teleport fanned out during that window crashes cam-calc-follow!.
+         (when (and (nonzero? (-> self tracking-status)) (-> self source-master))
            (cam-calc-follow! (-> self tracking) (-> self trans) #f (-> self source-master))
            (slave-set-rotation! (-> self tracking) (-> self trans) (the-as float (-> self tracking-options)) (-> self fov) #f (-> self source-master))))
         (('stop-tracking) (set! (-> self tracking-status) (the-as uint 0)) 0)
@@ -262,6 +265,11 @@
   (set! (-> self interp-val) 0.0)
   (set! (-> self interp-step) 0.125)
   (set! (-> self tracking-status) (the-as uint 0))
+  ;; Dead-pool slots are not zero-cleared across lifetimes. The :code loop
+  ;; reads source-master unconditionally on its first tick, before any master
+  ;; has had a chance to write it. Initialize explicitly so the nil guards
+  ;; below (line 24, line 104) are the sole authority on "is a master bound."
+  (set! (-> self source-master) (the-as camera-master #f))
   (vector-reset! (-> self velocity))
   (go cam-combiner-active)
   0

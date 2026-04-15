@@ -718,7 +718,11 @@
                       (if (= (-> (the-as camera-slave (-> s2-0 0)) blend-to-type) 2)
                         (send-event (-> self my-combiner) 'start-tracking (if s2-0 (-> (the-as camera-slave (-> s2-0 0)) self))))))
                    ((zero? (-> block param 1))
-                    (if *math-camera* (set! (-> *math-camera* reset) 1))
+                    ;; Phase 3G: reset THIS master's own output camera, not the
+                    ;; P1 global. When P2 receives 'change-state cam-base-mode 0
+                    ;; (from multi-snap-camera-for-idx), the old code pulsed
+                    ;; *math-camera* reset and caused a one-frame P1 glitch.
+                    (if (-> self output-cam) (set! (-> self output-cam reset) 1))
                     (when (< 1 (-> self num-slaves))
                       (if (= (-> self changer) (-> self slave 1)) (set! s5-2 (-> self slave 1)) (deactivate (-> self slave 1 0)))
                       (set! (-> self slave 1) (the-as (pointer camera-slave) #f))

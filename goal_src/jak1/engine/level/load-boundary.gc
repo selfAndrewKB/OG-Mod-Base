@@ -10,7 +10,6 @@
 ;; Split-screen co-op: level-unload-triggered warps. Defined in
 ;; engine/mods/localmulti.gc (GAME.CGO). Safe to forward-declare here because
 ;; GAME.CGO is fully loaded before any frame runs that calls update! on load-state.
-(define-extern multi-warp-all-to-p1 (function none))
 (define-extern multi-warp-secondaries-in-level (function level none))
 
 ;; DECOMP BEGINS

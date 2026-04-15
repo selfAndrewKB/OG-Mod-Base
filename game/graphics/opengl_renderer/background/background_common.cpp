@@ -229,18 +229,6 @@ std::array<math::Vector4f, 4> make_new_cam_mat(const math::Vector4f cam_T_w[4],
   return result;
 }
 
-namespace {
-math::Matrix4f matrix_from_col_vectors(const math::Vector4f* vectors) {
-  math::Matrix4f ret;
-  for (int c = 0; c < 4; c++) {
-    for (int r = 0; r < 4; r++) {
-      ret(r, c) = vectors[c][r];
-    }
-  }
-  return ret;
-}
-}  // namespace
-
 void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
                             SharedRenderState* render_state,
                             ShaderId shader) {

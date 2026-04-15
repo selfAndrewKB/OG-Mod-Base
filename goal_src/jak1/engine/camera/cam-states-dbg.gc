@@ -296,7 +296,10 @@
       (loop
         (let ((a2-0 (-> self my-master local-down)))
           (if (logtest? (-> self options) 8) (set! a2-0 (the-as vector #f)))
-          (cam-free-floating-move (the-as matrix (-> self tracking)) (-> self trans) a2-0 (the-as int (-> *CAMERA-bank* joypad))))
+          ;; Use the slave's own pad-index, not the global *CAMERA-bank* joypad
+          ;; (which is always 0). Before this fix, P2's free-floating slave read
+          ;; P1's stick during the brief window before wiring transitioned it.
+          (cam-free-floating-move (the-as matrix (-> self tracking)) (-> self trans) a2-0 (the-as int (-> self pad-index))))
         (suspend))))
 
 (deftype camera-orbit-info (structure)

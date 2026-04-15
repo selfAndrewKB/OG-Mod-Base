@@ -510,16 +510,6 @@ namespace {
 void set_uniform(GLuint uniform, const math::Vector4f& val) {
   glUniform4f(uniform, val.x(), val.y(), val.z(), val.w());
 }
-
-math::Matrix4f matrix_from_col_vectors(const math::Vector4f* vectors) {
-  math::Matrix4f ret;
-  for (int c = 0; c < 4; c++) {
-    for (int r = 0; r < 4; r++) {
-      ret(r, c) = vectors[c][r];
-    }
-  }
-  return ret;
-}
 }  // namespace
 
 void init_etie_cam_uniforms(const EtieUniforms& uniforms,

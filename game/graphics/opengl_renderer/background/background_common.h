@@ -4,6 +4,19 @@
 
 #include "game/graphics/opengl_renderer/BucketRenderer.h"
 
+// Build a Matrix4f from four column vectors (GOAL stores its camera matrices
+// this way). Used by every background/foreground renderer that uploads a
+// camera uniform. Header-inline so each TU inlines the copy.
+inline math::Matrix4f matrix_from_col_vectors(const math::Vector4f* vectors) {
+  math::Matrix4f ret;
+  for (int c = 0; c < 4; c++) {
+    for (int r = 0; r < 4; r++) {
+      ret(r, c) = vectors[c][r];
+    }
+  }
+  return ret;
+}
+
 struct GoalBackgroundCameraData {
   math::Vector4f planes[4];
   math::Vector<s32, 4> itimes[4];

@@ -1364,11 +1364,17 @@ void OpenGLRenderer::dispatch_buckets_jak1(DmaFollower dma,
       }
       ASSERT(dma.current_tag_offset() == m_render_state.next_bucket);
       m_render_state.next_bucket += 16;
-      vif_interrupt_callback(bucket_id);
+      // Fire the profiler callback exactly once per logical bucket per frame,
+      // regardless of pass count. Otherwise split-screen double-counts into
+      // display.gc's profile bar.
+      if (cam_idx == 0) {
+        vif_interrupt_callback(bucket_id);
+      }
       m_category_times[(int)m_bucket_categories[bucket_id]] += bucket_prof.get_elapsed_time();
 
       // Collision debug draw — pass 0 only, once per frame.
-      if (cam_idx == 0 && bucket_id == 31 - 1 && Gfx::g_global_settings.collision_enable) {
+      if (cam_idx == 0 && bucket_id == (size_t)jak1::BucketId::SHRUB_GENERIC_LEVEL1 &&
+          Gfx::g_global_settings.collision_enable) {
         auto p = prof.make_scoped_child("collision-draw");
         m_collide_renderer.render(&m_render_state, p);
       }
@@ -1395,13 +1401,14 @@ void OpenGLRenderer::dispatch_buckets_jak1(DmaFollower dma,
   } else {
     // Single-player: pass 0 draws at full viewport, pass 1 silently drains
     // the empty second half of the bucket array so the DMA follower ends at
-    // the expected final offset.
-    glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
+    // the expected final offset. Viewport is unchanged from entry, so no
+    // pre-run glViewport is needed — the unconditional restore below covers
+    // the split-screen case.
     run_pass(0);
     run_pass(1);
   }
 
-  // Restore original viewport.
+  // Restore original viewport (split-screen left it at the right-half rect).
   glViewport(old_viewport[0], old_viewport[1], old_viewport[2], old_viewport[3]);
 
   // TODO ending data.
