@@ -65,11 +65,35 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun warp-jakA-to-jakB ((jakA target) (jakB target))
-  "Teleport jakA to jakB's current position."
+  "Teleport jakA to jakB's current position. Zeros velocity + clears physics
+   status flags to avoid fall-damage / mid-air landing animations when jakA
+   was falling pre-warp. The sync of unknown-qword00 to the new trans prevents
+   next-frame physics from computing a giant travel delta against the old
+   position (which would collide with intervening geometry at high speed).
+   Mirrors the minimal subset of reset-target-state (logic-target.gc:1160)
+   that makes sense for a mid-game warp — we skip the dynamics/surface resets
+   since jakA stays in whatever level it was in."
   (when (multi-log-enabled? 'warp)
     (format 0 "[MULTI:warp]    ~A -> ~A~%" (-> jakA name) (-> jakB name))
     )
   (vector-copy! (-> jakA control trans) (-> jakB control trans))
+  (set! (-> jakA control transv quad) (the-as uint128 0))
+  (set! (-> jakA control status) (cshape-moving-flags))
+  (set! (-> (&-> (-> jakA control) unknown-qword00) 0) (-> jakA control trans quad))
+  ;; unknown-vector52 is the fall-start / last-safe-ground position. target.gc:1163
+  ;; computes fall distance as dot(gravity, vec52 - current_trans), and target.gc:1164
+  ;; triggers target-hit-ground-hard if that exceeds *TARGET-bank* fall-far. Without
+  ;; resetting it, a P2 warped down from a ledge gets a massive computed fall distance
+  ;; even though their actual airborne time was zero. The engine exposes this reset
+  ;; via the 'reset-height event (target-handler.gc:136) — direct mutation is
+  ;; equivalent and avoids the send-event indirection.
+  (set! (-> jakA control unknown-vector52 quad) (-> jakA control trans quad))
+  ;; ground-impact-vel is computed from transv dot gravity at each collision tick
+  ;; (collide-reaction-target.gc:182) but cached across frames. target.gc:1171 reads
+  ;; it in target-hit-ground's :enter BEFORE the next collision pass updates it, so
+  ;; a stale pre-warp value still triggers the stumble threshold. Zero it here so the
+  ;; landing is guaranteed soft.
+  (set! (-> jakA control ground-impact-vel) 0.0)
   )
 
 (defun multi-warp-all-to-p1 ()
@@ -96,6 +120,62 @@
        (nonzero? (-> lev bsp boxes))
        (point-in-boxes? lev (-> tgt control trans))))
 
+;; Set by multi-warp-secondaries-in-level when a warp fires mid-frame (during
+;; load-state::update!, which runs AFTER process dispatch). Consumed at the top
+;; of the NEXT frame by localmulti-run-eachframe, which executes BEFORE process
+;; dispatch via the runs-every-frame hook — matching the frame-position of the
+;; manual L1+L2+R1+R2 warp, which snaps cleanly from that slot.
+(define *multi-pending-snap* #f)
+
+(defun multi-snap-camera-for-idx ((idx int))
+  "Snap the secondary player's camera to its target position without spring
+   smoothing. Must be called from a pre-process-dispatch context (top of frame)
+   for reliable results — cam-master-active's :code loop consumes spring state
+   during process dispatch, so a snap fired after dispatch this frame lands in
+   stale output. Used directly by the manual L1+L2+R1+R2 warp in
+   localmulti-run-eachframe. The level-unload path cannot call this directly
+   (it fires from load-state::update!, post-dispatch) — it raises
+   *multi-pending-snap* instead, which run-eachframe consumes next frame.
+
+   Today only idx=1 (P2) has a native master; additional slots are silent no-ops."
+  (when (= idx 1)
+    (when (and *camera-p2* (nonzero? (-> *camera-p2* num-slaves)))
+      (when (multi-log-enabled? 'warp)
+        (let ((slave-state-name (if (> (-> *camera-p2* num-slaves) 0)
+                                  (-> *camera-p2* slave 0 0 next-state name)
+                                  'no-slave)))
+          (format 0 "[MULTI:warp]    snap-cam p2 master=#x~X tracked-target=#x~X master-options=#x~X slave0-state=~A num-slaves=~D~%"
+                  *camera-p2* (-> *camera-p2* tracked-target) (-> *camera-p2* master-options)
+                  slave-state-name (-> *camera-p2* num-slaves))))
+      ;; Kill all four independent interpolators and any stale cam-entity binding:
+      ;;
+      ;;   'clear-entity → master-unset-region: clears cam-entity, restores default
+      ;;                   string lengths, AND internally fires change-state
+      ;;                   *camera-base-mode* with (seconds 1.5) — that 1.5s blend
+      ;;                   is the ROOT cause of the "catch-up" we kept chasing when
+      ;;                   P2 warps out of a cam-entity-bound state. Must override.
+      ;;   'change-state *camera-base-mode* 0
+      ;;                 → hard-cut override. Time-param 0 hits the branch at
+      ;;                   cam-master.gc:720 which deactivates both slaves of a
+      ;;                   mid-blend transition, spawns a fresh slave in base mode,
+      ;;                   and bypasses the outro blend entirely. This is what
+      ;;                   collapses num-slaves back to 1 and gets slave 0 into
+      ;;                   cam-string instantly instead of cam-decel.
+      ;;   'teleport     → master spring (reset-target-tracking) + fans out to
+      ;;                   slaves (snap trans via cam-calc-follow!) and combiner.
+      ;;                   cam-string handles this with a real spline re-index.
+      ;;   'no-intro     → slave's cam-string intro-curve ramp (intro-t). Also
+      ;;                   makes master zero outro-t at cam-master.gc:762 so any
+      ;;                   leftover combiner blend lerp is collapsed.
+      ;;   'force-blend 0→ combiner's cross-fade (interp-val / force-blend-time)
+      ;; Miss any one and you get partial catch-up.
+      (send-event *camera-p2* 'clear-entity)
+      (send-event *camera-p2* 'change-state *camera-base-mode* 0)
+      (send-event *camera-p2* 'no-intro)
+      (send-event *camera-p2* 'force-blend 0)
+      (send-event *camera-p2* 'teleport)))
+  (none))
+
 (defun multi-warp-secondaries-in-level ((lev level))
   "Teleport each alive secondary player to P1 ONLY if their world position is
    physically inside lev's BSP boxes (via target-in-level? → point-in-boxes?).
@@ -110,7 +190,10 @@
           (when (and (target-alive? tgt) (target-in-level? tgt lev))
             (when (multi-log-enabled? 'warp)
               (format 0 "[MULTI:warp]    lev-unload ~A → warping tgt ~D~%" (-> lev name) idx))
-            (warp-jakA-to-jakB tgt *target*)))
+            (warp-jakA-to-jakB tgt *target*)
+            ;; Can't snap directly — we're inside load-state::update!, which runs
+            ;; post-dispatch this frame. Latch for next frame's run-eachframe.
+            (set! *multi-pending-snap* #t)))
         (set! idx (+ idx 1)))))
   (none))
 
@@ -149,6 +232,16 @@
 (defun localmulti-run-eachframe ()
   "Main per-frame co-op update. Updates vehicle state, manages camera,
    handles racer/flutflut sections, and warps lagging players back."
+
+  ;; Consume any pending camera snap latched from a post-dispatch context
+  ;; (e.g. multi-warp-secondaries-in-level firing from load-state::update!).
+  ;; This runs pre-dispatch via runs-every-frame, so cam-master-active's next
+  ;; :code iteration sees fully-reset state.
+  (when *multi-pending-snap*
+    (when (multi-log-enabled? 'warp)
+      (format 0 "[MULTI:warp]    consuming pending snap~%"))
+    (multi-snap-camera-for-idx 1)
+    (set! *multi-pending-snap* #f))
 
   ;; Update racer / flutflut flags based on *target*'s current state
   (set! *multi-racer?*
@@ -209,6 +302,7 @@
           (when (and (cpad-hold? idx l1) (cpad-hold? idx l2)
                      (cpad-hold? idx r1) (cpad-hold? idx r2))
             (warp-jakA-to-jakB tgt *target*)
+            (multi-snap-camera-for-idx idx)
             )
           )
         )
