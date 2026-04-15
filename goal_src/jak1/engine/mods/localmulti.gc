@@ -17,6 +17,12 @@
 
 (define *multi-cheat-temp* (the-as (pointer int32) (malloc 'global 16)))  ;; 4 int32s (indices 0-3)
 
+;; Set to #t the first time P2 is spawned. Never cleared. When #t, P2 is
+;; automatically re-spawned if its handle becomes stale (e.g. after an edge-case
+;; level transition that kills extra target processes). Also used by
+;; split-screen-should-render? (multi-draw.gc) indirectly via *target-list*.
+(define *multi-coop-active* #f)
+
 ;; Phase 3G.2 Session B: *camera-p2* and *camera-combiner-p2* come from camera-h.gc
 ;; via the require above. Process pools live in gkernel.gc and need forward decls here.
 (define-extern *camera-dead-pool* dead-pool)
@@ -24,6 +30,9 @@
 (define-extern *camera-pool* process-tree)
 ;; Session 18: shared pad-aware spawn helper defined in cam-start.gc
 (define-extern cam-start-for-pad (function int none))
+;; Forward decl: start-extra-target is defined later in this file but called
+;; from localmulti-run-eachframe (which appears earlier).
+(define-extern start-extra-target (function int target))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Controller routing hook (called from init-target for every spawned target)
@@ -77,6 +86,10 @@
     (format 0 "[MULTI:warp]    ~A -> ~A~%" (-> jakA name) (-> jakB name))
     )
   (vector-copy! (-> jakA control trans) (-> jakB control trans))
+  ;; Nudge jakA to jakB's right so the two models don't occupy the same point.
+  ;; vector-x-quaternion! extracts jakB's local +X axis (world-space right).
+  (let ((right-vec (vector-x-quaternion! (new 'stack-no-clear 'vector) (-> jakB control quat))))
+    (vector+float*! (-> jakA control trans) (-> jakA control trans) right-vec (meters 2.0)))
   (set! (-> jakA control transv quad) (the-as uint128 0))
   (set! (-> jakA control status) (cshape-moving-flags))
   (set! (-> (&-> (-> jakA control) unknown-qword00) 0) (-> jakA control trans quad))
@@ -126,6 +139,14 @@
 ;; dispatch via the runs-every-frame hook — matching the frame-position of the
 ;; manual L1+L2+R1+R2 warp, which snaps cleanly from that slot.
 (define *multi-pending-snap* #f)
+
+;; Set by start-extra-target after spawning P2. target-continue's :code re-runs
+;; move-to-point! before its first vis-loop suspend (where process-spawn returns),
+;; so the warp in start-extra-target races against subsequent target-continue
+;; resumptions that happen inside execute-math-engine. Consuming this flag in
+;; runs-every-frame (pre-dispatch) guarantees the offset is applied BEFORE
+;; execute-math-engine submits P2's first draw data.
+(define *multi-pending-initial-offset* #f)
 
 (defun multi-snap-camera-for-idx ((idx int))
   "Snap the secondary player's camera to its target position without spring
@@ -242,6 +263,39 @@
       (format 0 "[MULTI:warp]    consuming pending snap~%"))
     (multi-snap-camera-for-idx 1)
     (set! *multi-pending-snap* #f))
+
+  ;; Consume the initial-offset latch set by start-extra-target. target-continue's
+  ;; :code calls move-to-point! before its first vis-loop suspend, which is where
+  ;; process-spawn returns — so the warp in start-extra-target is applied to the
+  ;; right location, but target-continue may keep running across frames and undo it
+  ;; before the first draw tick. Re-applying here (pre-dispatch) guarantees P2's
+  ;; first execute-math-engine tick sees the offset position.
+  (when (and *multi-pending-initial-offset* *target*)
+    (let ((p2-tgt (get-target 1)))
+      (when (target-alive? p2-tgt)
+        (when (multi-log-enabled? 'warp)
+          (format 0 "[MULTI:warp]    applying initial spawn offset for P2~%"))
+        (warp-jakA-to-jakB p2-tgt *target*)))
+    (set! *multi-pending-initial-offset* #f))
+
+  ;; Permanent co-op guard: if co-op was ever activated but P2's handle is stale
+  ;; (process died or was unloaded during a level transition), re-spawn.
+  ;; Gate on P1 being past target-continue: that state persists for the entire
+  ;; level-load vis-wait loop after initialize!/save-load. Spawning P2 before
+  ;; target-continue exits means init-target runs into an unloaded world and
+  ;; crashes the boot-game task. Any non-transition state means the level is active.
+  ;; Also suppressed during movies so we don't disturb the pov-camera system.
+  (when (and *multi-coop-active*
+             (target-alive? *target*)
+             (not (case (-> *target* state name)
+                    (('target-continue 'target-death) #t)
+                    (else #f)))
+             (not (real-movie?))
+             (not (target-alive? (get-target 1))))
+    (when (multi-log-enabled? 'spawn)
+      (format 0 "[MULTI:spawn]   co-op active — P2 missing, respawning (P1 state: ~A)~%"
+              (-> *target* state name)))
+    (start-extra-target 1))
 
   ;; Update racer / flutflut flags based on *target*'s current state
   (set! *multi-racer?*
@@ -378,6 +432,11 @@
                    :stack *kernel-dram-stack*
                    ) 0)))
     (warp-jakA-to-jakB tgt *target*)
+    ;; target-continue's :code re-applies move-to-point! across multiple frames
+    ;; before reaching target-stance. Latch a flag so localmulti-run-eachframe
+    ;; re-applies the offset pre-dispatch on the next frame, guaranteeing P2's
+    ;; first draw tick sees the correct position.
+    (set! *multi-pending-initial-offset* #t)
     (set! (-> *target-list* idx) (process->handle tgt))
     (case idx
       ((1) (draw-green tgt))
@@ -417,6 +476,11 @@
           )
         (else
           (start-extra-target tgt-idx)
+          ;; Once P2 is spawned, permanently mark co-op as active. The
+          ;; auto-respawn logic in localmulti-run-eachframe will keep P2
+          ;; alive for the rest of the session regardless of level transitions.
+          (when (= tgt-idx 1)
+            (set! *multi-coop-active* #t))
           )
         )
       )

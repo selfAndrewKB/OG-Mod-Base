@@ -769,7 +769,10 @@
 
   ;; Signal dual-pass mode to the C++ dispatcher *before* any DMA is emitted,
   ;; so dispatch_buckets_jak1 configures viewports correctly when it runs.
-  (__pc-set-split-screen-active (if (nonzero? (-> *target-list* 1)) 1 0))
+  ;; Suppressed during cutscenes — split-screen-should-render? gates on both
+  ;; P2 alive and (not (real-movie?)) so C++ collapses to full-screen for the
+  ;; pov-camera system automatically.
+  (__pc-set-split-screen-active (if (split-screen-should-render?) 1 0))
 
   ;; todo shrub matrix
   ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -830,9 +833,11 @@
   (when (logtest? (vu1-renderer-mask sprite) *vu1-enable-user*)
     (swap-fake-shadow-buffers))
 
-  ;; Dual-pass dispatch.
+  ;; Dual-pass dispatch. During cutscenes split-screen-should-render? returns
+  ;; #f so we fall through to single-screen; P2 stays alive and split-screen
+  ;; resumes automatically the frame after the movie ends.
   (cond
-    ((nonzero? (-> *target-list* 1))
+    ((split-screen-should-render?)
      (multi-draw-both-cameras))
     (else
      (set! *active-render-cam* 0)
@@ -1058,7 +1063,9 @@
     ;; Phase 3F: pass-1 (P2) splice — only when split-screen is active.
     ;; *active-render-cam* is restored to 0 before the dotimes loop below, which is required
     ;; because that loop iterates bucket-idx 0..BUCKET_COUNT_TOTAL-1 with offset 0.
-    (when (nonzero? (-> *target-list* 1))
+    ;; Mirrors split-screen-should-render? gate from the draw dispatch above so no
+    ;; orphaned P2 DMA init tags are emitted while a cutscene is playing.
+    (when (split-screen-should-render?)
       ;; Phase 3G.2 Session 20 fix: merc-vu1-initialize-chain reads *math-camera*
       ;; directly to write perspective/hvdf/fog into the Merc LowMemory struct that
       ;; C++ Merc2 reads for shader uniforms. At this point in the frame,

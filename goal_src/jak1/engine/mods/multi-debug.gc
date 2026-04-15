@@ -24,7 +24,7 @@
 (define *multi-dbg-vehicle* #t)  ;; racer?/flutflut? transitions
 (define *multi-dbg-warp*   #f)   ;; warp teleports, distance checks
 (define *multi-dbg-detail* #t)   ;; verbose struct dumps (heavy)
-(define *multi-dbg-draw*   #f)   ;; Session 20: draw-pass camera dumps (per-pass throttled)
+(define *multi-dbg-draw*   #f)   ;; split-screen activation transitions + per-pass dumps
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Logging helpers

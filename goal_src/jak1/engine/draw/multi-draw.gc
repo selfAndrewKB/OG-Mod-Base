@@ -9,6 +9,10 @@
 ;; (GAME.CGO, compiles after this file). Used by the Session 20 draw diagnostic.
 (define-extern multi-log-enabled? (function symbol symbol))
 
+;; *camera-p2* is defined in ENGINE.CGO cam-start.gc. Forward-declared here so
+;; split-screen-should-render? can read the tracked-target readiness field.
+(define-extern *camera-p2* camera-master)
+
 ;; name: multi-draw.gc
 ;; name in dgo: multi-draw
 ;; dgos: GAME
@@ -74,6 +78,52 @@
 
 (define *p1-vis-save* (new 'global 'vis-save-buf))
 (define *p2-vis-save* (new 'global 'vis-save-buf))
+
+;; Tracks the previous frame's split-screen-should-render? result so the
+;; transition log fires exactly once on re-activation (not every frame).
+(define *split-screen-prev-active* #f)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Split-screen render predicate
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun split-screen-should-render? ()
+  "Return #t when split-screen rendering is appropriate this frame.
+   Guards (evaluated in order):
+   1. (target-alive? (get-target 1)) — P2's process must be live. Handles the
+      save-load path where reset-actors kills P2's process but leaves a non-zero
+      stale handle in *target-list* 1. nonzero? alone is not sufficient here.
+   2. (not (real-movie?)) — pov-camera cutscenes expect a single full-screen
+      viewport. Spool-based tutorial hints also set movie? = #t.
+   3. (not (paused?)) — pause/progress menus render full-screen HUD overlays.
+   4. *camera-p2* — camera pipeline must exist (nil after cam-stop kills it).
+   5. (nonzero? tracked-target) — pipeline must be fully wired. tracked-target
+      is nil immediately after cam-start-for-pad; it becomes non-nil only when
+      localmulti-run-eachframe sends the 'change-target event. Blocking until
+      this is set prevents activate-math-camera!(*p2-math-camera*) from running
+      update-visible with stale vis-string pointers that may reference levels
+      unloaded during a death/continue sequence (crashes #2 and #3).
+   Called from: drawable.gc (__pc-set-split-screen-active, dispatch cond,
+   display-frame-finish merc/TIE init guard)."
+  (let ((result (and (target-alive? (get-target 1))
+                     (not (real-movie?))
+                     (not (paused?))
+                     *camera-p2*
+                     (nonzero? (-> *camera-p2* tracked-target)))))
+    ;; Log the exact frame split-screen re-activates so crash #3 can be
+    ;; correlated against warp/camera logs if it persists after these fixes.
+    (when (and result (not *split-screen-prev-active*))
+      (when (multi-log-enabled? 'draw)
+        (format 0 "[MULTI:draw]  split-screen ACTIVE: p2-alive=~A movie=~A paused=~A cam-p2=#x~X tracked=#x~X~%"
+                (target-alive? (get-target 1))
+                (real-movie?)
+                (paused?)
+                *camera-p2*
+                (if *camera-p2* (-> *camera-p2* tracked-target) 0))))
+    ;; (and ...) returns type basic when the chain includes a basic-returning
+    ;; function; coerce to symbol so the type matches *split-screen-prev-active*.
+    (set! *split-screen-prev-active* (if result #t #f))
+    result))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; math-camera blob copy
