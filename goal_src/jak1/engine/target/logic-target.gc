@@ -1186,11 +1186,15 @@
 (defun-extern runs-on-tgt-int none)
 
 ;; Split-screen co-op: set by localmulti.gc before spawning P2 via init-target.
-;; When non-#f, init-target finishes with (go target-warp-in dst launch)
-;; instead of (go target-continue arg0), and clears both globals. Used for
-;; portal-aware P2 respawn so the hop-out animation plays in sync with P1.
-(define *multi-spawn-warp-dst* (the-as vector #f))
-(define *multi-spawn-warp-launch* (the-as vector #f))
+;; When *multi-spawn-warp-active* is #t, init-target finishes with
+;; (go target-warp-in *multi-spawn-warp-dst* *multi-spawn-warp-launch*)
+;; instead of (go target-continue arg0). Vectors are allocated on the global heap
+;; (NOT stack-no-clear) so the addresses remain valid when init-target runs on
+;; the kernel DRAM stack inside process-spawn. localmulti.gc writes values into
+;; them with vector-copy! then sets *multi-spawn-warp-active* #t.
+(define *multi-spawn-warp-dst* (new 'global 'vector))
+(define *multi-spawn-warp-launch* (new 'global 'vector))
+(define *multi-spawn-warp-active* #f)
 
 (defbehavior init-target target ((arg0 continue-point))
   (runs-on-tgt-int)
@@ -1294,16 +1298,13 @@
   (set! (-> self event-hook) target-generic-event-handler)
   (set! (-> self current-level) #f)
   (level-setup)
-  ;; Split-screen co-op: if the warp-anchors globals are set, jump directly
-  ;; into target-warp-in instead of target-continue. Consumed one-shot so
-  ;; subsequent init-target calls fall back to the normal path.
+  ;; Split-screen co-op: if the warp-anchors are active, jump directly into
+  ;; target-warp-in instead of target-continue. Consumed one-shot so subsequent
+  ;; init-target calls fall back to the normal path.
   (cond
-    (*multi-spawn-warp-dst*
-      (let ((dst *multi-spawn-warp-dst*)
-            (launch *multi-spawn-warp-launch*))
-        (set! *multi-spawn-warp-dst* (the-as vector #f))
-        (set! *multi-spawn-warp-launch* (the-as vector #f))
-        (go target-warp-in dst launch)))
+    (*multi-spawn-warp-active*
+      (set! *multi-spawn-warp-active* #f)
+      (go target-warp-in *multi-spawn-warp-dst* *multi-spawn-warp-launch*))
     (else
       (go target-continue arg0)))
   (none))

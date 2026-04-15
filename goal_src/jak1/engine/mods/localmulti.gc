@@ -33,11 +33,15 @@
 ;; Forward decl: start-extra-target is defined later in this file but called
 ;; from localmulti-run-eachframe (which appears earlier).
 (define-extern start-extra-target (function int target))
-;; One-shot hand-off to init-target: set both before calling start-extra-target
-;; and init-target will end in (go target-warp-in dst launch) instead of
-;; (go target-continue arg0). See engine/target/logic-target.gc.
+;; One-shot hand-off to init-target: write dst/launch into the heap-persistent
+;; globals and set *multi-spawn-warp-active* #t before calling start-extra-target.
+;; init-target will then end in (go target-warp-in *multi-spawn-warp-dst* *multi-spawn-warp-launch*)
+;; instead of (go target-continue arg0). See engine/target/logic-target.gc.
+;; IMPORTANT: these are heap-allocated (new 'global 'vector) in logic-target.gc.
+;; Use vector-copy! to write values — never store a stack pointer in them.
 (define-extern *multi-spawn-warp-dst* vector)
 (define-extern *multi-spawn-warp-launch* vector)
+(define-extern *multi-spawn-warp-active* object)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Controller routing hook (called from init-target for every spawned target)
@@ -250,30 +254,27 @@
     ;; init-target via the warp-anchors globals so P2's init-target ends in
     ;; (go target-warp-in ...) and plays the hop-out animation in sync.
     ;; Otherwise, normal target-continue spawn.
-    (let ((p1-in-warp (= (-> *target* state name) 'target-warp-in))
-          (dst (new 'stack-no-clear 'vector))
-          (launch (new 'stack-no-clear 'vector)))
+    (let ((p1-in-warp (= (-> *target* state name) 'target-warp-in)))
       (when p1-in-warp
+        ;; Write directly into the heap-persistent globals — never store a
+        ;; stack-no-clear pointer, which dies when this frame returns before
+        ;; target-warp-in:enter reads the quad inside process-spawn.
+        ;;
         ;; dst = P1's v102 with the -4096 y offset pre-compensated
         ;; (target-warp-out's :enter re-applies that offset on P2).
-        (vector-copy! dst (-> *target* control unknown-vector102))
-        (+! (-> dst y) 4096.0)
-        ;; launch = dst + P1's forward vector * ~1m.
+        (vector-copy! *multi-spawn-warp-dst* (-> *target* control unknown-vector102))
+        (+! (-> *multi-spawn-warp-dst* y) 4096.0)
+        ;; launch = P1's v103 directly (the destination continue-point position).
+        ;; target-warp-in:trans computes transv.xz = (v103 - v102).xz each frame,
+        ;; and :code calls set-heading-vec!(transv) after (suspend-for (seconds 1)).
+        ;; Mirroring P1's v103 gives P2 the identical heading as P1.
         ;;
-        ;; target-warp-in's :trans computes transv from xz-normalize(v103 - v102)
-        ;; every frame, and :code calls set-heading-vec! transv at the end of
-        ;; the hop-out to derive yaw. For a near-vertical portal (P1's real
-        ;; v103 ≈ v102 in XZ), that normalization is float-unstable and P2 can
-        ;; end up facing the opposite way from P1. Constructing launch as a
-        ;; P1-forward offset guarantees (v103 - v102) XZ is non-zero and
-        ;; points exactly in P1's forward direction, so P2's final heading
-        ;; matches P1's facing cleanly.
-        (let ((p1-fwd (vector-z-quaternion! (new 'stack-no-clear 'vector)
-                                            (-> *target* control quat))))
-          (vector-copy! launch dst)
-          (vector+float*! launch launch p1-fwd (meters 1.0)))
-        (set! *multi-spawn-warp-dst* dst)
-        (set! *multi-spawn-warp-launch* launch))
+        ;; DO NOT use vector-z-quaternion!(P1.control.quat): P1.control.quat is stale
+        ;; during the first second of target-warp-in — it was last updated in
+        ;; target-warp-out when P1 faced INTO the source portal, which is 180°
+        ;; opposite the correct arrival direction. [CONFIRMED Session 25]
+        (vector-copy! *multi-spawn-warp-launch* (-> *target* control unknown-vector103))
+        (set! *multi-spawn-warp-active* #t))
       (start-extra-target 1)))
 
   ;; Warp secondary players to *target* only on explicit request (all four
