@@ -59,6 +59,22 @@
 ;; to offset bucket indices into the second half of the bucket array.
 (define *active-render-cam* 0)
 
+;; Phase 3G.2 Session 22: vis-bits save/merge buffers.
+;; level-group has at most 3 levels; each level's vis-buffer is ≤2048 bytes
+;; (128 uint128 quad-words). Layout: level i stored at byte offset i*2048.
+;; *p1-vis-save* — P1's vis-bits saved BEFORE P2's update-visible overwrites them.
+;; *p2-vis-save* — P2's vis-bits saved AFTER P2's draw pass.
+;; After both passes vis-bits are forcefully set to P1|P2 so actors-update
+;; sees entities visible to either player.
+;;
+;; GOAL's new 'global 'inline-array doesn't accept primitive types, so we wrap
+;; the raw bytes in a simple structure. 3 levels × 2048 bytes = 6144 bytes.
+(deftype vis-save-buf (structure)
+  ((data uint8 6144)))
+
+(define *p1-vis-save* (new 'global 'vis-save-buf))
+(define *p2-vis-save* (new 'global 'vis-save-buf))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; math-camera blob copy
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -241,6 +257,46 @@
   (none))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Vis-bits save / merge helpers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun vis-bits-snapshot! ((buf pointer))
+  "Copy each active level's vis-bits into buf.
+   Level i occupies buf bytes [i*2048 .. i*2048+qwords*16-1]."
+  (dotimes (i (-> *level* length))
+    (let ((lev (-> *level* level i)))
+      (when (and (= (-> lev status) 'active)
+                 (-> lev vis-bits)
+                 (nonzero? (-> lev bsp)))
+        (let ((qwords (min 128 (/ (+ (-> lev bsp visible-list-length) 15) 16))))
+          (when (> qwords 0)
+            (quad-copy! (the pointer (+ (the-as int buf) (* i 2048)))
+                        (-> lev vis-bits)
+                        qwords))))))
+  (none))
+
+(defun vis-bits-merge-restore! ()
+  "Forcefully set each active level's vis-bits to (*p1-vis-save* | *p2-vis-save*).
+   This runs after both draw passes so actors-update sees the union of both
+   cameras' visible sets. Using saved P1 data (not P1's restore update-visible
+   result) is critical — if update-visible fails for P1, vis-bits would otherwise
+   remain at P2's values and actors-update would kill P1-visible entities.
+   Uses uint64 pairs per quad-word for compiler safety."
+  (dotimes (i (-> *level* length))
+    (let ((lev (-> *level* level i)))
+      (when (and (= (-> lev status) 'active)
+                 (-> lev vis-bits)
+                 (nonzero? (-> lev bsp)))
+        (let* ((qwords (min 128 (/ (+ (-> lev bsp visible-list-length) 15) 16)))
+               ;; Each quad-word = 16 bytes = 2 uint64s.
+               (dst    (the (pointer uint64) (-> lev vis-bits)))
+               (p1-src (the (pointer uint64) (+ (the-as int *p1-vis-save*) (* i 2048))))
+               (p2-src (the (pointer uint64) (+ (the-as int *p2-vis-save*) (* i 2048)))))
+          (dotimes (j (* qwords 2))
+            (set! (-> dst j) (logior (-> p1-src j) (-> p2-src j))))))))
+  (none))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Dual-pass orchestration
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -253,13 +309,29 @@
   (set! *active-render-cam* 0)
   (draw-world-pass)
 
-  ;; Save P1, activate P2, run pass 2.
+  ;; Save P1's vis-bits NOW, before activate-math-camera! for P2 overwrites them.
+  ;; The camera system already ran update-visible for P1 this frame; these are
+  ;; the canonical P1-camera vis-bits. We must snapshot them here because P1's
+  ;; restore update-visible may or may not succeed later.
+  (vis-bits-snapshot! (the pointer *p1-vis-save*))
+
+  ;; Save P1 math-camera, activate P2, run pass 2.
   (math-camera-copy! *math-camera-backup* *math-camera*)
   (activate-math-camera! *p2-math-camera*)
   (set! *active-render-cam* 1)
   (draw-world-pass)
 
-  ;; Restore P1 for post-draw code.
+  ;; Save P2's vis-bits (written by activate-math-camera! P2 → update-visible).
+  (vis-bits-snapshot! (the pointer *p2-vis-save*))
+
+  ;; Restore P1 for post-draw code (update-visible for P1 camera runs here, but
+  ;; we do not rely on its result — vis-bits-merge-restore! overwrites it below).
   (activate-math-camera! *math-camera-backup*)
   (set! *active-render-cam* 0)
+
+  ;; Forcefully set vis-bits = P1_saved | P2_saved.  actors-update now sees the
+  ;; union of both cameras' visible sets regardless of whether P1's restore
+  ;; update-visible succeeded.  An entity visible to either player is kept alive;
+  ;; an entity invisible to both is correctly culled.
+  (vis-bits-merge-restore!)
   (none))

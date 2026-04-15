@@ -155,16 +155,17 @@
   ;; *multi-racer?* / *multi-flutflut?* are still updated above in case
   ;; we need them for future vehicle-mode logic (e.g. spring tuning).
 
-  ;; Warp secondary players to *target* if they hold all four shoulder buttons, or are too far
+  ;; Warp secondary players to *target* only on explicit request (all four
+  ;; shoulder buttons held). Auto-warp on distance was removed Session 22:
+  ;; the split-screen vis-bits merge (multi-draw.gc) keeps P2-visible entities
+  ;; alive regardless of distance to P1, so out-of-range teleports are no
+  ;; longer needed and were disruptive to exploration.
   (let ((idx 1))
     (while (< idx (-> *target-list* length))
       (let ((tgt (get-target idx)))
         (when tgt
-          (when (or
-                  (and (cpad-hold? idx l1) (cpad-hold? idx l2)
-                       (cpad-hold? idx r1) (cpad-hold? idx r2))
-                  (check-multi-jak-dist tgt)
-                  )
+          (when (and (cpad-hold? idx l1) (cpad-hold? idx l2)
+                     (cpad-hold? idx r1) (cpad-hold? idx r2))
             (warp-jakA-to-jakB tgt *target*)
             )
           )
