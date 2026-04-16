@@ -97,11 +97,17 @@
       this is set prevents activate-math-camera!(*p2-math-camera*) from running
       update-visible with stale vis-string pointers that may reference levels
       unloaded during a death/continue sequence (crashes #2 and #3).
+   6. (not other-camera-handle) — othercam (fuel-cell victory, NPC cutscenes)
+      sets other-camera-handle synchronously in othercam-init-by-other, one
+      frame before its :enter sets movie?. This explicit check closes that gap
+      and ensures P1-centred cutscenes (orb pickups etc.) always collapse to
+      full-screen from the very first frame the othercam process exists.
    Called from: drawable.gc (__pc-set-split-screen-active, dispatch cond,
    display-frame-finish merc/TIE init guard)."
   (let ((result (and (target-alive? (get-target 1))
                      (not (real-movie?))
                      (not (paused?))
+                     (not (handle->process (-> *game-info* other-camera-handle)))
                      *camera-p2*
                      (nonzero? (-> *camera-p2* tracked-target)))))
     ;; Log the exact frame split-screen re-activates so crash #3 can be
