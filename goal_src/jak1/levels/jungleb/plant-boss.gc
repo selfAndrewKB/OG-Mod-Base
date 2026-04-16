@@ -171,10 +171,11 @@
     (else (plant-boss-generic-event-handler arg0 arg1 arg2 arg3))))
 
 (defbehavior plant-boss-post plant-boss ()
-  (when *target*
-    (let ((gp-0 (-> *target* control root-prim prim-core)))
-      (set-target! (-> self neck) (the-as vector gp-0))
-      (set-target! (-> self body) (the-as vector gp-0))))
+  (let ((tgt (closest-target-to (-> self root trans))))
+    (when tgt
+      (let ((gp-0 (-> tgt control root-prim prim-core)))
+        (set-target! (-> self neck) (the-as vector gp-0))
+        (set-target! (-> self body) (the-as vector gp-0)))))
   (transform-post)
   (none))
 
@@ -687,9 +688,11 @@
         (ja-no-eval :group! plant-boss-main-initial-ja :num! (seek!) :frame-num 0.0)
         (until (ja-done? 0)
           (seek! (-> self energy) (the-as float 0.25) (seconds-per-frame))
-          (if (and (and *target* (>= 245760.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-                   (< (fabs (- (-> (target-pos 0) y) (-> self root trans y))) 40960.0))
-            (go plant-boss-intro))
+          (let ((tgt (closest-target-to (-> self root trans))))
+            (if (and tgt
+                     (>= 245760.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
+                     (< (fabs (- (-> (target-pos-for tgt 0) y) (-> self root trans y))) 40960.0))
+              (go plant-boss-intro)))
           (suspend)
           (ja :num! (seek!)))))
   :post ja-post)
@@ -771,7 +774,8 @@
       (set! (-> self neck flex-blend) 1.0))
   :trans
     (behavior ()
-      (let ((f30-0 (vector-vector-distance (target-pos 0) (-> self root trans))))
+      (let* ((tgt (closest-target-to (-> self root trans)))
+             (f30-0 (if tgt (vector-vector-distance (-> tgt control trans) (-> self root trans)) 1000000000.0)))
         (if (< 409600.0 f30-0) (go plant-boss-far-idle))
         (if (and (< f30-0 143360.0)
                  (time-elapsed? (-> self state-time)
@@ -780,8 +784,8 @@
                                   ((>= (-> self try) 10) 1200)
                                   ((>= (-> self try) 5) 900)
                                   (else 600)))
-                 *target*
-                 (not (logtest? (-> *target* state-flags)
+                 tgt
+                 (not (logtest? (-> tgt state-flags)
                                 (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))
           (go plant-boss-attack 1))))
   :code
@@ -851,22 +855,23 @@
                    (else 3)))))
   :trans
     (behavior ()
-      (let ((f0-0 (vector-vector-distance (target-pos 0) (-> self root trans))))
-        (if (< 409600.0 f0-0) (go plant-boss-far-idle)))
-      (cond
-        ((zero? (-> self want-aphid-count))
-         enter-state
-         (let ((v1-7 (the int (-> self health))))
-           (go plant-boss-attack
-               (cond
-                 ((= v1-7 2) 2)
-                 ((= v1-7 1) 3)
-                 (else 1)))))
-        ((time-elapsed? (-> self aphid-spawn-time) (seconds 1.4))
-         (when (process-spawn aphid self (-> self root trans) (target-pos 0) :to self)
-           (+! (-> self aphid-count) 1)
-           (seekl! (-> self want-aphid-count) 0 1)
-           (set-time! (-> self aphid-spawn-time))))))
+      (let* ((tgt (closest-target-to (-> self root trans)))
+             (f0-0 (if tgt (vector-vector-distance (-> tgt control trans) (-> self root trans)) 1000000000.0)))
+        (if (< 409600.0 f0-0) (go plant-boss-far-idle))
+        (cond
+          ((zero? (-> self want-aphid-count))
+           enter-state
+           (let ((v1-7 (the int (-> self health))))
+             (go plant-boss-attack
+                 (cond
+                   ((= v1-7 2) 2)
+                   ((= v1-7 1) 3)
+                   (else 1)))))
+          ((time-elapsed? (-> self aphid-spawn-time) (seconds 1.4))
+           (when (process-spawn aphid self (-> self root trans) (target-pos-for tgt 0) :to self)
+             (+! (-> self aphid-count) 1)
+             (seekl! (-> self want-aphid-count) 0 1)
+             (set-time! (-> self aphid-spawn-time)))))))
   :code
     (-> plant-boss-idle
         code)
@@ -962,22 +967,30 @@
         (when s5-0
           (ja :num-func num-func-identity :frame-num (ja-aframe (the-as float 100.0) 0))
           (ja :chan 1 :num-func num-func-identity :frame-num (ja-aframe (the-as float 100.0) 0))))
-      (let ((f30-0 (lerp-scale (the-as float 0.0)
-                               (the-as float 1.0)
-                               (vector-vector-distance (target-pos 0) (-> self root trans))
-                               (the-as float 26624.0)
-                               (the-as float 86016.0))))
+      (let* ((tgt-init (closest-target-to (-> self root trans)))
+             (dist-init (if tgt-init
+                            (vector-vector-distance (-> tgt-init control trans) (-> self root trans))
+                            1000000000.0))
+             (f30-0 (lerp-scale (the-as float 0.0)
+                                (the-as float 1.0)
+                                dist-init
+                                (the-as float 26624.0)
+                                (the-as float 86016.0))))
         (until (or v1-64 (ja-done? 0))
           (seek! (-> self body flex-blend) (the-as float 1.0) (* 2.0 (seconds-per-frame)))
           (seek! (-> self neck flex-blend) (the-as float 0.0) (* 2.0 (seconds-per-frame)))
-          (set! f30-0
-                (seek f30-0
-                      (lerp-scale (the-as float 1.0)
-                                  (the-as float 0.0)
-                                  (vector-vector-distance (target-pos 0) (-> self root trans))
-                                  (the-as float 26624.0)
-                                  (the-as float 86016.0))
-                      (* 2.0 (seconds-per-frame))))
+          (let* ((tgt-loop (closest-target-to (-> self root trans)))
+                 (dist-loop (if tgt-loop
+                                (vector-vector-distance (-> tgt-loop control trans) (-> self root trans))
+                                1000000000.0)))
+            (set! f30-0
+                  (seek f30-0
+                        (lerp-scale (the-as float 1.0)
+                                    (the-as float 0.0)
+                                    dist-loop
+                                    (the-as float 26624.0)
+                                    (the-as float 86016.0))
+                        (* 2.0 (seconds-per-frame)))))
           (set! (-> self interp) f30-0)
           (ja :num! (seek!))
           (ja :chan 1 :num! (chan 0) :frame-interp f30-0)
