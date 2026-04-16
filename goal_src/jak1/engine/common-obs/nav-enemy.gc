@@ -55,27 +55,27 @@
   0)
 
 (defmethod common-post ((this nav-enemy))
-  (when (and (logtest? (-> this nav-enemy-flags) (nav-enemy-flags navenmf8))
-             (or (not *target*)
-                 (and (not (logtest? (-> *target* state-flags)
-                                     (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
-                      (time-elapsed? (-> this touch-time) (seconds 0.05)))))
-    (set-collide-offense (-> this collide-info) 2 (collide-offense touch))
-    (logclear! (-> this nav-enemy-flags) (nav-enemy-flags navenmf8)))
-  (update-direction-from-time-of-day (-> this draw shadow-ctrl))
-  (when *target*
-    (if *target*
-      (look-at-enemy! (-> *target* neck)
+  (let ((tgt (let ((t (closest-target-to (-> this collide-info trans)))) (if t t *target*))))
+    (when (and (logtest? (-> this nav-enemy-flags) (nav-enemy-flags navenmf8))
+               (or (not tgt)
+                   (and (not (logtest? (-> tgt state-flags)
+                                       (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
+                        (time-elapsed? (-> this touch-time) (seconds 0.05)))))
+      (set-collide-offense (-> this collide-info) 2 (collide-offense touch))
+      (logclear! (-> this nav-enemy-flags) (nav-enemy-flags navenmf8)))
+    (update-direction-from-time-of-day (-> this draw shadow-ctrl))
+    (when tgt
+      (look-at-enemy! (-> tgt neck)
                       (the-as vector (-> this collide-info root-prim prim-core))
                       (if (logtest? (-> this nav-enemy-flags) (nav-enemy-flags navenmf2)) 'attacking)
-                      this))
-    (if (and (nonzero? (-> this neck)) (logtest? (-> this nav-enemy-flags) (nav-enemy-flags navenmf14)))
-      (set-target! (-> this neck) (target-pos (-> this nav-info player-look-at-joint)))))
-  (when (-> this nav-info debug-draw-neck)
-    (if (nonzero? (-> this neck)) (joint-mod-debug-draw (-> this neck))))
-  (ja-post)
-  0
-  (none))
+                      this)
+      (if (and (nonzero? (-> this neck)) (logtest? (-> this nav-enemy-flags) (nav-enemy-flags navenmf14)))
+        (set-target! (-> this neck) (target-pos-for tgt (-> this nav-info player-look-at-joint)))))
+    (when (-> this nav-info debug-draw-neck)
+      (if (nonzero? (-> this neck)) (joint-mod-debug-draw (-> this neck))))
+    (ja-post)
+    0
+    (none)))
 
 (defmethod touch-handler ((this nav-enemy) (arg0 process) (arg1 event-message-block))
   (if (and (logtest? (-> this nav-enemy-flags) (nav-enemy-flags navenmf6))
@@ -259,14 +259,50 @@ nav-enemy-default-event-handler
   0
   (none))
 
+;; Declared here so nav-enemy.gc (compiled before multi-debug.gc in GAME.CGO)
+;; can reference the symbol at compile time. The runtime binding is set by
+;; (define *multi-dbg-ai* #f) in engine/mods/multi-debug.gc.
+(define-extern *multi-dbg-ai* symbol)
+
+(defbehavior nav-enemy-get-target nav-enemy ()
+  "Return the closest valid target to this enemy. In single-player, the only
+   candidate is *target* (P1). In split-screen, returns whichever player is
+   nearer. Falls back to *target* if closest-target-to finds nothing (e.g.
+   both players are invulnerable) — keeps single-player behaviour identical.
+   Logs periodically when *multi-dbg-ai* is set; staggered per-enemy via pid
+   so output is distributed across frames rather than bursting every ~2s."
+  (let* ((tgt    (closest-target-to (-> self collide-info trans)))
+         (chosen (if tgt tgt *target*)))
+    (when (and *multi-dbg-ai*
+               (zero? (logand (+ (the-as int (-> *display* base-frame-counter)) (-> self pid)) 127)))
+      (format #t "[ai-tgt] ~S ->" (-> self name))
+      (let ((found #f))
+        (dotimes (i (-> *target-list* length))
+          (when (= (get-target i) chosen)
+            (format #t " P~D" i)
+            (set! found #t)))
+        (when (not found) (format #t " none")))
+      (dotimes (i (-> *target-list* length))
+        (let ((p (get-target i)))
+          (when p
+            (format #t " d~D=~m" i (vector-vector-distance (-> self collide-info trans) (-> p control trans))))))
+      (format #t "~%"))
+    chosen))
+
+(defbehavior nav-enemy-update-target! nav-enemy ()
+  "Retained for call-site compatibility. Target is computed fresh by
+   nav-enemy-get-target on every call, so explicit caching is unnecessary."
+  (none))
+
 (defbehavior nav-enemy-chase-post nav-enemy ()
-  (set! (-> self nav target-pos quad) (-> (target-pos 0) quad))
+  (nav-enemy-update-target!)
+  (set! (-> self nav target-pos quad) (-> (target-pos-for (nav-enemy-get-target) 0) quad))
   (nav-enemy-travel-post)
   0
   (none))
 
 (defbehavior nav-enemy-flee-post nav-enemy ()
-  (let ((gp-1 (vector-! (new 'stack-no-clear 'vector) (-> self collide-info trans) (target-pos 0))))
+  (let ((gp-1 (vector-! (new 'stack-no-clear 'vector) (-> self collide-info trans) (target-pos-for (nav-enemy-get-target) 0))))
     (vector-z-quaternion! (new 'stack-no-clear 'vector) (-> self collide-info quat))
     0.0
     0.0
@@ -280,8 +316,9 @@ nav-enemy-default-event-handler
   (none))
 
 (defbehavior nav-enemy-face-player-post nav-enemy ()
-  (if (and *target* (logtest? (-> self nav-enemy-flags) (nav-enemy-flags enable-travel)))
-    (seek-to-point-toward-point! (-> self collide-info) (target-pos 0) (-> self rotate-speed) (-> self turn-time)))
+  (let ((tgt (nav-enemy-get-target)))
+    (if (and tgt (logtest? (-> self nav-enemy-flags) (nav-enemy-flags enable-travel)))
+      (seek-to-point-toward-point! (-> self collide-info) (target-pos-for tgt 0) (-> self rotate-speed) (-> self turn-time))))
   (nav-enemy-simple-post)
   0
   (none))
@@ -315,19 +352,21 @@ nav-enemy-default-event-handler
   0
   (none))
 
-(defun nav-enemy-player-vulnerable? ()
-  (the-as symbol
-          (and *target*
-               (not (logtest? (-> *target* state-flags)
-                              (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))))
+(defbehavior nav-enemy-player-vulnerable? nav-enemy ()
+  (let ((tgt (nav-enemy-get-target)))
+    (the-as symbol
+            (and tgt
+                 (not (logtest? (-> tgt state-flags)
+                                (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))))))
 
 (defmethod target-in-range? ((this nav-enemy) (arg0 float))
-  (and *target*
-       (not (logtest? (-> *target* state-flags)
-                      (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
-       (and (or (not (logtest? (-> this nav-enemy-flags) (nav-enemy-flags navenmf12)))
-                (< (vector-vector-distance (target-pos 0) (-> this collide-info trans)) arg0))
-            (nav-enemy-test-point-near-nav-mesh? (-> *target* control shadow-pos)))))
+  (let ((tgt (nav-enemy-get-target)))
+    (and tgt
+         (not (logtest? (-> tgt state-flags)
+                        (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
+         (and (or (not (logtest? (-> this nav-enemy-flags) (nav-enemy-flags navenmf12)))
+                  (< (vector-vector-distance (target-pos-for tgt 0) (-> this collide-info trans)) arg0))
+              (nav-enemy-test-point-near-nav-mesh? (-> tgt control shadow-pos))))))
 
 (defbehavior nav-enemy-notice-player? nav-enemy ()
   (let ((gp-0 #f))
@@ -337,13 +376,15 @@ nav-enemy-default-event-handler
          (set! gp-0 #t)
          (logclear! (-> self nav-enemy-flags) (nav-enemy-flags navenmf0))))
       (else
-       (when (or (target-in-range? self (-> self nav-info notice-distance))
-                 (and (-> self nav-info use-proximity-notice)
-                      *target*
-                      (>= (-> self nav-info proximity-notice-distance)
-                          (vector-vector-distance (-> self collide-info trans) (-> *target* control trans)))))
-         (logior! (-> self nav-enemy-flags) (nav-enemy-flags navenmf0))
-         (set-time! (-> self notice-time)))))
+       (let ((tgt (nav-enemy-get-target)))
+         (when (or (target-in-range? self (-> self nav-info notice-distance))
+                   (and (-> self nav-info use-proximity-notice)
+                        tgt
+                        (>= (-> self nav-info proximity-notice-distance)
+                            (vector-vector-distance (-> self collide-info trans) (-> tgt control trans)))))
+           (nav-enemy-update-target!)
+           (logior! (-> self nav-enemy-flags) (nav-enemy-flags navenmf0))
+           (set-time! (-> self notice-time))))))
     gp-0))
 
 (defbehavior nav-enemy-facing-direction? nav-enemy ((arg0 vector) (arg1 float))
@@ -358,8 +399,8 @@ nav-enemy-default-event-handler
   (let ((v1-1 (vector-! (new 'stack-no-clear 'vector) arg0 (-> self collide-info trans))))
     (nav-enemy-facing-direction? v1-1 arg1)))
 
-(defun nav-enemy-facing-player? ((arg0 float))
-  (nav-enemy-facing-point? (target-pos 0) arg0))
+(defbehavior nav-enemy-facing-player? nav-enemy ((arg0 float))
+  (nav-enemy-facing-point? (target-pos-for (nav-enemy-get-target) 0) arg0))
 
 (defbehavior nav-enemy-test-nav-mesh-intersection-xz? nav-enemy ((arg0 vector))
   (the-as symbol (nav-control-method-16 (-> self nav) arg0)))
@@ -491,13 +532,14 @@ nav-enemy-default-event-handler
       (set! (-> self state-timeout) (seconds 1)))
   :trans
     (behavior ()
-      (if (and (and *target*
-                    (>= (-> self enemy-info idle-distance)
-                        (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-               (time-elapsed? (-> self state-time) (-> self state-timeout))
-               (nonzero? (-> self draw))
-               (logtest? (-> self draw status) (draw-status was-drawn)))
-        (go-virtual nav-enemy-patrol)))
+      (let ((tgt (nav-enemy-get-target)))
+        (if (and tgt
+                 (>= (-> self enemy-info idle-distance)
+                     (vector-vector-distance (-> self collide-info trans) (-> tgt control trans)))
+                 (time-elapsed? (-> self state-time) (-> self state-timeout))
+                 (nonzero? (-> self draw))
+                 (logtest? (-> self draw status) (draw-status was-drawn)))
+          (go-virtual nav-enemy-patrol))))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.075))
@@ -527,20 +569,21 @@ nav-enemy-default-event-handler
   :trans
     (behavior ()
       (when (time-elapsed? (-> self state-time) (seconds 0.1))
-        (when (time-elapsed? (-> self state-time) (-> self state-timeout))
-          (if (and (nonzero? (-> self draw)) (logtest? (-> self draw status) (draw-status was-drawn)))
-            (set-time! (-> self free-time)))
-          (if (or (or (not *target*)
-                      (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-                  (time-elapsed? (-> self free-time) (seconds 2)))
-            (go-virtual nav-enemy-idle)))
-        (if (and (-> self nav-info use-flee)
-                 (and (and *target*
-                           (>= (-> self nav-info notice-distance)
-                               (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-                      (let ((gp-0 'racer)) (= gp-0 (send-event *target* 'query 'mode)))))
-          (go-virtual nav-enemy-flee))
-        (if (nav-enemy-notice-player?) (go-virtual nav-enemy-notice))))
+        (let ((tgt (nav-enemy-get-target)))
+          (when (time-elapsed? (-> self state-time) (-> self state-timeout))
+            (if (and (nonzero? (-> self draw)) (logtest? (-> self draw status) (draw-status was-drawn)))
+              (set-time! (-> self free-time)))
+            (if (or (not tgt)
+                    (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> tgt control trans)))
+                    (time-elapsed? (-> self free-time) (seconds 2)))
+              (go-virtual nav-enemy-idle)))
+          (if (and (-> self nav-info use-flee)
+                   tgt
+                   (>= (-> self nav-info notice-distance)
+                       (vector-vector-distance (-> self collide-info trans) (-> tgt control trans)))
+                   (let ((gp-0 'racer)) (= gp-0 (send-event tgt 'query 'mode))))
+            (go-virtual nav-enemy-flee))
+          (if (nav-enemy-notice-player?) (go-virtual nav-enemy-notice)))))
   :code
     (behavior ()
       (let ((f30-0 (nav-enemy-rnd-float-range 0.9 1.1)))
@@ -583,7 +626,7 @@ nav-enemy-default-event-handler
       (if (logtest? (-> self nav-enemy-flags) (nav-enemy-flags navenmf1)) (go-virtual nav-enemy-chase))
       (logior! (-> self nav-enemy-flags) (nav-enemy-flags navenmf1))
       (let ((gp-0 (-> self nav))
-            (v1-10 (target-pos 0)))
+            (v1-10 (target-pos-for (nav-enemy-get-target) 0)))
         (set! (-> gp-0 target-pos quad) (-> v1-10 quad)))
       (nav-control-method-11 (-> self nav) (-> self nav target-pos))
       (set! (-> self rotate-speed) (-> self nav-info run-rotate-speed))
@@ -612,11 +655,12 @@ nav-enemy-default-event-handler
   :trans
     (behavior ()
       (when (time-elapsed? (-> self state-time) (-> self reaction-time))
-        (if (or (or (not *target*)
-                    (< (-> self nav-info stop-chase-distance)
-                       (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-                (let ((gp-0 'racer)) (!= gp-0 (send-event *target* 'query 'mode))))
-          (go-virtual nav-enemy-patrol))))
+        (let ((tgt (nav-enemy-get-target)))
+          (if (or (not tgt)
+                  (< (-> self nav-info stop-chase-distance)
+                     (vector-vector-distance (-> self collide-info trans) (-> tgt control trans)))
+                  (let ((gp-0 'racer)) (!= gp-0 (send-event tgt 'query 'mode))))
+            (go-virtual nav-enemy-patrol)))))
   :code
     (behavior ()
       (let ((f30-0 (nav-enemy-rnd-float-range 0.9 1.1)))
@@ -635,13 +679,15 @@ nav-enemy-default-event-handler
 
 (defbehavior nav-enemy-reset-frustration nav-enemy ()
   (logclear! (-> self nav-enemy-flags) (nav-enemy-flags navenmf13))
-  (if *target* (set! (-> self frustration-point quad) (-> *target* control shadow-pos quad)))
+  (let ((tgt (nav-enemy-get-target)))
+    (if tgt (set! (-> self frustration-point quad) (-> tgt control shadow-pos quad))))
   (set-time! (-> self frustration-time))
   0
   (none))
 
 (defbehavior nav-enemy-player-at-frustration-point? nav-enemy ()
-  (if *target* (< (vector-vector-distance (-> *target* control shadow-pos) (-> self frustration-point)) 6144.0)))
+  (let ((tgt (nav-enemy-get-target)))
+    (if tgt (< (vector-vector-distance (-> tgt control shadow-pos) (-> self frustration-point)) 6144.0))))
 
 (defbehavior nav-enemy-frustrated? nav-enemy ()
   (and (logtest? (-> self nav-enemy-flags) (nav-enemy-flags navenmf13)) (nav-enemy-player-at-frustration-point?)))
@@ -662,21 +708,22 @@ nav-enemy-default-event-handler
       (nav-enemy-reset-frustration))
   :trans
     (behavior ()
-      (if (logtest? (-> *target* state-flags) (state-flags do-not-notice)) (go-virtual nav-enemy-patrol))
-      (if (logtest? (-> self nav-enemy-flags) (nav-enemy-flags navenmf8)) (go-virtual nav-enemy-victory))
-      (if (or (not (nav-enemy-player-at-frustration-point?))
-              (< (-> self nav-info frustration-distance) (vector-vector-xz-distance (target-pos 0) (-> self collide-info trans))))
-        (nav-enemy-reset-frustration))
-      (when (time-elapsed? (-> self state-time) (-> self reaction-time))
-        (if (time-elapsed? (-> self frustration-time) (+ (-> self reaction-time) (-> self nav-info frustration-time)))
-          (logior! (-> self nav-enemy-flags) (nav-enemy-flags navenmf13)))
-        (if (or (not (target-in-range? self (-> self nav-info stop-chase-distance)))
-                (logtest? (-> self nav-enemy-flags) (nav-enemy-flags navenmf13)))
-          (go-virtual nav-enemy-stop-chase))
-        (cond
-          ((logtest? (nav-control-flags navcf17) (-> self nav flags))
-           (if (time-elapsed? (-> self free-time) (seconds 1)) (go-virtual nav-enemy-patrol)))
-          (else (set-time! (-> self free-time))))))
+      (let ((tgt (nav-enemy-get-target)))
+        (if (logtest? (-> tgt state-flags) (state-flags do-not-notice)) (go-virtual nav-enemy-patrol))
+        (if (logtest? (-> self nav-enemy-flags) (nav-enemy-flags navenmf8)) (go-virtual nav-enemy-victory))
+        (if (or (not (nav-enemy-player-at-frustration-point?))
+                (< (-> self nav-info frustration-distance) (vector-vector-xz-distance (target-pos-for tgt 0) (-> self collide-info trans))))
+          (nav-enemy-reset-frustration))
+        (when (time-elapsed? (-> self state-time) (-> self reaction-time))
+          (if (time-elapsed? (-> self frustration-time) (+ (-> self reaction-time) (-> self nav-info frustration-time)))
+            (logior! (-> self nav-enemy-flags) (nav-enemy-flags navenmf13)))
+          (if (or (not (target-in-range? self (-> self nav-info stop-chase-distance)))
+                  (logtest? (-> self nav-enemy-flags) (nav-enemy-flags navenmf13)))
+            (go-virtual nav-enemy-stop-chase))
+          (cond
+            ((logtest? (nav-control-flags navcf17) (-> self nav flags))
+             (if (time-elapsed? (-> self free-time) (seconds 1)) (go-virtual nav-enemy-patrol)))
+            (else (set-time! (-> self free-time)))))))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.2))
@@ -691,8 +738,9 @@ nav-enemy-default-event-handler
   :enter
     (behavior ()
       (set-time! (-> self state-time))
-      (let* ((f30-0 (vector-vector-distance (-> self collide-info trans) (target-pos 0)))
-             (gp-1 (the int (+ (lerp-scale 600.0 1800.0 f30-0 32768.0 122880.0) (nav-enemy-rnd-float-range 0.0 30.0)))))
+      (let* ((tgt   (nav-enemy-get-target))
+             (f30-0 (vector-vector-distance (-> self collide-info trans) (target-pos-for tgt 0)))
+             (gp-1  (the int (+ (lerp-scale 600.0 1800.0 f30-0 32768.0 122880.0) (nav-enemy-rnd-float-range 0.0 30.0)))))
         (if (< f30-0 40960.0) (go-virtual nav-enemy-stare))
         (set! (-> self state-timeout) (the-as time-frame gp-1)))
       (set! (-> self target-speed) (-> self nav-info walk-travel-speed))
@@ -702,14 +750,15 @@ nav-enemy-default-event-handler
   :trans
     (behavior ()
       (when (time-elapsed? (-> self state-time) (seconds 0.1))
-        (if (logtest? (-> *target* state-flags) (state-flags do-not-notice)) (go-virtual nav-enemy-patrol))
-        (if (and (target-in-range? self (-> self nav-info notice-distance)) (not (nav-enemy-frustrated?)))
-          (go-virtual nav-enemy-chase))
-        (if (or (or (not *target*)
-                    (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-                (logtest? (nav-control-flags navcf17) (-> self nav flags))
-                (time-elapsed? (-> self state-time) (-> self state-timeout)))
-          (go-virtual nav-enemy-stare))))
+        (let ((tgt (nav-enemy-get-target)))
+          (if (logtest? (-> tgt state-flags) (state-flags do-not-notice)) (go-virtual nav-enemy-patrol))
+          (if (and (target-in-range? self (-> self nav-info notice-distance)) (not (nav-enemy-frustrated?)))
+            (go-virtual nav-enemy-chase))
+          (if (or (not tgt)
+                  (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> tgt control trans)))
+                  (logtest? (nav-control-flags navcf17) (-> self nav flags))
+                  (time-elapsed? (-> self state-time) (-> self state-timeout)))
+            (go-virtual nav-enemy-stare)))))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.1))
@@ -725,7 +774,7 @@ nav-enemy-default-event-handler
     (behavior ()
       (set-time! (-> self state-time))
       (logclear! (-> self nav-enemy-flags) (nav-enemy-flags enable-travel))
-      (let ((f0-0 (vector-vector-distance (-> self collide-info trans) (target-pos 0))))
+      (let ((f0-0 (vector-vector-distance (-> self collide-info trans) (target-pos-for (nav-enemy-get-target) 0))))
         (set! (-> self state-timeout)
               (the-as time-frame (the int (+ (lerp-scale 3000.0 0.0 f0-0 12288.0 122880.0) (nav-enemy-rnd-float-range 0.0 900.0))))))
       (set! (-> self rotate-speed) (-> self nav-info run-rotate-speed))
@@ -737,23 +786,24 @@ nav-enemy-default-event-handler
   :trans
     (behavior ()
       (when (time-elapsed? (-> self state-time) (seconds 0.1))
-        (if (logtest? (-> *target* state-flags) (state-flags do-not-notice)) (go-virtual nav-enemy-patrol))
-        (cond
-          ((target-in-range? self (-> self nav-info notice-distance))
-           (if (and (time-elapsed? (-> self notice-time) (-> self reaction-time)) (not (nav-enemy-frustrated?)))
-             (go-virtual nav-enemy-chase)))
-          (else (set-time! (-> self notice-time))))
-        (when (not (or (and *target* (>= 40960.0 (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-                       (and (-> self nav-info use-proximity-notice)
-                            *target*
-                            (>= (-> self nav-info proximity-notice-distance)
-                                (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))))
-          (logclear! (-> self nav-enemy-flags) (nav-enemy-flags navenmf2))
-          (if (time-elapsed? (-> self state-time) (-> self state-timeout)) (go-virtual nav-enemy-give-up)))
-        (if (or (or (not *target*)
-                    (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-                (logtest? (nav-control-flags navcf17) (-> self nav flags)))
-          (go-virtual nav-enemy-give-up))))
+        (let ((tgt (nav-enemy-get-target)))
+          (if (logtest? (-> tgt state-flags) (state-flags do-not-notice)) (go-virtual nav-enemy-patrol))
+          (cond
+            ((target-in-range? self (-> self nav-info notice-distance))
+             (if (and (time-elapsed? (-> self notice-time) (-> self reaction-time)) (not (nav-enemy-frustrated?)))
+               (go-virtual nav-enemy-chase)))
+            (else (set-time! (-> self notice-time))))
+          (when (not (or (and tgt (>= 40960.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+                         (and (-> self nav-info use-proximity-notice)
+                              tgt
+                              (>= (-> self nav-info proximity-notice-distance)
+                                  (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))))
+            (logclear! (-> self nav-enemy-flags) (nav-enemy-flags navenmf2))
+            (if (time-elapsed? (-> self state-time) (-> self state-timeout)) (go-virtual nav-enemy-give-up)))
+          (if (or (not tgt)
+                  (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> tgt control trans)))
+                  (logtest? (nav-control-flags navcf17) (-> self nav flags)))
+            (go-virtual nav-enemy-give-up)))))
   :code
     (behavior ()
       (go-virtual nav-enemy-give-up))

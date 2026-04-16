@@ -157,7 +157,7 @@ swamp-rat-default-event-handler
         (ja :num! (loop!))))
   :post
     (behavior ()
-      (swamp-rat-update-wiggle-target (target-pos 0))
+      (swamp-rat-update-wiggle-target (target-pos-for (nav-enemy-get-target) 0))
       (nav-enemy-travel-post)))
 
 (defstate nav-enemy-stop-chase (swamp-rat)

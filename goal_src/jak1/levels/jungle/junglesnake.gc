@@ -87,28 +87,30 @@
 (defbehavior junglesnake-default-event-handler junglesnake ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (case arg2
     (('touch)
-     (when (and *target*
-                ((method-of-type touching-shapes-entry prims-touching?)
-                 (the-as touching-shapes-entry (-> arg3 param 0))
-                 (the-as collide-shape-moving (-> self root))
-                 (the-as uint 1)))
-       (cond
-         ((and (-> self is-lethal?)
-               (not (logtest? (-> *target* state-flags)
-                              (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))
+     (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+       (when (and tgt
+                  ((method-of-type touching-shapes-entry prims-touching?)
+                   (the-as touching-shapes-entry (-> arg3 param 0))
+                   (the-as collide-shape-moving (-> self root))
+                   (the-as uint 1)))
+         (cond
+           ((and (-> self is-lethal?)
+                 (not (logtest? (-> tgt state-flags)
+                                (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))
           (when (send-event arg0 'attack (-> arg3 param 0) (new 'static 'attack-info))
             (let ((v0-1 (the-as object #t))) (set! (-> self hit-player) (the-as symbol v0-1)) v0-1)))
          (else
           (do-push-aways! (-> self root))
-          (send-event arg0 'shove (-> arg3 param 0) (static-attack-info ((shove-back (meters 2)) (shove-up (meters 0.5)))))))))
+          (send-event arg0 'shove (-> arg3 param 0) (static-attack-info ((shove-back (meters 2)) (shove-up (meters 0.5))))))))))
     (('attack) (go junglesnake-die))))
 
 junglesnake-default-event-handler
 
 (defmethod junglesnake-method-20 ((this junglesnake))
-  (when (and *target* (-> this track-player-ry))
-    (let ((v1-3 (target-pos 0)))
-      (set! (-> this des-ry) (atan (- (-> v1-3 x) (-> this root trans x)) (- (-> v1-3 z) (-> this root trans z))))))
+  (let ((tgt (let ((t (closest-target-to (-> this root trans)))) (if t t *target*))))
+    (when (and tgt (-> this track-player-ry))
+      (let ((v1-3 (target-pos-for tgt 0)))
+        (set! (-> this des-ry) (atan (- (-> v1-3 x) (-> this root trans x)) (- (-> v1-3 z) (-> this root trans z)))))))
   (let ((f0-7 (deg-diff (-> this ry) (-> this des-ry))))
     (+! (-> this ry) (seek-with-smooth 0.0 f0-7 (* 655360.0 (seconds-per-frame)) 0.125 0.001)))
   (let ((f30-1 (-> this ry)))
@@ -152,14 +154,15 @@ junglesnake-default-event-handler
         (set! (-> s3-1 vector 1 w) 0.0)
         (vector-normalize! (vector-cross! (-> s3-1 vector 2) (-> s3-1 vector 0) (-> s3-1 vector 1)) 1.0)
         (vector-normalize! (vector-cross! (-> s3-1 vector 0) (-> s3-1 vector 1) (-> s3-1 vector 2)) 1.0)))
-    (cond
-      ((and (-> s5-0 track-player-tilt) *target*)
-       (let ((s2-1 (-> arg0 node-list data 25 bone transform))
-             (s4-2 (new 'stack-no-clear 'vector)))
-         (vector-normalize-copy! s4-2 (-> s2-1 vector 1) 1.0)
-         (set! (-> s4-2 w) 1.0)
-         (let ((s1-2 (new 'stack-no-clear 'vector)))
-           (vector-! s1-2 (target-pos 0) (-> s2-1 vector 3))
+    (let ((tgt (let ((t (closest-target-to (-> arg0 root trans)))) (if t t *target*))))
+      (cond
+        ((and (-> s5-0 track-player-tilt) tgt)
+         (let ((s2-1 (-> arg0 node-list data 25 bone transform))
+               (s4-2 (new 'stack-no-clear 'vector)))
+           (vector-normalize-copy! s4-2 (-> s2-1 vector 1) 1.0)
+           (set! (-> s4-2 w) 1.0)
+           (let ((s1-2 (new 'stack-no-clear 'vector)))
+             (vector-! s1-2 (target-pos-for tgt 0) (-> s2-1 vector 3))
            (+! (-> s1-2 y) 9011.2)
            (vector-normalize! s1-2 1.0)
            (let ((s0-2 (new 'stack-no-clear 'vector))
@@ -175,7 +178,7 @@ junglesnake-default-event-handler
                (let ((f0-16 (fabs (deg-diff (-> s5-0 ry) (-> s5-0 des-ry)))))
                  (if (>= f0-16 24576.0) (set! f30-0 (* 0.00012207031 (- 32768.0 f0-16) f30-0))))
                (set! (-> s5-0 des-tilt) f30-0))))))
-      (else (set! (-> s5-0 des-tilt) 0.0)))
+      (else (set! (-> s5-0 des-tilt) 0.0))))
     (let* ((f30-1 (-> s5-0 tilt))
            (f0-21 (deg-diff f30-1 (-> s5-0 des-tilt)))
            (f28-0 (+ f30-1 (seek-with-smooth 0.0 f0-21 (* 65536.0 (seconds-per-frame)) 0.2 0.001))))
@@ -220,10 +223,11 @@ junglesnake-default-event-handler
       (logior! (-> self draw status) (draw-status hidden)))
   :trans
     (behavior ()
-      (when *target*
-        (let* ((a0-1 (target-pos 0))
-               (f0-1 (- (-> a0-1 y) (-> self root trans y))))
-          (if (and (>= 40960.0 f0-1) (>= 143360.0 (vector-vector-xz-distance a0-1 (-> self root trans)))) (go junglesnake-wake)))))
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (when tgt
+          (let* ((a0-1 (target-pos-for tgt 0))
+                 (f0-1 (- (-> a0-1 y) (-> self root trans y))))
+            (if (and (>= 40960.0 f0-1) (>= 143360.0 (vector-vector-xz-distance a0-1 (-> self root trans)))) (go junglesnake-wake))))))
   :code
     (behavior ()
       (logior! (-> self mask) (process-mask sleep-code))
@@ -243,9 +247,9 @@ junglesnake-default-event-handler
   :trans
     (behavior ()
       (junglesnake-method-20 self)
-      (when *target*
-        (if *target*
-          (look-at-enemy! (-> *target* neck)
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (when tgt
+          (look-at-enemy! (-> tgt neck)
                           (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core world-sphere)
                           'attacking
                           self))))
@@ -267,20 +271,22 @@ junglesnake-default-event-handler
       (set! (-> self track-player-tilt) #t))
   :trans
     (behavior ()
-      (if (and (and *target* (>= 24576.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-               (time-elapsed? (-> self state-time) (-> self refractory-delay))
-               (not (logtest? (-> *target* state-flags)
-                              (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))
-        (go junglesnake-attack))
-      (when *target*
-        (let ((a0-8 (target-pos 0)))
-          (if (or (>= (- (-> a0-8 y) (-> self root trans y)) 57344.0)
-                  (>= (vector-vector-xz-distance a0-8 (-> self root trans)) 163840.0))
-            (go junglesnake-give-up))))
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (if (and tgt
+                 (>= 24576.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
+                 (time-elapsed? (-> self state-time) (-> self refractory-delay))
+                 (not (logtest? (-> tgt state-flags)
+                                (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))
+          (go junglesnake-attack))
+        (when tgt
+          (let ((a0-8 (target-pos-for tgt 0)))
+            (if (or (>= (- (-> a0-8 y) (-> self root trans y)) 57344.0)
+                    (>= (vector-vector-xz-distance a0-8 (-> self root trans)) 163840.0))
+              (go junglesnake-give-up)))))
       (junglesnake-method-20 self)
-      (when *target*
-        (if *target*
-          (look-at-enemy! (-> *target* neck)
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (when tgt
+          (look-at-enemy! (-> tgt neck)
                           (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core world-sphere)
                           'attacking
                           self))))
@@ -307,9 +313,9 @@ junglesnake-default-event-handler
   :trans
     (behavior ()
       (junglesnake-method-20 self)
-      (when *target*
-        (if *target*
-          (look-at-enemy! (-> *target* neck)
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (when tgt
+          (look-at-enemy! (-> tgt neck)
                           (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core world-sphere)
                           'attacking
                           self))))
@@ -319,14 +325,14 @@ junglesnake-default-event-handler
       (set! (-> self track-player-tilt) #t)
       (ja-channel-push! 2 (seconds 0.15))
       (junglesnake-method-23 self)
-      (let ((f30-0 (lerp-scale 0.0 1.0 (vector-vector-distance (target-pos 0) (-> self root trans)) 0.0 24576.0)))
+      (let ((f30-0 (lerp-scale 0.0 1.0 (vector-vector-distance (target-pos-for (let ((t (closest-target-to (-> self root trans)))) (if t t *target*)) 0) (-> self root trans)) 0.0 24576.0)))
         (ja-no-eval :group! junglesnake-strike-close-ja :num! (seek! max 1.25) :frame-num 0.0)
         (ja-no-eval :chan 1 :group! junglesnake-strike-far-ja :num! (chan 0) :frame-interp f30-0 :frame-num 0.0)
         (until (ja-done? 0)
           (suspend)
           (set! f30-0
                 (seek f30-0
-                      (lerp-scale 0.0 1.0 (vector-vector-distance (target-pos 0) (-> self root trans)) 0.0 24576.0)
+                      (lerp-scale 0.0 1.0 (vector-vector-distance (target-pos-for (let ((t (closest-target-to (-> self root trans)))) (if t t *target*)) 0) (-> self root trans)) 0.0 24576.0)
                       (* 2.0 (seconds-per-frame))))
           (ja :num! (seek! max 1.25))
           (ja :chan 1 :num! (chan 0) :frame-interp f30-0)

@@ -178,8 +178,9 @@
   :init-specs ((:fade-a -0.10666667)))
 
 (defmethod lurkerworm-method-20 ((this lurkerworm))
-  (let ((s5-0 (new 'stack-no-clear 'vector)))
-    (vector-! s5-0 (target-pos 0) (-> this root trans))
+  (let ((tgt (let ((t (closest-target-to (-> this root trans)))) (if t t *target*)))
+        (s5-0 (new 'stack-no-clear 'vector)))
+    (vector-! s5-0 (target-pos-for tgt 0) (-> this root trans))
     (set-target! (-> this twister) (atan (-> s5-0 x) (-> s5-0 z)))
     (twister-method-11 (-> this twister))
     (let* ((f0-5 (sqrtf (+ (* (-> s5-0 x) (-> s5-0 x)) (* (-> s5-0 z) (-> s5-0 z)))))
@@ -244,10 +245,11 @@ lurkerworm-default-post-behavior
   :code
     (behavior ()
       (loop
-        (if (and (time-elapsed? (-> self state-time) (seconds 1))
-                 *target*
-                 (>= 81920.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-          (go lurkerworm-spot))
+        (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+          (if (and (time-elapsed? (-> self state-time) (seconds 1))
+                   tgt
+                   (>= 81920.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+            (go lurkerworm-spot)))
         (suspend)))
   :post lurkerworm-default-post-behavior)
 
@@ -264,9 +266,10 @@ lurkerworm-default-post-behavior
         (spawn (-> self part) (-> self root trans))
         (particle-effect self)
         (when (time-elapsed? (-> self state-time) (seconds 1))
-          (if (and *target* (>= 81920.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-            (go lurkerworm-rise)
-            (go lurkerworm-idle)))
+          (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+            (if (and tgt (>= 81920.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+              (go lurkerworm-rise)
+              (go lurkerworm-idle))))
         (suspend)))
   :post lurkerworm-default-post-behavior)
 
@@ -311,9 +314,10 @@ lurkerworm-default-post-behavior
           (ja-blend-eval)
           (particle-effect self)
           (when gp-1
-            (let* ((f0-13 (- 1.0
-                             (* 0.00009765625
-                                (+ -16384.0 (if *target* (vector-vector-distance (-> self root trans) (-> *target* control trans)) 4096000.0)))))
+            (let* ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*)))
+                   (f0-13 (- 1.0
+                              (* 0.00009765625
+                                 (+ -16384.0 (if tgt (vector-vector-distance (-> self root trans) (-> tgt control trans)) 4096000.0)))))
                    (f30-2 (/ f0-13 5)))
               (if (< (rand-float-gen) f30-2) (go lurkerworm-strike))))
           (+! s5-0 -1)

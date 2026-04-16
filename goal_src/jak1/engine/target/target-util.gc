@@ -782,11 +782,35 @@
   0
   (none))
 
+(defun target-pos-for ((tgt target) (arg0 int))
+  "Parameterized form of target-pos — returns position from an explicit target
+   process instead of the global *target*. arg0=0 is the character root (control
+   trans); any other value indexes the skeleton node list. Falls back to
+   camera-pos when tgt is #f, matching the vanilla target-pos behaviour."
+  (cond
+    (tgt (if (zero? arg0) (-> tgt control trans) (vector<-cspace! (new 'static 'vector) (-> tgt node-list data arg0))))
+    (else (camera-pos))))
+
 (defun target-pos ((arg0 int))
-  (let ((a1-0 *target*))
-    (cond
-      (a1-0 (if (zero? arg0) (-> a1-0 control trans) (vector<-cspace! (new 'static 'vector) (-> a1-0 node-list data arg0))))
-      (else (camera-pos)))))
+  (target-pos-for *target* arg0))
+
+(defun closest-target-to ((pos vector))
+  "Return the target process from *target-list* closest to pos, skipping any
+   that are invulnerable / dying / do-not-notice. Returns #f if no valid
+   target exists (single-player or all players are in a protected state)."
+  (let ((best     (the-as target #f))
+        (best-dist (the-as float 10000000000.0)))
+    (dotimes (idx (-> *target-list* length))
+      (let ((tgt (get-target idx)))
+        (when (and tgt
+                   (not (logtest? (-> tgt state-flags)
+                                  (state-flags being-attacked invulnerable timed-invulnerable
+                                               invuln-powerup do-not-notice dying))))
+          (let ((d (vector-vector-distance pos (-> tgt control trans))))
+            (when (< d best-dist)
+              (set! best tgt)
+              (set! best-dist d))))))
+    best))
 
 (defun target-cam-pos ()
   (let ((gp-0 *target*))

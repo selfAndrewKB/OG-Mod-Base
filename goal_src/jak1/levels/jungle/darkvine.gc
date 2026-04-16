@@ -143,15 +143,16 @@
           (set! f30-0 (if (rand-vu-percent? 0.5) (+ 16384.0 f30-0) (+ -16384.0 f30-0))))))
   :post
     (behavior ()
-      (when (and (-> self hit-player) (or (not *target*) (time-elapsed? (-> self touch-time) (seconds 0.05))))
-        (set-collide-offense (-> self root) 2 (collide-offense indestructible))
-        (set! (-> self hit-player) #f))
-      (transform-post)
-      (if *target*
-        (look-at-enemy! (-> *target* neck)
-                        (vector<-cspace! (new 'stack-no-clear 'vector) (-> self node-list data (-> self tip-index)))
-                        'nothing
-                        self))))
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (when (and (-> self hit-player) (or (not tgt) (time-elapsed? (-> self touch-time) (seconds 0.05))))
+          (set-collide-offense (-> self root) 2 (collide-offense indestructible))
+          (set! (-> self hit-player) #f))
+        (transform-post)
+        (if tgt
+          (look-at-enemy! (-> tgt neck)
+                          (vector<-cspace! (new 'stack-no-clear 'vector) (-> self node-list data (-> self tip-index)))
+                          'nothing
+                          self)))))
 
 (defstate darkvine-retreat (darkvine)
   :event darkvine-event-handler

@@ -13,6 +13,7 @@
 ;;   (set! *multi-dbg-warp* #t)     ;; warp teleports
 ;;   (set! *multi-dbg-detail* #t)   ;; verbose field dumps
 ;;   (set! *multi-dbg-draw* #t)     ;; split-screen draw-pass transitions
+;;   (set! *multi-dbg-ai* #t)       ;; enemy AI targeting (enemy-target, closest-target-to)
 ;;
 ;; Gate all log calls through multi-log-enabled? and emit inline via format;
 ;; do NOT build intermediate strings — the helper that did so was removed.
@@ -29,6 +30,7 @@
 (define *multi-dbg-warp*   #f)   ;; warp teleports, distance checks
 (define *multi-dbg-detail* #f)   ;; verbose struct dumps (heavy)
 (define *multi-dbg-draw*   #f)   ;; split-screen activation transitions + per-pass dumps
+(define *multi-dbg-ai*     #f)   ;; enemy AI targeting — enemy-target handle + closest-target-to selection
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Logging helpers
@@ -44,6 +46,7 @@
       (('warp)    *multi-dbg-warp*)
       (('detail)  *multi-dbg-detail*)
       (('draw)    *multi-dbg-draw*)
+      (('ai)      *multi-dbg-ai*)
       (else #t)
       )
     )

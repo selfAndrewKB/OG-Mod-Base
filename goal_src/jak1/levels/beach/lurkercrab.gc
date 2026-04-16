@@ -102,7 +102,8 @@
          (go (method-of-object this nav-enemy-die)))
         ((begin
            (let ((s4-1 (new 'stack-no-clear 'vector)))
-             (vector-! s4-1 (-> this collide-info trans) (target-pos 0))
+             (let ((tgt (let ((t (closest-target-to (-> this collide-info trans)))) (if t t *target*))))
+               (vector-! s4-1 (-> this collide-info trans) (target-pos-for tgt 0)))
              (vector-normalize! s4-1 24576.0)
              (vector+! s4-1 (-> this collide-info trans) s4-1)
              (set! (-> this nav target-pos quad) (-> s4-1 quad)))
@@ -240,7 +241,7 @@ nav-enemy-default-event-handler
       (logclear! (-> self nav-enemy-flags) (nav-enemy-flags navenmf6)))
   :trans
     (behavior ()
-      (if (logtest? (-> *target* state-flags)
+      (if (logtest? (-> (nav-enemy-get-target) state-flags)
                     (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))
         (go-virtual nav-enemy-victory))
       (if (< (ja-aframe-num 0) 2.0) ((-> (method-of-type nav-enemy nav-enemy-chase) trans))))
