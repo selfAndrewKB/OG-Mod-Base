@@ -352,11 +352,12 @@
   (none))
 
 (defbehavior balloonlurker-player-impulse balloonlurker ()
-  (when *target*
-    (set! (-> self player-impulse) (the-as collide-shape-prim-mesh #t))
-    (set! (-> self player-force-position quad) (-> *target* control trans quad))
-    (vector-! (-> self player-force) (-> self player-velocity) (-> *target* control transv))
-    (vector-float*! (-> self player-force) (-> self player-force) (-> *BALLOONLURKER-bank* player-mass))))
+  (let ((tgt (let ((t (closest-target-to (-> self root-overlay trans)))) (if t t *target*))))
+    (when tgt
+      (set! (-> self player-impulse) (the-as collide-shape-prim-mesh #t))
+      (set! (-> self player-force-position quad) (-> tgt control trans quad))
+      (vector-! (-> self player-force) (-> self player-velocity) (-> tgt control transv))
+      (vector-float*! (-> self player-force) (-> self player-force) (-> *BALLOONLURKER-bank* player-mass)))))
 
 (defbehavior balloonlurker-event-handler balloonlurker ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (case arg2
@@ -587,9 +588,10 @@
         (entity-birth-no-kill sv-24)
         (apply-all (-> self link) actor-link-dead-hook (& sv-16))
         (when (and sv-16 sv-24)
-          (process-grab? *target*)
-          (suspend-for (seconds 1))
-          (process-release? *target*)
+          (let ((tgt (let ((t (closest-target-to (-> self root-overlay trans)))) (if t t *target*))))
+            (process-grab? tgt)
+            (suspend-for (seconds 1))
+            (process-release? tgt))
           (while (let ((a1-4 (new 'stack-no-clear 'event-message-block)))
                    (set! (-> a1-4 from) self)
                    (set! (-> a1-4 num-params) 0)

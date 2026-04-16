@@ -49,7 +49,7 @@
       (set! (-> a1-1 param 0) (the-as uint 'powerup))
       (set! (-> a1-1 param 1) (the-as uint 2))
       (cond
-        ((or (send-event-function *target* a1-1) (= (-> arg1 param 1) 'explode))
+        ((or (send-event-function arg0 a1-1) (= (-> arg1 param 1) 'explode))
          (logclear! (-> this mask) (process-mask actor-pause))
          (go (method-of-object this nav-enemy-die))
          'die)
@@ -161,9 +161,10 @@ nav-enemy-default-event-handler
           (suspend)
           (ja :num! (seek! max f30-0)))
         (loop
-          (cond
-            ((or (not *target*) (< 36864.0 (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-             (ja-no-eval :group! bonelurker-charge-ja :num! (seek! max f30-0) :frame-num 0.0)
+          (let ((tgt (nav-enemy-get-target)))
+            (cond
+              ((or (not tgt) (< 36864.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+               (ja-no-eval :group! bonelurker-charge-ja :num! (seek! max f30-0) :frame-num 0.0)
              (until (ja-done? 0)
                (suspend)
                (ja :num! (seek! max f30-0))))
@@ -181,7 +182,7 @@ nav-enemy-default-event-handler
              (ja-no-eval :group! bonelurker-charge-ja :num! (seek! max f30-0) :frame-num 0.0)
              (until (ja-done? 0)
                (suspend)
-               (ja :num! (seek! max f30-0)))))))))
+               (ja :num! (seek! max f30-0))))))))))
 
 (defstate nav-enemy-stop-chase (bonelurker)
   :virtual #t
@@ -237,7 +238,7 @@ nav-enemy-default-event-handler
       (set! (-> self turn-time) (seconds 0.1))
       (ja-channel-push! 1 (seconds 0.15))
       (let ((s4-0 (-> self collide-info))
-            (s5-0 (target-pos 0)))
+            (s5-0 (target-pos-for (nav-enemy-get-target) 0)))
         (when (< (fabs (deg-diff (y-angle s4-0) (vector-y-angle (vector-! (new 'stack-no-clear 'vector) s5-0 (-> s4-0 trans)))))
                  12743.111)
           (ja-no-eval :group! bonelurker-idle-ja :num! (seek!) :frame-num 0.0)

@@ -65,7 +65,7 @@
         (f24-0 4096000.0)
         (f28-0 0.0))
     (let ((s5-0 (+ (-> self path curve num-cverts) -1))
-          (s4-0 (target-pos 0)))
+          (s4-0 (target-pos-for (nav-enemy-get-target) 0)))
       (dotimes (s3-0 s5-0)
         (let ((f22-0 (the float s3-0)))
           (let ((f20-0 (the float (+ s3-0 1))))
@@ -132,10 +132,11 @@ nav-enemy-default-event-handler
   :trans
     (behavior ()
       (seek! (-> self sprint-distance) 61440.0 (* 8192.0 (seconds-per-frame)))
-      (if (and *target* (>= 102400.0 (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-        (level-hint-spawn (text-id zero) (the-as string #f) (-> self entity) *entity-pool* (game-task none)))
-      (if (and *target* (>= 81920.0 (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-        (go-virtual nav-enemy-chase)))
+      (let ((tgt (nav-enemy-get-target)))
+        (if (and tgt (>= 102400.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+          (level-hint-spawn (text-id zero) (the-as string #f) (-> self entity) *entity-pool* (game-task none)))
+        (if (and tgt (>= 81920.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+          (go-virtual nav-enemy-chase))))
   :code
     (behavior ()
       (when (ja-group? muse-run-ja)
@@ -163,14 +164,15 @@ nav-enemy-default-event-handler
       (set-time! (-> self state-time)))
   :trans
     (behavior ()
-      (cond
-        ((or (not *target*) (< 102400.0 (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-         (set! (-> self target-speed) 0.0)
-         (if (= (-> self momentum-speed) 0.0) (go muse-idle)))
-        ((or (not *target*)
-             (< (-> self sprint-distance) (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-         (set! (-> self target-speed) 40960.0))
-        (else (set! (-> self target-speed) 61440.0)))
+      (let ((tgt (nav-enemy-get-target)))
+        (cond
+          ((or (not tgt) (< 102400.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+           (set! (-> self target-speed) 0.0)
+           (if (= (-> self momentum-speed) 0.0) (go muse-idle)))
+          ((or (not tgt)
+               (< (-> self sprint-distance) (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+           (set! (-> self target-speed) 40960.0))
+          (else (set! (-> self target-speed) 61440.0))))
       (seek! (-> self sprint-distance) 0.0 (* 4096.0 (seconds-per-frame)))
       (muse-check-dest-point))
   :code

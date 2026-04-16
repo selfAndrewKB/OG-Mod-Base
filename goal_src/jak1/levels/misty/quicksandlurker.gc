@@ -409,7 +409,8 @@
   :bounds (static-spherem 0 0 0 5))
 
 (defbehavior orient-to-face-target quicksandlurker ()
-  (if *target* (seek-to-point-toward-point! (-> self root) (-> *target* control trans) 65536.0 (seconds 0.2))))
+  (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+    (if tgt (seek-to-point-toward-point! (-> self root) (-> tgt control trans) 65536.0 (seconds 0.2)))))
 
 ;; ERROR: function has no type analysis. Cannot decompile.
 
@@ -443,15 +444,16 @@
   (none))
 
 (defbehavior quicksandlurker-check-hide-transition quicksandlurker ()
-  (when *target*
-    (if (and (and *target* (>= 20480.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-             (!= (-> *target* next-state name) 'target-flop))
-      (go quicksandlurker-hide))
-    0.0
-    (let ((a0-2 (-> self nav))
-          (a1-1 (-> *target* control trans)))
-      (when (if (nav-control-method-16 a0-2 a1-1) #t)
-        (if (< (- (-> *target* control trans y) (-> self original-position y)) 0.0) (go quicksandlurker-hide)))))
+  (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+    (when tgt
+      (if (and (>= 20480.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
+               (!= (-> tgt next-state name) 'target-flop))
+        (go quicksandlurker-hide))
+      0.0
+      (let ((a0-2 (-> self nav))
+            (a1-1 (-> tgt control trans)))
+        (when (if (nav-control-method-16 a0-2 a1-1) #t)
+          (if (< (- (-> tgt control trans y) (-> self original-position y)) 0.0) (go quicksandlurker-hide))))))
   (none))
 
 (defstate quicksandlurker-idle (quicksandlurker)
@@ -464,8 +466,9 @@
       (logclear! (-> self draw status) (draw-status hidden)))
   :trans
     (behavior ()
-      (if (and *target* (>= 163840.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-        (go quicksandlurker-wait)))
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (if (and tgt (>= 163840.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+          (go quicksandlurker-wait))))
   :code
     (behavior ()
       (loop
@@ -476,14 +479,15 @@
   :event quicksandlurker-default-event-handler
   :trans
     (behavior ()
-      (cond
-        ((and *target* (>= 81920.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-         (set! (-> self y-offset) 1228.8)
-         (go quicksandlurker-track))
-        ((or (not *target*) (< 163840.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-         (seek! (-> self y-offset) -6553.6 (* 20480.0 (seconds-per-frame)))
-         (if (= (-> self y-offset) -6553.6) (go quicksandlurker-idle)))
-        (else (seek! (-> self y-offset) 1228.8 (* 20480.0 (seconds-per-frame))))))
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (cond
+          ((and tgt (>= 81920.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+           (set! (-> self y-offset) 1228.8)
+           (go quicksandlurker-track))
+          ((or (not tgt) (< 163840.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+           (seek! (-> self y-offset) -6553.6 (* 20480.0 (seconds-per-frame)))
+           (if (= (-> self y-offset) -6553.6) (go quicksandlurker-idle)))
+          (else (seek! (-> self y-offset) 1228.8 (* 20480.0 (seconds-per-frame)))))))
   :code
     (behavior ()
       (set-time! (-> self state-time))
@@ -526,8 +530,9 @@
   :event quicksandlurker-default-event-handler
   :trans
     (behavior ()
-      (if (or (not *target*) (< 81920.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-        (go quicksandlurker-wait))
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (if (or (not tgt) (< 81920.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+          (go quicksandlurker-wait)))
       (quicksandlurker-check-hide-transition))
   :code
     (behavior ()
@@ -552,11 +557,12 @@
   :post quicksandlurker-post)
 
 (defbehavior quicksandlurker-spit quicksandlurker ()
-  (let ((gp-0 (new-stack-vector0)))
+  (let ((gp-0 (new-stack-vector0))
+        (tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
     (let ((s5-0 (new-stack-vector0)))
       (set! (-> gp-0 quad)
             (-> (vector<-cspace! (new 'stack-no-clear 'vector) (joint-node quicksandlurker-lod0-jg jawEND)) quad))
-      (vector-! s5-0 (target-pos 5) gp-0)
+      (vector-! s5-0 (target-pos-for tgt 5) gp-0)
       (let ((f1-0 (vector-xz-length s5-0))) (set! (-> s5-0 y) (fmin (-> s5-0 y) (/ f1-0 2))))
       (vector-normalize! s5-0 49152.0)
       (spawn-quicksandlurker-missile self gp-0 s5-0 (-> self entity)))
@@ -620,14 +626,15 @@
       (restore-collide-with-as (-> self root)))
   :trans
     (behavior ()
-      (if (not *target*) (go quicksandlurker-wait))
-      (let ((a0-0 (-> self nav))
-            (a1-0 (-> *target* control trans)))
-        (cond
-          ((or (if (nav-control-method-16 a0-0 a1-0) #t)
-               (and *target* (>= 16384.0 (vector-vector-distance (-> self root trans) (-> *target* control trans)))))
-           (set-time! (-> self state-time)))
-          (else (if (time-elapsed? (-> self state-time) (seconds 2)) (go quicksandlurker-popup))))))
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (if (not tgt) (go quicksandlurker-wait))
+        (let ((a0-0 (-> self nav))
+              (a1-0 (-> tgt control trans)))
+          (cond
+            ((or (if (nav-control-method-16 a0-0 a1-0) #t)
+                 (>= 16384.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+             (set-time! (-> self state-time)))
+            (else (if (time-elapsed? (-> self state-time) (seconds 2)) (go quicksandlurker-popup)))))))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.2))
