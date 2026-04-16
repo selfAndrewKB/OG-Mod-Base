@@ -135,10 +135,11 @@
   (let ((s5-0 (new 'stack-no-clear 'matrix))
         (gp-0 (new 'stack-no-clear 'vector)))
     (path-control-method-14 (-> self path) (-> self tangent) (-> self curve-position))
-    (cond
-      ((and arg0 *target*) (vector-! gp-0 (-> self root trans) (target-pos 0)) (vector-normalize! gp-0 1.0))
-      ((< (-> self speed) 0.0) (vector-negate! gp-0 (-> self tangent)))
-      (else (set! (-> gp-0 quad) (-> self tangent quad))))
+    (let ((tgt (closest-target-to (-> self root trans))))
+      (cond
+        ((and arg0 tgt) (vector-! gp-0 (-> self root trans) (target-pos-for tgt 0)) (vector-normalize! gp-0 1.0))
+        ((< (-> self speed) 0.0) (vector-negate! gp-0 (-> self tangent)))
+        (else (set! (-> gp-0 quad) (-> self tangent quad)))))
     (matrix-from-two-vectors-max-angle-partial! s5-0 (-> self facing) gp-0 arg1 0.25)
     (vector-matrix*! gp-0 (-> self facing) s5-0)
     (vector-normalize! gp-0 1.0)
@@ -176,7 +177,8 @@
   (set! (-> self root trans y) (+ (-> self root trans y) (-> self y-offset))))
 
 (defbehavior robber-calc-speed robber ((arg0 float) (arg1 float) (arg2 float) (arg3 float) (arg4 symbol))
-  (let ((gp-1 (vector-! (new 'stack-no-clear 'vector) (-> self root trans) (target-pos 0))))
+  (let* ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*)))
+         (gp-1 (vector-! (new 'stack-no-clear 'vector) (-> self root trans) (target-pos-for tgt 0))))
     (set! (-> gp-1 y) 0.0)
     (let* ((f2-1 (/ (- (vector-length gp-1) arg0) (- arg1 arg0)))
            (f0-4 (- 1.0 (fmax 0.0 (fmin 1.0 f2-1))))
@@ -273,11 +275,12 @@
   :event robber-event-handler
   :trans
     (behavior ()
-      (if (and (not (and *target* (>= 204800.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans)))))
-               (robber-find-ground))
-        (go robber-idle))
-      (if (and *target* (>= 122880.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans))))
-        (go robber-flee)))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (if (and (not (and tgt (>= 204800.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans)))))
+                 (robber-find-ground))
+          (go robber-idle))
+        (if (and tgt (>= 122880.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))
+          (go robber-flee))))
   :code
     (behavior ()
       (when (not (ja-group? robber-fly-ja))
@@ -301,8 +304,9 @@
       (set! (-> self y-offset-desired) 0.0))
   :trans
     (behavior ()
-      (if (not (and *target* (>= 163840.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans)))))
-        (go robber-got-away)))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (if (not (and tgt (>= 163840.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans)))))
+          (go robber-got-away))))
   :code
     (behavior ()
       (loop
@@ -342,14 +346,15 @@
       (set! (-> self y-offset-desired) 0.0))
   :trans
     (behavior ()
-      (if (not (and *target* (>= 163840.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans)))))
-        (go robber-got-away))
-      (when (and *target* (>= 102400.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans))))
-        (set! (-> self near-timer)
-              (- (the-as time-frame (-> self near-timer)) (- (current-time) (-> *display* old-base-frame-counter))))
-        (if (<= (-> self near-timer) 0) (go robber-tired))
-        (set-time! (-> self far-time)))
-      (if (time-elapsed? (-> self far-time) (seconds 3)) (set! (-> self near-timer) (the-as int (-> self timeout)))))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (if (not (and tgt (>= 163840.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans)))))
+          (go robber-got-away))
+        (when (and tgt (>= 102400.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))
+          (set! (-> self near-timer)
+                (- (the-as time-frame (-> self near-timer)) (- (current-time) (-> *display* old-base-frame-counter))))
+          (if (<= (-> self near-timer) 0) (go robber-tired))
+          (set-time! (-> self far-time)))
+        (if (time-elapsed? (-> self far-time) (seconds 3)) (set! (-> self near-timer) (the-as int (-> self timeout))))))
   :code
     (behavior ()
       (loop
@@ -387,8 +392,9 @@
       (set! (-> self speed) 0.0))
   :trans
     (behavior ()
-      (if (and *target* (>= 122880.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans))))
-        (go robber-flee))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (if (and tgt (>= 122880.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))
+          (go robber-flee)))
       (robber-rotate (the-as target #t) 182.04445)
       (robber-move))
   :code
@@ -405,16 +411,18 @@
   :event robber-event-handler
   :trans
     (behavior ()
-      (when (logtest? (-> self draw status) (draw-status was-drawn))
-        (if (and *target* (>= 163840.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-          (level-hint-spawn (text-id rolling-robbers-hint) "sksp0116" (the-as entity #f) *entity-pool* (game-task none))))
-      (if (and *target* (>= 32768.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans))))
-        (go robber-flee)))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (when (logtest? (-> self draw status) (draw-status was-drawn))
+          (if (and tgt (>= 163840.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+            (level-hint-spawn (text-id rolling-robbers-hint) "sksp0116" (the-as entity #f) *entity-pool* (game-task none))))
+        (if (and tgt (>= 32768.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))
+          (go robber-flee))))
   :code
     (behavior ()
       (path-control-method-14 (-> self path) (-> self tangent) (-> self curve-position))
-      (let ((gp-1 (vector-! (new 'stack-no-clear 'vector) (-> self root trans) (target-pos 0)))
-            (f0-1 6.826667))
+      (let* ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*)))
+             (gp-1 (vector-! (new 'stack-no-clear 'vector) (-> self root trans) (target-pos-for tgt 0)))
+             (f0-1 6.826667))
         (set! (-> gp-1 y) 0.0)
         (if (< (vector-dot gp-1 (-> self tangent)) 0.0) (set! f0-1 (- f0-1)))
         (set! (-> self speed) f0-1))
@@ -436,8 +444,9 @@
       (set! (-> self speed) 0.0))
   :trans
     (behavior ()
-      (if (and *target* (>= 122880.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans))))
-        (go robber-initial-notice))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (if (and tgt (>= 122880.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))
+          (go robber-initial-notice)))
       (robber-move))
   :code
     (behavior ()

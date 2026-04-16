@@ -217,8 +217,9 @@
       (set! (-> self run-blend-interp) (- (-> self run-blend-interp))))))
 
 (defbehavior fleeing-nav-enemy-chase-post fleeing-nav-enemy ()
-  (let ((gp-0 (new 'stack-no-clear 'vector)))
-    (vector-! gp-0 (-> self collide-info trans) (target-pos 0))
+  (let ((tgt (nav-enemy-get-target))
+        (gp-0 (new 'stack-no-clear 'vector)))
+    (vector-! gp-0 (-> self collide-info trans) (target-pos-for tgt 0))
     (let* ((f0-1 (vector-dot (vector-normalize-copy! (new 'stack-no-clear 'vector) (-> self desired-travel) 1.0) gp-0))
            (f0-3 (/ (- (-> self flee-info speed-adjust-center) f0-1) (-> self flee-info speed-adjust-range)))
            (f1-3 (+ 1.0 f0-3)))
@@ -278,10 +279,11 @@
         (ja-no-eval :group! (-> self draw art-group data (-> self nav-info notice-anim)) :num! (seek! max f30-0) :frame-num 0.0)
         (until (ja-done? 0)
           (seek-toward-heading-vec! (-> self collide-info) (-> self nav travel) (-> self rotate-speed) (-> self turn-time))
-          (if (and *target*
-                   (>= (-> self flee-info abort-notice-distance)
-                       (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-            (go-virtual nav-enemy-chase))
+          (let ((tgt (nav-enemy-get-target)))
+            (if (and tgt
+                     (>= (-> self flee-info abort-notice-distance)
+                         (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+              (go-virtual nav-enemy-chase)))
           (suspend)
           (ja :num! (seek! max f30-0))))
       (go-virtual nav-enemy-chase))
@@ -347,7 +349,8 @@
               (vector-float*! s4-0 s4-0 1820.4445)
               (matrix-axis-angle! s3-0 (-> *camera* local-down) (-> s2-0 y))
               (vector-matrix*! gp-0 gp-0 s3-0))
-            (if *target* (vector-! gp-0 (-> self collide-info trans) (target-pos 0)))
+            (let ((tgt (nav-enemy-get-target)))
+              (if tgt (vector-! gp-0 (-> self collide-info trans) (target-pos-for tgt 0))))
             (vector-normalize! gp-0 (-> self flee-info deflection-max-dist))
             (let ((s3-3 (new 'stack-no-clear 'vector)))
               (set! (-> s3-3 quad) (-> self nav travel quad))
@@ -586,22 +589,24 @@
     (behavior ()
       (set! (-> self speed-adjust) 1.0)
       (set! (-> self run-blend-interp) 0.0)
-      (vector-! (-> self saved-travel) (-> self collide-info trans) (target-pos 0))
+      (let ((tgt (nav-enemy-get-target)))
+        (vector-! (-> self saved-travel) (-> self collide-info trans) (target-pos-for tgt 0)))
       ((-> (method-of-type fleeing-nav-enemy nav-enemy-chase) enter)))
   :trans
     (behavior ()
       (let ((s3-0 (new 'stack-no-clear 'vector))
             (s4-0 (new 'stack-no-clear 'vector))
-            (gp-0 (new 'stack-no-clear 'vector)))
+            (gp-0 (new 'stack-no-clear 'vector))
+            (tgt (nav-enemy-get-target)))
         0.0
         0.0
-        (let ((f30-0 (vector-vector-distance (-> self collide-info trans) (target-pos 0))))
+        (let ((f30-0 (vector-vector-distance (-> self collide-info trans) (target-pos-for tgt 0))))
           0.0
           0.0
           (let ((s5-1 (new 'stack-no-clear 'vector)))
             (vector-! s3-0 *lightning-mole-hole* (-> self collide-info trans))
-            (vector-! s4-0 (-> self collide-info trans) (target-pos 0))
-            (vector-! gp-0 *lightning-mole-hole* (target-pos 0))
+            (vector-! s4-0 (-> self collide-info trans) (target-pos-for tgt 0))
+            (vector-! gp-0 *lightning-mole-hole* (target-pos-for tgt 0))
             (let ((f26-0 (vector-normalize-ret-len! s3-0 1.0))
                   (f28-0 (vector-normalize-ret-len! s4-0 1.0)))
               (vector-normalize! gp-0 1.0)
@@ -905,9 +910,10 @@
       (set-time! (-> self state-time)))
   :trans
     (behavior ()
-      (if (and (time-elapsed? (-> self state-time) (seconds 1))
-               (not (and *target* (>= 81920.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans))))))
-        (go peeper-up)))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (if (and (time-elapsed? (-> self state-time) (seconds 1))
+                 (not (and tgt (>= 81920.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))))
+          (go peeper-up))))
   :code
     (behavior ()
       (logior! (-> self draw status) (draw-status hidden))
@@ -934,8 +940,9 @@
         (('hide) (go peeper-wait))))
   :trans
     (behavior ()
-      (if (and *target* (>= 61440.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans))))
-        (go peeper-wait)))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (if (and tgt (>= 61440.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))
+          (go peeper-wait))))
   :code
     (behavior ()
       (logior! (-> self draw status) (draw-status hidden))
@@ -969,8 +976,9 @@
       (logclear! (-> self draw status) (draw-status hidden)))
   :trans
     (behavior ()
-      (if (and *target* (>= 61440.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans))))
-        (go peeper-hide)))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (if (and tgt (>= 61440.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))
+          (go peeper-hide))))
   :code
     (behavior ()
       (loop
