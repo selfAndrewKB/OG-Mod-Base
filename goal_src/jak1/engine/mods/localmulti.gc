@@ -209,6 +209,16 @@
   "Main per-frame co-op update. Updates vehicle state, manages camera,
    handles racer/flutflut sections, and warps lagging players back."
 
+  ;; Session 26: defensive sync. runs-on-tgt-int only writes *target-list* 0
+  ;; when the slot is zero, so once set it's never refreshed — but P1's target
+  ;; process can be re-created during level transitions, leaving slot 0 with a
+  ;; stale handle while *target* points at the new live process. Readers that
+  ;; go through (get-target 0) instead of *target* then silently skip P1. This
+  ;; runs pre-dispatch via runs-every-frame, so it lands before any process
+  ;; (e.g. water-vol::update!) reads the slot in the same frame.
+  (when *target*
+    (set! (-> *target-list* 0) (process->handle *target*)))
+
   ;; Consume any pending camera snap latched from a post-dispatch context
   ;; (e.g. multi-warp-secondaries-in-level firing from load-state::update!).
   ;; This runs pre-dispatch via runs-every-frame, so cam-master-active's next

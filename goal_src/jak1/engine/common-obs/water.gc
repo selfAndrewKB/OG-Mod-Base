@@ -911,12 +911,39 @@
   0
   (none))
 
-(defmethod on-exit-water ((this water-vol))
-  (when (handle->process (-> this target))
-    (let ((v1-7 (-> (the-as target (-> this target process 0)) water)))
-      (logclear! (-> v1-7 flags) (water-flags wt01 wt02 wt03 wt08 wt17 wt18 wt19 wt20 wt21 wt23 wt24 wt25 wt26))
-      (set! (-> v1-7 volume) (the-as handle #f)))
-    (set! (-> this target) (the-as handle #f))
+;; --- Session 26: native multi-target water system ---
+;; Primary source of truth is (-> tgt water volume), the per-target water-control
+;; handle already maintained by the engine. The old water-vol.target scalar is
+;; left as a vestigial zero'd field. All membership queries iterate *target-list*.
+
+(defun water-vol-claim-target ((this water-vol) (tgt target))
+  (let ((ctl (-> tgt water)))
+    (process-entity-status! this (entity-perm-status bit-3) #t)
+    (set! (-> ctl volume) (process->handle this))
+    (logior! (-> ctl flags) (water-flags wt01))
+    (set! (-> ctl base-height) (-> this water-height))
+    (set! (-> ctl ocean-offset) 0.0)
+    (logior! (-> ctl flags) (-> this flags))
+    (if (< 0.0 (-> this wade-height)) (set! (-> ctl wade-height) (-> this wade-height)))
+    (if (< 0.0 (-> this swim-height)) (set! (-> ctl swim-height) (-> this swim-height)))
+    (if (< 0.0 (-> this bottom-height)) (set! (-> ctl bottom-height) (-> this bottom-height)))
+    (set-zero! (-> ctl bob)))
+  0
+  (none))
+
+(defun water-vol-any-target-tracked? ((this water-vol))
+  (let ((found #f))
+    (dotimes (idx (-> *target-list* length))
+      (let ((tgt (get-target idx)))
+        (when (and tgt (= (handle->process (-> tgt water volume)) this))
+          (set! found #t))))
+    found))
+
+(defun water-vol-release-target ((this water-vol) (tgt target))
+  (let ((ctl (-> tgt water)))
+    (logclear! (-> ctl flags) (water-flags wt01 wt02 wt03 wt08 wt17 wt18 wt19 wt20 wt21 wt23 wt24 wt25 wt26))
+    (set! (-> ctl volume) (the-as handle #f)))
+  (when (not (water-vol-any-target-tracked? this))
     (iterate-process-tree *entity-pool*
                           (lambda ((arg0 water-vol))
                             (with-pp
@@ -926,40 +953,47 @@
   0
   (none))
 
+(defun water-vol-apply-hazard ((this water-vol) (tgt target))
+  (let ((ctl (-> tgt water)))
+    (when (and (logtest? (water-flags wt19) (-> this flags))
+               (logtest? (-> ctl flags) (water-flags wt09))
+               (>= (-> ctl surface-height) (-> ctl bottom 0 y)))
+      (let ((ev (-> this attack-event)))
+        (case ev
+          ((#f))
+          (('heat) (send-event tgt 'heat (* 10.0 (seconds-per-frame))))
+          (('drown-death 'lava 'dark-eco-pool)
+           (if (send-event tgt 'attack-invinc #f (static-attack-info ((mode ev))))
+             (send-event this 'notify 'attack)))
+          (else
+           (if (send-event tgt 'attack #f (static-attack-info ((mode ev))))
+             (send-event this 'notify 'attack)))))))
+  0
+  (none))
+
+(defmethod on-exit-water ((this water-vol))
+  (dotimes (idx (-> *target-list* length))
+    (let ((tgt (get-target idx)))
+      (when (and tgt (= (handle->process (-> tgt water volume)) this))
+        (water-vol-release-target this tgt))))
+  (process-entity-status! this (entity-perm-status bit-3) #f)
+  0
+  (none))
+
 (defmethod update! ((this water-vol))
-  (cond
-    ((handle->process (-> this target))
-     (cond
-       ((not (point-in-vol? (-> this vol) (-> (the-as target (-> this target process 0)) control trans))) (on-exit-water this))
-       (else
-        (let ((v1-15 (-> (the-as target (-> this target process 0)) water)))
-          (when (and (logtest? (water-flags wt19) (-> this flags))
-                     (logtest? (-> v1-15 flags) (water-flags wt09))
-                     (>= (-> v1-15 surface-height) (-> v1-15 bottom 0 y)))
-            (let ((v1-18 (-> this attack-event)))
-              (case v1-18
-                ((#f))
-                (('heat) (send-event (handle->process (-> this target)) 'heat (* 10.0 (seconds-per-frame))))
-                (('drown-death 'lava 'dark-eco-pool)
-                 (if (send-event (handle->process (-> this target)) 'attack-invinc #f (static-attack-info ((mode v1-18))))
-                   (send-event this 'notify 'attack)))
-                (else
-                 (if (send-event (handle->process (-> this target)) 'attack #f (static-attack-info ((mode v1-18))))
-                   (send-event this 'notify 'attack))))))))))
-    ((and *target*
-          (and (not (handle->process (-> *target* water volume))) (point-in-vol? (-> this vol) (-> *target* control trans))))
-     (let ((s5-0 (-> *target* water)))
-       (process-entity-status! this (entity-perm-status bit-3) #t)
-       (set! (-> s5-0 volume) (process->handle this))
-       (set! (-> this target) (process->handle *target*))
-       (logior! (-> s5-0 flags) (water-flags wt01))
-       (set! (-> s5-0 base-height) (-> this water-height))
-       (set! (-> s5-0 ocean-offset) 0.0)
-       (logior! (-> s5-0 flags) (-> this flags))
-       (if (< 0.0 (-> this wade-height)) (set! (-> s5-0 wade-height) (-> this wade-height)))
-       (if (< 0.0 (-> this swim-height)) (set! (-> s5-0 swim-height) (-> this swim-height)))
-       (if (< 0.0 (-> this bottom-height)) (set! (-> s5-0 bottom-height) (-> this bottom-height)))
-       (set-zero! (-> s5-0 bob)))))
+  (dotimes (idx (-> *target-list* length))
+    (let ((tgt (get-target idx)))
+      (when tgt
+        (cond
+          ((= (handle->process (-> tgt water volume)) this)
+           (cond
+             ((not (point-in-vol? (-> this vol) (-> tgt control trans)))
+              (water-vol-release-target this tgt))
+             (else
+              (water-vol-apply-hazard this tgt))))
+          ((and (not (handle->process (-> tgt water volume)))
+                (point-in-vol? (-> this vol) (-> tgt control trans)))
+           (water-vol-claim-target this tgt))))))
   0
   (none))
 
