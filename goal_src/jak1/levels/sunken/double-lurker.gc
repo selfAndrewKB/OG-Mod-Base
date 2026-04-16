@@ -281,16 +281,16 @@
 (defstate double-lurker-top-resume (double-lurker-top)
   :code
     (behavior ()
-      (cond
-        ((not *target*) (go-virtual nav-enemy-idle))
-        ((target-in-range? self (-> self nav-info notice-distance)) (go-virtual nav-enemy-chase))
-        ((and (and *target*
-                   (>= (-> self enemy-info idle-distance)
-                       (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-              (time-elapsed? (-> self state-time) (-> self state-timeout))
-              (nonzero? (-> self draw))
-              (logtest? (-> self draw status) (draw-status was-drawn)))
-         (go-virtual nav-enemy-patrol)))
+      (let ((tgt (nav-enemy-get-target)))
+        (cond
+          ((not tgt) (go-virtual nav-enemy-idle))
+          ((target-in-range? self (-> self nav-info notice-distance)) (go-virtual nav-enemy-chase))
+          ((and (>= (-> self enemy-info idle-distance)
+                    (vector-vector-distance (-> self collide-info trans) (-> tgt control trans)))
+                (time-elapsed? (-> self state-time) (-> self state-timeout))
+                (nonzero? (-> self draw))
+                (logtest? (-> self draw status) (draw-status was-drawn)))
+           (go-virtual nav-enemy-patrol))))
       (go-virtual nav-enemy-idle)))
 
 (defstate nav-enemy-patrol (double-lurker-top)
@@ -422,7 +422,7 @@
        (cond
          ((-> self buddy-on-shoulders?)
           (let ((s4-0 (new 'stack-no-clear 'vector)))
-            (vector-! s4-0 (target-pos 0) (-> self collide-info trans))
+            (vector-! s4-0 (target-pos-for (the-as target arg0) 0) (-> self collide-info trans))
             (cond
               ((and (>= (-> s4-0 y) 8192.0)
                     (>= 14563.556 (fabs (deg- (quaternion-y-angle (-> self collide-info quat)) (atan (-> s4-0 x) (-> s4-0 z))))))
@@ -456,16 +456,16 @@
 (defstate double-lurker-resume (double-lurker)
   :code
     (behavior ()
-      (cond
-        ((not *target*) (go-virtual nav-enemy-idle))
-        ((target-in-range? self (-> self nav-info notice-distance)) (go-virtual nav-enemy-chase))
-        ((and (and *target*
-                   (>= (-> self enemy-info idle-distance)
-                       (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-              (time-elapsed? (-> self state-time) (-> self state-timeout))
-              (nonzero? (-> self draw))
-              (logtest? (-> self draw status) (draw-status was-drawn)))
-         (go-virtual nav-enemy-patrol)))
+      (let ((tgt (nav-enemy-get-target)))
+        (cond
+          ((not tgt) (go-virtual nav-enemy-idle))
+          ((target-in-range? self (-> self nav-info notice-distance)) (go-virtual nav-enemy-chase))
+          ((and (>= (-> self enemy-info idle-distance)
+                    (vector-vector-distance (-> self collide-info trans) (-> tgt control trans)))
+                (time-elapsed? (-> self state-time) (-> self state-timeout))
+                (nonzero? (-> self draw))
+                (logtest? (-> self draw status) (draw-status was-drawn)))
+           (go-virtual nav-enemy-patrol))))
       (go-virtual nav-enemy-idle)))
 
 (defstate nav-enemy-idle (double-lurker)

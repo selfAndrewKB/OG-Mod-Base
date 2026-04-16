@@ -72,7 +72,7 @@
       (set! (-> s4-0 y) 0.0)
       (vector-normalize! s4-0 102400.0)
       (vector+! s4-0 s4-0 (camera-pos))
-      (set! (-> s4-0 y) (-> (target-pos 0) y))
+      (set! (-> s4-0 y) (-> (target-pos-for (let ((t (closest-target-to (-> this root trans)))) (if t t *target*)) 0) y))
       (dotimes (s3-2 (-> this alt-actors length))
         (let* ((v1-10 (-> this alt-actors s3-2))
                (s1-0 (if v1-10 (-> v1-10 extra process)))
@@ -110,7 +110,7 @@
                  (s3-3 (if (and (nonzero? s2-3) (type-type? (-> s2-3 type) process-drawable)) s2-3))
                  (s2-4 (new 'stack-no-clear 'vector))
                  (s1-1 (new 'stack-no-clear 'baby-spider-spawn-params)))
-            (vector-! s2-4 (target-pos 0) (-> (the-as process-drawable s3-3) root trans))
+            (vector-! s2-4 (target-pos-for (let ((t (closest-target-to (-> this root trans)))) (if t t *target*)) 0) (-> (the-as process-drawable s3-3) root trans))
             (vector-normalize! s2-4 1.0)
             (init! s1-1 (= (-> s3-3 type) spider-egg) #t #t #t 7 1 'untrigger)
             (let ((v1-40 (process-spawn baby-spider this (-> (the-as process-drawable s3-3) root trans) s2-4 s1-1 :to this)))
@@ -125,16 +125,17 @@
   :event cave-trap-default-event-handler
   :trans
     (behavior ()
-      (when *target*
-        (let* ((gp-0 (target-pos 0))
-               (f0-0 (vector-vector-xz-distance (-> self root trans) (target-pos 0)))
-               (f1-1 (- (-> gp-0 y) (-> self root trans y))))
-          (when (and (>= 61440.0 f1-1) (>= f1-1 -16384.0))
-            (when (>= 274432.0 f0-0)
-              (when (or (>= 188416.0 f0-0) (send-event *target* 'query 'powerup (pickup-type eco-yellow)))
-                (level-hint-spawn (text-id cave-trap-nest-hint) "sksp0341" (the-as entity #f) *entity-pool* (game-task none))
-                (close-specific-task! (game-task cave-spider-tunnel) (task-status need-hint))
-                (go cave-trap-active)))))))
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (when tgt
+          (let* ((gp-0 (target-pos-for tgt 0))
+                 (f0-0 (vector-vector-xz-distance (-> self root trans) (target-pos-for tgt 0)))
+                 (f1-1 (- (-> gp-0 y) (-> self root trans y))))
+            (when (and (>= 61440.0 f1-1) (>= f1-1 -16384.0))
+              (when (>= 274432.0 f0-0)
+                (when (or (>= 188416.0 f0-0) (send-event tgt 'query 'powerup (pickup-type eco-yellow)))
+                  (level-hint-spawn (text-id cave-trap-nest-hint) "sksp0341" (the-as entity #f) *entity-pool* (game-task none))
+                  (close-specific-task! (game-task cave-spider-tunnel) (task-status need-hint))
+                  (go cave-trap-active))))))))
   :code
     (behavior ()
       (logior! (-> self mask) (process-mask sleep-code))
@@ -148,15 +149,16 @@
       (set! (-> self spawn-delay) (seconds 0.5)))
   :trans
     (behavior ()
-      (cond
-        (*target*
-         (let* ((gp-0 (target-pos 0))
-                (f0-0 (vector-vector-xz-distance (-> self root trans) (target-pos 0)))
-                (f1-1 (- (-> gp-0 y) (-> self root trans y))))
-           (if (or (< 73728.0 f1-1) (< f1-1 -24576.0) (< 368640.0 f0-0)) (go cave-trap-give-up)))
-         (if (and (< (-> self spider-count) 8) (time-elapsed? (-> self last-spawn-time) (-> self spawn-delay)))
-           (cave-trap-method-20 self)))
-        (else (go cave-trap-give-up)))
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (cond
+          (tgt
+           (let* ((gp-0 (target-pos-for tgt 0))
+                  (f0-0 (vector-vector-xz-distance (-> self root trans) (target-pos-for tgt 0)))
+                  (f1-1 (- (-> gp-0 y) (-> self root trans y))))
+             (if (or (< 73728.0 f1-1) (< f1-1 -24576.0) (< 368640.0 f0-0)) (go cave-trap-give-up)))
+           (if (and (< (-> self spider-count) 8) (time-elapsed? (-> self last-spawn-time) (-> self spawn-delay)))
+             (cave-trap-method-20 self)))
+          (else (go cave-trap-give-up))))
       0)
   :code
     (behavior ()

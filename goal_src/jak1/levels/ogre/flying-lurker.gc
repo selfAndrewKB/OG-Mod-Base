@@ -163,9 +163,10 @@
   :trans
     (behavior ()
       (spool-push *art-control* "plunger-lurker-blowup" 0 self -99.0)
-      (when (and *target* (< (vector-vector-distance-squared (-> self root trans) (target-pos 0)) 6710886400.0))
-        (logclear! (-> self mask) (process-mask actor-pause))
-        (go plunger-lurker-flee)))
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (when (and tgt (< (vector-vector-distance-squared (-> self root trans) (target-pos-for tgt 0)) 6710886400.0))
+          (logclear! (-> self mask) (process-mask actor-pause))
+          (go plunger-lurker-flee))))
   :code
     (behavior ()
       (loop
@@ -332,8 +333,9 @@
   (not (-> self link prev)))
 
 (defbehavior flying-lurker-calc-speed flying-lurker ((arg0 meters) (arg1 meters) (arg2 meters) (arg3 meters))
-  (let ((s4-1 (vector-! (new 'stack-no-clear 'vector) (target-pos 0) (-> self root trans)))
-        (s3-0 (new 'stack-no-clear 'vector)))
+  (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+    (let ((s4-1 (vector-! (new 'stack-no-clear 'vector) (target-pos-for tgt 0) (-> self root trans)))
+          (s3-0 (new 'stack-no-clear 'vector)))
     (set! (-> s3-0 quad) (-> self tangent quad))
     0.0
     (let ((f30-0 (vector-length s4-1)))
@@ -352,7 +354,7 @@
         ;; og:preserve-this PAL patch here
         (let ((f0-16 65536.0))
           (if (and (< 0.6332 (-> self curve-position)) (< (-> self curve-position) 0.6928)) (set! f0-16 40960.0))
-          (set! (-> self y-offset-desired) (fmin f0-16 (fmax 0.0 (* 1.6 (- 40960.0 (fmin (- f28-0) f30-0))))))))))
+          (set! (-> self y-offset-desired) (fmin f0-16 (fmax 0.0 (* 1.6 (- 40960.0 (fmin (- f28-0) f30-0)))))))))))
   (none))
 
 (defbehavior flying-lurker-move flying-lurker ()
@@ -485,8 +487,9 @@
         (flying-lurker-move)
         (flying-lurker-rotate)
         (when (and (-> self alt-actor)
-                   (or (< (vector-vector-distance-squared (-> self root trans) (-> self alt-actor extra trans)) 6710886400.0)
-                       (and *target* (< 4194304000000.0 (vector-vector-distance-squared (-> self root trans) (target-pos 0))))))
+                   (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+                     (or (< (vector-vector-distance-squared (-> self root trans) (-> self alt-actor extra trans)) 6710886400.0)
+                         (and tgt (< 4194304000000.0 (vector-vector-distance-squared (-> self root trans) (target-pos-for tgt 0)))))))
           (set-or-clear-status! (-> self alt-actor) (entity-perm-status dead) #f)
           (entity-birth-no-kill (-> self alt-actor))
           (let ((a1-4 (new 'stack-no-clear 'event-message-block)))
@@ -772,8 +775,9 @@
            (ja :group! flying-lurker-fly-ja)
            (ja-no-eval :group! flying-lurker-fly-ja :num! (seek! max f30-0) :frame-num (the float gp-0))
            (until (ja-done? 0)
-             (if (and *target* (>= 172032.0 (vector-vector-xz-distance (-> self root trans) (-> *target* control trans))))
-               (send-event self 'saw-player))
+             (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+               (if (and tgt (>= 172032.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))
+                 (send-event self 'saw-player)))
              (suspend)
              (ja :num! (seek! max f30-0)))
            (set! gp-0 0)))))

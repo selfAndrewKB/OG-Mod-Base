@@ -96,13 +96,14 @@
          (set-collide-offense (-> self root) 2 (collide-offense no-offense)))))))
 
 (defbehavior puffer-post puffer ()
-  (when (and (-> self hit-player?)
-             (or (not *target*)
-                 (and (not (logtest? (-> *target* state-flags)
-                                     (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
-                      (time-elapsed? (-> self hit-player-time) (seconds 0.05)))))
-    (set-collide-offense (-> self root) 2 (collide-offense normal-attack))
-    (set! (-> self hit-player?) #f))
+  (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+    (when (and (-> self hit-player?)
+               (or (not tgt)
+                   (and (not (logtest? (-> tgt state-flags)
+                                       (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
+                        (time-elapsed? (-> self hit-player-time) (seconds 0.05)))))
+      (set-collide-offense (-> self root) 2 (collide-offense normal-attack))
+      (set! (-> self hit-player?) #f)))
   (transform-post)
   (none))
 
@@ -145,11 +146,12 @@
   #f)
 
 (defmethod puffer-method-25 ((this puffer) (arg0 float))
-  (when *target*
-    (let ((gp-0 (target-pos 0)))
-      (when (and (not (logtest? (-> *target* state-flags)
-                                (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
-                 (puffer-method-24 this gp-0)
+  (let ((tgt (let ((t (closest-target-to (-> this root trans)))) (if t t *target*))))
+    (when tgt
+      (let ((gp-0 (target-pos-for tgt 0)))
+        (when (and (not (logtest? (-> tgt state-flags)
+                                  (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
+                   (puffer-method-24 this gp-0)
                  (>= (-> gp-0 y) (+ -14336.0 (-> this attack-bottom-y)))
                  (>= (+ 2048.0 (-> this top-y)) (-> gp-0 y)))
         (let ((f30-0 (vector-vector-xz-distance gp-0 (-> this root trans))))
@@ -161,7 +163,7 @@
                  (if (not (-> (the-as puffer v1-12) attacking?)) (return #t))
                  (if (< f30-0 (vector-vector-xz-distance gp-0 (-> (the-as puffer v1-12) root trans))) (return #t)))
                 (else (return #t)))))))))
-  #f)
+  #f))
 
 (deftype pick-patrol-point-away-from-buddy-work (structure)
   ((best-path-index int32)
@@ -263,8 +265,9 @@
   (let ((f30-0 (-> this patrol-bottom-y)))
     (cond
       ((-> this attacking?)
-       (let ((f30-1 (-> this attack-bottom-y)))
-         (set! (-> this targ-trans-y) (fmax (fmin (+ 4096.0 (-> (target-pos 0) y)) (-> this top-y)) f30-1)))
+       (let ((f30-1 (-> this attack-bottom-y))
+             (tgt (let ((t (closest-target-to (-> this root trans)))) (if t t *target*))))
+         (set! (-> this targ-trans-y) (fmax (fmin (+ 4096.0 (-> (target-pos-for tgt 0) y)) (-> this top-y)) f30-1)))
        (set! (-> this root transv y)
              (* (/ (-> *display* frames-per-second) 8) (- (-> this targ-trans-y) (-> this root trans y))))
        (when (< 6144.0 (fabs (-> this root transv y)))
@@ -309,11 +312,12 @@
   :code
     (behavior ()
       (loop
-        (if (and (and *target*
-                      (>= (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-                 (logtest? (-> self draw status) (draw-status was-drawn))
-                 (time-elapsed? (-> self state-time) (seconds 0.2)))
-          (go puffer-patrol))
+        (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+          (if (and tgt
+                   (>= (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> tgt control trans)))
+                   (logtest? (-> self draw status) (draw-status was-drawn))
+                   (time-elapsed? (-> self state-time) (seconds 0.2)))
+            (go puffer-patrol)))
         (puffer-method-26 self)
         (suspend)))
   :post puffer-post)
@@ -331,10 +335,11 @@
       (set-time! (-> self last-on-screen-time)))
   :trans
     (behavior ()
-      (if (and (not (and *target*
-                         (>= (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> *target* control trans)))))
-               (time-elapsed? (-> self state-time) (seconds 3)))
-        (go puffer-idle))
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (if (and (not (and tgt
+                           (>= (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> tgt control trans)))))
+                 (time-elapsed? (-> self state-time) (seconds 3)))
+          (go puffer-idle)))
       (cond
         ((logtest? (-> self draw status) (draw-status was-drawn)) (set-time! (-> self last-on-screen-time)))
         (else (if (time-elapsed? (-> self last-on-screen-time) (seconds 8)) (go puffer-idle))))
@@ -377,14 +382,14 @@
   :trans
     (behavior ()
       (if (not (puffer-method-25 self (-> self give-up-dist))) (go puffer-patrol))
-      (when *target*
-        (if *target*
-          (look-at-enemy! (-> *target* neck)
+      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        (when tgt
+          (look-at-enemy! (-> tgt neck)
                           (the-as vector (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core))
                           'attacking
-                          self))
-        (set-target! (-> self neck) (target-pos 5)))
-      (puffer-method-20 self (target-pos 0))
+                          self)
+          (set-target! (-> self neck) (target-pos-for tgt 5))
+          (puffer-method-20 self (target-pos-for tgt 0))))
       (let ((gp-2 (new 'stack-no-clear 'vector)))
         (set-vector! gp-2 (sin (-> self facing-ry)) 0.0 (cos (-> self facing-ry)) 1.0)
         (set-heading-vec-clear-roll-pitch! (-> self root) gp-2))
