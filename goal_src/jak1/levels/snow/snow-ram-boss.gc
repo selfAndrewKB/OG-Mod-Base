@@ -522,18 +522,19 @@
   (the-as ram-boss-proj ((method-of-type projectile relocate) this offset)))
 
 (defmethod projectile-method-28 ((this ram-boss-proj))
-  (when (and *target*
-             (not (logtest? (-> *target* state-flags)
-                            (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))
-    (let ((gp-0 (-> this target)))
-      (set! (-> gp-0 quad) (-> (target-pos 0) quad))
-      (+! (-> gp-0 y) 4915.2)
-      (let ((f0-2 (vector-vector-distance gp-0 (-> this root trans)))
-            (a2-0 (new 'stack-no-clear 'vector)))
-        (if (>= 0.0 f0-2) (set! f0-2 409.6))
-        (set! (-> a2-0 quad) (-> *target* control transv quad))
-        (set! (-> a2-0 y) 0.0)
-        (let ((f0-3 (/ f0-2 (* 40960.0 (seconds-per-frame))))) (vector+float*! gp-0 gp-0 a2-0 (* f0-3 (seconds-per-frame)))))))
+  (let ((tgt (the-as target (handle->process (-> this last-target)))))
+    (when (and tgt
+               (not (logtest? (-> tgt state-flags)
+                              (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))
+      (let ((gp-0 (-> this target)))
+        (set! (-> gp-0 quad) (-> (target-pos-for tgt 0) quad))
+        (+! (-> gp-0 y) 4915.2)
+        (let ((f0-2 (vector-vector-distance gp-0 (-> this root trans)))
+              (a2-0 (new 'stack-no-clear 'vector)))
+          (if (>= 0.0 f0-2) (set! f0-2 409.6))
+          (set! (-> a2-0 quad) (-> tgt control transv quad))
+          (set! (-> a2-0 y) 0.0)
+          (let ((f0-3 (/ f0-2 (* 40960.0 (seconds-per-frame))))) (vector+float*! gp-0 gp-0 a2-0 (* f0-3 (seconds-per-frame))))))))
   (none))
 
 (defstate ram-boss-proj-growing (ram-boss-proj)
@@ -582,7 +583,8 @@
       (logior! (-> self root root-prim prim-core action) (collide-action solid))
       (set-time! (-> self launch-time))
       (vector-float*! (-> self root transv) (-> self parent-override 0 proj-launch-vec) 40960.0)
-      (set! (-> self target quad) (-> (target-pos 0) quad))
+      (let ((tgt (the-as target (handle->process (-> self last-target)))))
+        (set! (-> self target quad) (-> (target-pos-for tgt 0) quad)))
       (+! (-> self target y) 4915.2)
       (set! (-> self target-base quad) (-> self target quad))
       (go-virtual projectile-moving)))
@@ -738,7 +740,7 @@
      (cond
        ((-> self has-shield?)
         (cond
-          ((send-event *target* 'query 'powerup (pickup-type eco-red))
+          ((send-event arg0 'query 'powerup (pickup-type eco-red))
            (nav-enemy-set-hit-from-direction arg0)
            (send-event arg0 'shove #f (static-attack-info ((shove-back (meters 2)))))
            (go ram-boss-lose-shield)
@@ -747,7 +749,7 @@
           ((begin
              (if (not (logtest? (-> self nav-enemy-flags) (nav-enemy-flags navenmf8))) (do-push-aways! (-> self collide-info)))
              (level-hint-spawn (text-id snow-ram-boss-red-eco-hint) "sksp0346" (the-as entity #f) *entity-pool* (game-task none))
-             (>= (- (-> (target-pos 0) y) (-> self collide-info trans y)) 9420.8))
+             (>= (- (-> (target-pos-for (the-as target arg0) 0) y) (-> self collide-info trans y)) 9420.8))
            (send-event arg0 'shove #f (static-attack-info ((shove-back (meters 4)) (shove-up (meters 2)))))
            (go ram-boss-up-defend-block)
            (return #t)
@@ -764,7 +766,7 @@
      (cond
        ((-> self has-shield?)
         (cond
-          ((>= (- (-> (target-pos 0) y) (-> self collide-info trans y)) 9420.8)
+          ((>= (- (-> (target-pos-for (the-as target arg0) 0) y) (-> self collide-info trans y)) 9420.8)
            (send-event arg0 'shove (-> arg3 param 0) (static-attack-info ((shove-back (meters 4)) (shove-up (meters 2)))))
            (go ram-boss-up-defend-block)
            (return #t)
@@ -782,11 +784,12 @@
        (let ((v1-66 arg0))
          (cond
            ((= (-> arg3 param 0) 'attack)
-            (when (= (-> arg3 param 1) *target*)
-              (set! (-> self frustration) 0)
-              (go-virtual nav-enemy-victory)
-              (return #t)
-              v0-4))
+            (let ((tgt (closest-target-to (-> self collide-info trans))))
+              (when (and tgt (= (-> arg3 param 1) tgt))
+                (set! (-> self frustration) 0)
+                (go-virtual nav-enemy-victory)
+                (return #t)
+                v0-4)))
            ((= (-> arg3 param 0) 'die)
             (let* ((v1-73 (- (current-time) (-> (the-as ram-boss-proj v1-66) launch-time)))
                    (v1-74 (the-as int (- (seconds 4) v1-73))))
@@ -932,13 +935,14 @@
   (the-as symbol (vector-float*! arg0 arg0 (/ 1.0 (-> arg0 w)))))
 
 (defmethod nav-enemy-method-55 ((this ram-boss))
-  (if (not *target*) (return #f))
-  (let ((s5-0 (new 'stack-no-clear 'vector))
-        (s4-0 (new 'stack-no-clear 'vector)))
-    (set! (-> s5-0 quad) (-> this collide-info trans quad))
-    (+! (-> s5-0 y) 8192.0)
-    (set! (-> s4-0 quad) (-> (target-pos 0) quad))
-    (+! (-> s4-0 y) 4915.2)
+  (let ((tgt (closest-target-to (-> this collide-info trans))))
+    (if (not tgt) (return #f))
+    (let ((s5-0 (new 'stack-no-clear 'vector))
+          (s4-0 (new 'stack-no-clear 'vector)))
+      (set! (-> s5-0 quad) (-> this collide-info trans quad))
+      (+! (-> s5-0 y) 8192.0)
+      (set! (-> s4-0 quad) (-> (target-pos-for tgt 0) quad))
+      (+! (-> s4-0 y) 4915.2)
     (vector-! s4-0 s4-0 s5-0)
     (let* ((t2-0 (new 'stack-no-clear 'collide-tri-result))
            (v0-0 (< (fill-and-probe-using-line-sphere *collide-cache*
@@ -954,7 +958,7 @@
       (the-as none 0)
       (set! v0-0 (the-as symbol #f))
       (label cfg-7)
-      v0-0)))
+      v0-0))))
 
 (defmethod ram-boss-method-51 ((this ram-boss) (arg0 vector))
   (let* ((f30-0 (quaternion-y-angle (-> this collide-info quat)))
@@ -968,22 +972,23 @@
 (defmethod set-jump-height-factor! ((this ram-boss) (arg0 int))
   (cond
     ((zero? (-> this proj-status))
-     (when (and *target* (time-elapsed? (-> this proj-last-thrown-time) (seconds 2)))
-       (when arg0
-         (set! (-> this proj-stoked) #t)
-         (let ((s5-0 (new 'stack-no-clear 'vector)))
-           (set! (-> s5-0 quad) (the-as uint128 0))
-           (let ((v1-9 (process-spawn ram-boss-proj
-                                      :init
-                                      projectile-init-by-other
-                                      (-> this entity)
-                                      (-> this collide-info trans)
-                                      s5-0
-                                      0
-                                      (process->handle *target*)
-                                      :to
-                                      this)))
-             (set! (-> (the-as (pointer ram-boss-proj) v1-9) 0 notify-handle) (process->handle this)))))))
+     (let ((tgt (closest-target-to (-> this collide-info trans))))
+       (when (and tgt (time-elapsed? (-> this proj-last-thrown-time) (seconds 2)))
+         (when arg0
+           (set! (-> this proj-stoked) #t)
+           (let ((s5-0 (new 'stack-no-clear 'vector)))
+             (set! (-> s5-0 quad) (the-as uint128 0))
+             (let ((v1-9 (process-spawn ram-boss-proj
+                                        :init
+                                        projectile-init-by-other
+                                        (-> this entity)
+                                        (-> this collide-info trans)
+                                        s5-0
+                                        0
+                                        (process->handle tgt)
+                                        :to
+                                        this)))
+               (set! (-> (the-as (pointer ram-boss-proj) v1-9) 0 notify-handle) (process->handle this))))))))
     (else (set! (-> this proj-stoked) #t)))
   (none))
 
@@ -1015,9 +1020,9 @@
         (let ((a0-4 (-> self parent-override 0 node-list data 9 bone transform)))
           (set! (-> self collide-info trans quad) (-> a0-4 vector 3 quad)))
         (transform-post)
-        (when *target*
-          (if *target*
-            (look-at-enemy! (-> *target* neck)
+        (let ((tgt (closest-target-to (-> self collide-info trans))))
+          (when tgt
+            (look-at-enemy! (-> tgt neck)
                             (-> (the-as collide-shape-prim-group (-> self collide-info root-prim)) prims 0 prim-core world-sphere)
                             'attacking
                             self)))
@@ -1035,9 +1040,10 @@
       (let ((s5-0 (new 'stack-no-clear 'vector))
             (gp-0 (-> self node-list data 0 bone transform)))
         (let ((s1-0 (new 'stack-no-clear 'matrix))
-              (s4-0 (new 'stack-no-clear 'vector)))
+              (s4-0 (new 'stack-no-clear 'vector))
+              (tgt (closest-target-to (-> self collide-info trans))))
           (matrix-4x4-inverse! s1-0 gp-0)
-          (vector-matrix*! s4-0 (target-pos 0) s1-0)
+          (vector-matrix*! s4-0 (target-pos-for tgt 0) s1-0)
           (set-vector! s5-0 -49152.0 -32768.0 16384.0 1.0)
           (if (< (-> s4-0 x) 0.0) (set! (-> s5-0 x) (- (-> s5-0 x)))))
         (let ((s4-1 (new 'stack-no-clear 'vector)))
@@ -1064,8 +1070,9 @@
       (ja-channel-push! 1 (seconds 0.8))
       (ja-no-eval :group! ram-boss-dismount-start-ja :num! (seek!) :frame-num 0.0)
       (until (ja-done? 0)
-        (let ((gp-0 (new 'stack-no-clear 'vector)))
-          (vector-! gp-0 (target-pos 0) (-> self collide-info trans))
+        (let ((gp-0 (new 'stack-no-clear 'vector))
+              (tgt (closest-target-to (-> self collide-info trans))))
+          (vector-! gp-0 (target-pos-for tgt 0) (-> self collide-info trans))
           (set! (-> gp-0 y) 0.0)
           (seek-toward-heading-vec! (-> self collide-info) gp-0 182044.44 (seconds 0.01)))
         (suspend)
@@ -1100,8 +1107,9 @@
         (set-vector! a1-0 0.0 -16384.0 -32768.0 1.0)
         (vector-matrix*! (-> self collide-info trans) a1-0 a2-0))
       (move-to-ground (-> self collide-info) 40960.0 40960.0 #t (collide-kind background))
-      (let ((gp-0 (new 'stack-no-clear 'vector)))
-        (vector-! gp-0 (target-pos 0) (-> self collide-info trans))
+      (let ((gp-0 (new 'stack-no-clear 'vector))
+            (tgt (closest-target-to (-> self collide-info trans))))
+        (vector-! gp-0 (target-pos-for tgt 0) (-> self collide-info trans))
         (set! (-> gp-0 y) 0.0)
         (set-heading-vec! (-> self collide-info) gp-0))
       (go ram-boss-nav-start)))
@@ -1120,14 +1128,15 @@
   :code
     (behavior ()
       (set! (-> self frustration) 0)
-      (when *target*
-        (let ((f30-0 (vector-vector-distance (target-pos 0) (-> self collide-info trans))))
-          (cond
-            ((>= 18432.0 f30-0) (go ram-boss-tracking))
-            ((not (target-in-range? self 237568.0)) (go-virtual nav-enemy-patrol))
-            ((and (< f30-0 106496.0) (nav-enemy-method-55 self)) (go-virtual nav-enemy-attack))
-            ((< f30-0 237568.0) (go-virtual nav-enemy-chase))
-            (else (go-virtual nav-enemy-patrol)))))
+      (let ((tgt (closest-target-to (-> self collide-info trans))))
+        (when tgt
+          (let ((f30-0 (vector-vector-distance (target-pos-for tgt 0) (-> self collide-info trans))))
+            (cond
+              ((>= 18432.0 f30-0) (go ram-boss-tracking))
+              ((not (target-in-range? self 237568.0)) (go-virtual nav-enemy-patrol))
+              ((and (< f30-0 106496.0) (nav-enemy-method-55 self)) (go-virtual nav-enemy-attack))
+              ((< f30-0 237568.0) (go-virtual nav-enemy-chase))
+              (else (go-virtual nav-enemy-patrol))))))
       (go-virtual nav-enemy-idle)))
 
 (defstate nav-enemy-patrol (ram-boss)
@@ -1141,9 +1150,10 @@
       (ja-channel-push! 1 (seconds 0.3)))
   :trans
     (behavior ()
-      (when *target*
-        (let ((f0-0 (vector-vector-distance (target-pos 0) (-> self collide-info trans))))
-          (if (>= 18432.0 f0-0) (go ram-boss-tracking))))
+      (let ((tgt (closest-target-to (-> self collide-info trans))))
+        (when tgt
+          (let ((f0-0 (vector-vector-distance (target-pos-for tgt 0) (-> self collide-info trans))))
+            (if (>= 18432.0 f0-0) (go ram-boss-tracking)))))
       ((-> (method-of-type nav-enemy nav-enemy-patrol) trans))))
 
 (defstate nav-enemy-chase (ram-boss)
@@ -1154,7 +1164,8 @@
       (let ((t9-0 (-> (method-of-type nav-enemy nav-enemy-chase) enter))) (if t9-0 (t9-0))))
   :trans
     (behavior ()
-      (let ((f30-0 (vector-vector-distance (target-pos 0) (-> self collide-info trans))))
+      (let* ((tgt (closest-target-to (-> self collide-info trans)))
+             (f30-0 (if tgt (vector-vector-distance (target-pos-for tgt 0) (-> self collide-info trans)) 1000000000.0)))
         (if (>= 18432.0 f30-0) (go ram-boss-tracking))
         (when (time-elapsed? (-> self state-time) (-> self reaction-time))
           (if (not (target-in-range? self (-> self nav-info stop-chase-distance))) (go-virtual nav-enemy-patrol))
@@ -1174,10 +1185,11 @@
       (go ram-boss-tracking)))
 
 (defmethod ram-boss-method-57 ((this ram-boss) (arg0 float))
-  (let ((f0-0 0.0))
-    (when *target*
+  (let ((f0-0 0.0)
+        (tgt (closest-target-to (-> this collide-info trans))))
+    (when tgt
       (let ((s3-0 (new 'stack-no-clear 'vector)))
-        (vector-! s3-0 (target-pos 0) (-> this collide-info trans))
+        (vector-! s3-0 (target-pos-for tgt 0) (-> this collide-info trans))
         (let ((f0-1 (vector-x-angle s3-0))) (set! f0-0 (* 0.000091552734 f0-1))))
       (cond
         ((< f0-0 0.0) (set! f0-0 0.0))
@@ -1195,41 +1207,42 @@
   :trans
     (behavior ()
       (set-jump-height-factor! self (the-as int (time-elapsed? (-> self state-time) (seconds 0.75))))
-      (if (not *target*) (go-virtual nav-enemy-patrol))
-      (let ((gp-0 (new 'stack-no-clear 'vector)))
-        (vector-! gp-0 (target-pos 0) (-> self collide-info trans))
-        (set! (-> self player-dir-y) (atan (-> gp-0 x) (-> gp-0 z))))
-      (let* ((v1-13 (if (-> self has-shield?) 145635.56 41870.223))
-             (f30-0 (-> self facing-y))
-             (f0-6 (deg-seek-smooth f30-0 (-> self player-dir-y) (* v1-13 (seconds-per-frame)) 0.25))
-             (f0-7 (deg- f0-6 f30-0)))
-        (cond
-          ((< 18.204445 (fabs f0-7))
-           (set! (-> self last-turn-speed) (* (fabs f0-7) (-> *display* frames-per-second)))
-           (quaternion-rotate-y! (-> self collide-info quat) (-> self collide-info quat) f0-7)
-           (set! (-> self facing-y) (quaternion-y-angle (-> self collide-info quat))))
-          (else (set! (-> self last-turn-speed) 0.0))))
-      (let ((f0-10 (vector-vector-distance (target-pos 0) (-> self collide-info trans))))
-        (cond
-          ((>= f0-10 106496.0) (if (>= f0-10 237568.0) (go-virtual nav-enemy-patrol)) (go-virtual nav-enemy-chase))
-          ((< 18432.0 f0-10)
-           (if (not (nav-enemy-method-55 self)) (go-virtual nav-enemy-chase))
-           (when (>= (-> self frustration) 256)
-             (set! (-> self frustration) 0)
-             (set! (-> self nav-enemy-patrol-timeout) (rand-vu-int-range (seconds 2) (seconds 5)))
-             (go-virtual nav-enemy-patrol)))))
-      (when (and (= (-> self proj-status) 2)
-                 (not (logtest? (-> *target* state-flags)
-                                (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
-                 (time-elapsed? (-> self state-time) (seconds 0.2)))
-        (let ((gp-2 (new 'stack-no-clear 'vector))
-              (s5-2 (new 'stack-no-clear 'vector)))
-          (nav-enemy-method-54 self s5-2)
-          (set! (-> gp-2 quad) (-> (target-pos 0) quad))
-          (+! (-> gp-2 y) 4915.2)
-          (vector-! (-> self proj-launch-vec) gp-2 s5-2))
-        (vector-normalize! (-> self proj-launch-vec) 1.0)
-        (if (not (ram-boss-method-51 self (-> self proj-launch-vec))) (go ram-boss-throw)))
+      (let ((tgt (closest-target-to (-> self collide-info trans))))
+        (if (not tgt) (go-virtual nav-enemy-patrol))
+        (let ((gp-0 (new 'stack-no-clear 'vector)))
+          (vector-! gp-0 (target-pos-for tgt 0) (-> self collide-info trans))
+          (set! (-> self player-dir-y) (atan (-> gp-0 x) (-> gp-0 z))))
+        (let* ((v1-13 (if (-> self has-shield?) 145635.56 41870.223))
+               (f30-0 (-> self facing-y))
+               (f0-6 (deg-seek-smooth f30-0 (-> self player-dir-y) (* v1-13 (seconds-per-frame)) 0.25))
+               (f0-7 (deg- f0-6 f30-0)))
+          (cond
+            ((< 18.204445 (fabs f0-7))
+             (set! (-> self last-turn-speed) (* (fabs f0-7) (-> *display* frames-per-second)))
+             (quaternion-rotate-y! (-> self collide-info quat) (-> self collide-info quat) f0-7)
+             (set! (-> self facing-y) (quaternion-y-angle (-> self collide-info quat))))
+            (else (set! (-> self last-turn-speed) 0.0))))
+        (let ((f0-10 (vector-vector-distance (target-pos-for tgt 0) (-> self collide-info trans))))
+          (cond
+            ((>= f0-10 106496.0) (if (>= f0-10 237568.0) (go-virtual nav-enemy-patrol)) (go-virtual nav-enemy-chase))
+            ((< 18432.0 f0-10)
+             (if (not (nav-enemy-method-55 self)) (go-virtual nav-enemy-chase))
+             (when (>= (-> self frustration) 256)
+               (set! (-> self frustration) 0)
+               (set! (-> self nav-enemy-patrol-timeout) (rand-vu-int-range (seconds 2) (seconds 5)))
+               (go-virtual nav-enemy-patrol)))))
+        (when (and (= (-> self proj-status) 2)
+                   (not (logtest? (-> tgt state-flags)
+                                  (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
+                   (time-elapsed? (-> self state-time) (seconds 0.2)))
+          (let ((gp-2 (new 'stack-no-clear 'vector))
+                (s5-2 (new 'stack-no-clear 'vector)))
+            (nav-enemy-method-54 self s5-2)
+            (set! (-> gp-2 quad) (-> (target-pos-for tgt 0) quad))
+            (+! (-> gp-2 y) 4915.2)
+            (vector-! (-> self proj-launch-vec) gp-2 s5-2))
+          (vector-normalize! (-> self proj-launch-vec) 1.0)
+          (if (not (ram-boss-method-51 self (-> self proj-launch-vec))) (go ram-boss-throw))))
       0)
   :code
     (behavior ()
@@ -1307,9 +1320,10 @@
   :exit #f
   :trans
     (behavior ()
-      (when *target*
-        (let ((f0-0 (vector-vector-distance (target-pos 0) (-> self collide-info trans))))
-          (if (and (>= 18432.0 f0-0) (-> self has-shield?)) (go ram-boss-tracking)))))
+      (let ((tgt (closest-target-to (-> self collide-info trans))))
+        (when tgt
+          (let ((f0-0 (vector-vector-distance (target-pos-for tgt 0) (-> self collide-info trans))))
+            (if (and (>= 18432.0 f0-0) (-> self has-shield?)) (go ram-boss-tracking))))))
   :code
     (behavior ()
       (set! (-> self frustration) 0)

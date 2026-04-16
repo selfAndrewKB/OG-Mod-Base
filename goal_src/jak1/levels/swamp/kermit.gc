@@ -718,10 +718,11 @@ nav-enemy-default-event-handler
       0)
   :trans
     (behavior ()
-      (if (and *target*
-               (>= (-> self enemy-info idle-distance)
-                   (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-        (go kermit-patrol)))
+      (let ((tgt (closest-target-to (-> self collide-info trans))))
+        (if (and tgt
+                 (>= (-> self enemy-info idle-distance)
+                     (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+          (go kermit-patrol))))
   :code
     (behavior ()
       (kermit-disable-tongue)
@@ -741,10 +742,11 @@ nav-enemy-default-event-handler
       (nav-control-method-11 (-> self nav) (-> self nav target-pos)))
   :trans
     (behavior ()
-      (if (and (or (not *target*)
-                   (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-               (time-elapsed? (-> self state-time) (seconds 1)))
-        (go kermit-idle))
+      (let ((tgt (closest-target-to (-> self collide-info trans))))
+        (if (and (or (not tgt)
+                     (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+                 (time-elapsed? (-> self state-time) (seconds 1)))
+          (go kermit-idle)))
       (kermit-set-rotate-dir-to-nav-target)
       (if (and (not (-> self airborne)) (nav-enemy-test-point-in-nav-mesh? (target-pos 0))) (go kermit-notice))
       (if (logtest? (nav-control-flags navcf19) (-> self nav flags)) (kermit-get-new-patrol-point)))
@@ -837,9 +839,10 @@ nav-enemy-default-event-handler
       (kermit-tongue-pos self)
       (let ((v1-5 (kermit-player-target-pos))) (set! (-> self tongue-control target-pos quad) (-> v1-5 quad)))
       (when (not (-> self airborne))
-        (if (or (not *target*)
-                (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-          (go kermit-patrol))
+        (let ((tgt (closest-target-to (-> self collide-info trans))))
+          (if (or (not tgt)
+                  (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+            (go kermit-patrol)))
         (let ((gp-1 (kermit-check-to-hit-player? 3640.889))
               (v1-17 (kermit-check-tongue-is-clear?)))
           (when gp-1
