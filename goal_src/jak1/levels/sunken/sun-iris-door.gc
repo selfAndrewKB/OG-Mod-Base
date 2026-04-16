@@ -39,15 +39,22 @@
     (let ((f0-7 (cond
                   ((-> this directional-proximity?)
                    (let ((s5-0 (new 'stack-no-clear 'vector)))
-                     (when *target*
-                       (vector-! s5-0 (target-pos 0) (-> this root trans))
-                       (set! (-> s5-0 y) 0.0)
-                       (set! f30-0 (fabs (vector-dot s5-0 (-> this outward-vec)))))
+                     (dotimes (idx (-> *target-list* length))
+                       (let ((tgt (get-target idx)))
+                         (when tgt
+                           (vector-! s5-0 (-> tgt control trans) (-> this root trans))
+                           (set! (-> s5-0 y) 0.0)
+                           (let ((d (fabs (vector-dot s5-0 (-> this outward-vec)))))
+                             (if (< d f30-0) (set! f30-0 d))))))
                      (vector-! s5-0 (camera-pos) (-> this root trans))
                      (set! (-> s5-0 y) 0.0)
                      (fabs (vector-dot s5-0 (-> this outward-vec)))))
                   (else
-                   (if *target* (set! f30-0 (vector-vector-xz-distance (-> this root trans) (target-pos 0))))
+                   (dotimes (idx (-> *target-list* length))
+                     (let ((tgt (get-target idx)))
+                       (when tgt
+                         (let ((d (vector-vector-xz-distance (-> this root trans) (-> tgt control trans))))
+                           (if (< d f30-0) (set! f30-0 d))))))
                    (vector-vector-xz-distance (-> this root trans) (camera-pos))))))
       (when (or (>= (-> this open-dist) f30-0) (>= (-> this open-dist) f0-7))
         (if (or (not (-> this locked-by-task?)) (task-complete? *game-info* (-> this entity extra perm task))) (return #t)))))
@@ -113,15 +120,22 @@
     (let ((f0-7 (cond
                   ((-> this directional-proximity?)
                    (let ((s5-0 (new 'stack-no-clear 'vector)))
-                     (when *target*
-                       (vector-! s5-0 (target-pos 0) (-> this root trans))
-                       (set! (-> s5-0 y) 0.0)
-                       (set! f30-0 (fabs (vector-dot s5-0 (-> this outward-vec)))))
+                     (dotimes (idx (-> *target-list* length))
+                       (let ((tgt (get-target idx)))
+                         (when tgt
+                           (vector-! s5-0 (-> tgt control trans) (-> this root trans))
+                           (set! (-> s5-0 y) 0.0)
+                           (let ((d (fabs (vector-dot s5-0 (-> this outward-vec)))))
+                             (if (< d f30-0) (set! f30-0 d))))))
                      (vector-! s5-0 (camera-pos) (-> this root trans))
                      (set! (-> s5-0 y) 0.0)
                      (fabs (vector-dot s5-0 (-> this outward-vec)))))
                   (else
-                   (if *target* (set! f30-0 (vector-vector-xz-distance (-> this root trans) (target-pos 0))))
+                   (dotimes (idx (-> *target-list* length))
+                     (let ((tgt (get-target idx)))
+                       (when tgt
+                         (let ((d (vector-vector-xz-distance (-> this root trans) (-> tgt control trans))))
+                           (if (< d f30-0) (set! f30-0 d))))))
                    (vector-vector-xz-distance (-> this root trans) (camera-pos))))))
       (when (and (>= f30-0 (-> this close-dist)) (>= f0-7 (-> this close-dist)))
         (cond

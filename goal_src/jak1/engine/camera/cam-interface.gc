@@ -64,6 +64,14 @@
          (fmin d1 d2)))
       (else d1))))
 
+(defun min-camera-distance-squared ((pos vector))
+  (let ((d1 (vector-vector-distance-squared pos (-> *math-camera* trans))))
+    (cond
+      ((and *camera-p2* (nonzero? (-> *camera-p2* tracked-target)))
+       (let ((d2 (vector-vector-distance-squared pos (-> *p2-math-camera* trans))))
+         (fmin d1 d2)))
+      (else d1))))
+
 ;; definition for function camera-angle
 (defun camera-angle ()
   (let ((f0-0 (-> *math-camera* camera-rot data 0))

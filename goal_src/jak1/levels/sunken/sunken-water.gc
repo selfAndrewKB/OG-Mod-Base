@@ -116,7 +116,7 @@
          (set-fade! *palette-fade-controls*
                     3
                     (-> self deadly-fade)
-                    (vector-vector-distance (-> self root trans) (camera-pos))
+                    (min-camera-distance (-> self root trans))
                     (the-as vector #f)))
         (else
          (when (logtest? (water-flags wt19) (-> self flags))

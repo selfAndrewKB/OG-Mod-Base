@@ -300,7 +300,7 @@
     ((and (closed? (-> this tasks) (game-task misty-cannon) (task-status need-reminder))
           (= (get-reminder (-> this tasks) 0) 1))
      #t)
-    ((and (-> this reminder-played) (< 81920.0 (vector-vector-distance (-> this root trans) (camera-pos)))) #t)
+    ((and (-> this reminder-played) (< 81920.0 (min-camera-distance (-> this root trans)))) #t)
     (else #f)))
 
 (defmethod get-art-elem ((this sage))
@@ -363,7 +363,7 @@
             (process-taskable-method-43 self)
             (ja-no-eval :group! (ja-group) :num! (seek!) :frame-num 0.0)
             (until (ja-done? 0)
-              (if (and (-> self reminder-played) (< 81920.0 (vector-vector-distance (-> self root trans) (camera-pos))))
+              (if (and (-> self reminder-played) (< 81920.0 (min-camera-distance (-> self root trans))))
                 (go-virtual idle))
               (suspend)
               (ja :num! (seek!)))))

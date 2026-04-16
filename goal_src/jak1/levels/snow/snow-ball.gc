@@ -198,7 +198,7 @@
            (set! (-> self root scale x) f0-25)
            (set! (-> self root scale y) f0-25)
            (set! (-> self root scale z) f0-25))))))
-  (let ((v1-54 (< (vector-vector-distance (-> self root trans) (math-camera-pos)) 163840.0)))
+  (let ((v1-54 (< (min-camera-distance (-> self root trans)) 163840.0)))
     (cond
       ((zero? (-> self rolling-sound-id))
        (if (and v1-54 (-> self rolling-sound-enabled?))
