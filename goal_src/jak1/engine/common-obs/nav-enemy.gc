@@ -514,7 +514,7 @@ nav-enemy-default-event-handler
   (or (not (logtest? (-> this mask) (process-mask actor-pause)))
       (or (and (nonzero? (-> this draw))
                (and (>= (+ (-> *ACTOR-bank* pause-dist) (-> this collide-info pause-adjust-distance))
-                        (vector-vector-distance (-> this collide-info trans) (camera-pos)))
+                        (min-camera-distance (-> this collide-info trans)))
                     (or (logtest? (-> this draw status) (draw-status was-drawn)) (!= (-> this next-state name) 'nav-enemy-idle))))
           (and (nonzero? (-> this skel)) (!= (-> this skel root-channel 0) (-> this skel channel)))
           (and (nonzero? (-> this draw)) (logtest? (-> this draw status) (draw-status no-skeleton-update))))))

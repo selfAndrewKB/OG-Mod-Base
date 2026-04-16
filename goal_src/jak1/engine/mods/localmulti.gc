@@ -381,8 +381,10 @@
     ;; first draw tick sees the correct position.
     (set! *multi-pending-initial-offset* #t)
     (set! (-> *target-list* idx) (process->handle tgt))
+    ;; Per-player color tints (from OG co-op PoC). P2 green disabled per user
+    ;; request — Jak's natural model is preferred. P3/P4 tints kept for now
+    ;; until those slots have final color assignments.
     (case idx
-      ((1) (draw-green tgt))
       ((2) (draw-red tgt))
       ((3) (draw-blue tgt))
       )

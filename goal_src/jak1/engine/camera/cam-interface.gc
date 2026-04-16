@@ -38,6 +38,32 @@
 (defun math-camera-pos ()
   (-> *math-camera* trans))
 
+;; Split-screen helpers — return the minimum distance from `pos` to any active
+;; camera. Used by run-logic? methods so actor-pause distance checks consider
+;; BOTH viewports, not just P1's. Without these, dormant enemies near P2 but
+;; far from P1 never wake up — the engine's run-logic? returns #f → :trans
+;; never fires → grab/notice/proximity logic never runs.
+;;
+;; Liveness gate: *camera-p2*'s tracked-target field is nil until P2's pipeline
+;; is fully wired (matches the existing split-screen-should-render? predicate).
+;; This avoids reading *p2-math-camera* trans before it's been populated, which
+;; would default to (0,0,0) and cause spurious wakeups in levels near origin.
+(defun min-camera-distance ((pos vector))
+  (let ((d1 (vector-vector-distance pos (-> *math-camera* trans))))
+    (cond
+      ((and *camera-p2* (nonzero? (-> *camera-p2* tracked-target)))
+       (let ((d2 (vector-vector-distance pos (-> *p2-math-camera* trans))))
+         (fmin d1 d2)))
+      (else d1))))
+
+(defun min-camera-xz-distance ((pos vector))
+  (let ((d1 (vector-vector-xz-distance pos (-> *math-camera* trans))))
+    (cond
+      ((and *camera-p2* (nonzero? (-> *camera-p2* tracked-target)))
+       (let ((d2 (vector-vector-xz-distance pos (-> *p2-math-camera* trans))))
+         (fmin d1 d2)))
+      (else d1))))
+
 ;; definition for function camera-angle
 (defun camera-angle ()
   (let ((f0-0 (-> *math-camera* camera-rot data 0))

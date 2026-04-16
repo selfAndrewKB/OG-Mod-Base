@@ -320,27 +320,37 @@
     (else (let ((v1-25 (-> this draw shadow-ctrl))) (logior! (-> v1-25 settings flags) (shadow-flags disable-draw))) 0)))
 
 (defmethod grab-player? ((this mother-spider))
-  (let ((tgt (closest-target-to (-> this root trans))))
-    (when tgt
-      (let ((s5-0 (target-pos-for tgt 0)))
-        (when (and (>= 40960.0 (- (-> this thread-min-trans y) (-> s5-0 y)))
-                   (>= (-> this activate-xz-dist) (vector-vector-xz-distance (-> this thread-min-trans) s5-0)))
-          (cond
-            ((-> this check-z-thresh?)
-             (let ((f0-3 (- (-> s5-0 z) (-> this root trans z)))) (if (>= (-> this activate-z-thresh) f0-3) (return #t))))
-            (else (return #t)))))))
+  (dotimes (idx (-> *target-list* length))
+    (let ((tgt (get-target idx)))
+      (when (and tgt
+                 (not (logtest? (-> tgt state-flags)
+                                (state-flags being-attacked invulnerable timed-invulnerable
+                                             invuln-powerup do-not-notice dying))))
+        (let ((s5-0 (target-pos-for tgt 0)))
+          (when (and (>= 40960.0 (- (-> this thread-min-trans y) (-> s5-0 y)))
+                     (>= (-> this activate-xz-dist) (vector-vector-xz-distance (-> this thread-min-trans) s5-0)))
+            (cond
+              ((-> this check-z-thresh?)
+               (let ((f0-3 (- (-> s5-0 z) (-> this root trans z)))) (if (>= (-> this activate-z-thresh) f0-3) (return #t))))
+              (else (return #t))))))))
   #f)
 
 (defmethod letgo-player? ((this mother-spider))
-  (let ((tgt (closest-target-to (-> this root trans))))
-    (if (not tgt) (return #t))
-    (let ((a1-0 (target-pos-for tgt 0)))
-    (when (-> this check-z-thresh?)
-      (if (>= (- (-> a1-0 z) (-> this root trans z)) (-> this deactivate-z-thresh)) (return #t)))
-    (if (or (>= (- (-> this thread-min-trans y) (-> a1-0 y)) 49152.0)
-             (>= (vector-vector-xz-distance (-> this thread-min-trans) a1-0) (-> this deactivate-xz-dist)))
-      (return #t))))
-  #f)
+  (dotimes (idx (-> *target-list* length))
+    (let ((tgt (get-target idx)))
+      (when (and tgt
+                 (not (logtest? (-> tgt state-flags)
+                                (state-flags being-attacked invulnerable timed-invulnerable
+                                             invuln-powerup do-not-notice dying))))
+        (let ((a1-0 (target-pos-for tgt 0)))
+          (let ((out-of-range
+                  (or (and (-> this check-z-thresh?)
+                           (>= (- (-> a1-0 z) (-> this root trans z)) (-> this deactivate-z-thresh)))
+                      (>= (- (-> this thread-min-trans y) (-> a1-0 y)) 49152.0)
+                      (>= (vector-vector-xz-distance (-> this thread-min-trans) a1-0) (-> this deactivate-xz-dist)))))
+            (when (not out-of-range)
+              (return #f)))))))
+  #t)
 
 (defmethod mother-spider-method-21 ((this mother-spider) (arg0 vector) (arg1 float) (arg2 symbol))
   (local-vars (sv-112 process) (sv-128 vector) (sv-144 vector))
@@ -1071,7 +1081,7 @@
 
 (defmethod run-logic? ((this mother-spider))
   (or (not (logtest? (-> this mask) (process-mask actor-pause)))
-      (or (< (vector-vector-xz-distance (-> this root trans) (math-camera-pos)) (-> this deactivate-xz-dist))
+      (or (< (min-camera-xz-distance (-> this root trans)) (-> this deactivate-xz-dist))
           (and (nonzero? (-> this skel)) (!= (-> this skel root-channel 0) (-> this skel channel)))
           (and (nonzero? (-> this draw)) (logtest? (-> this draw status) (draw-status no-skeleton-update))))))
 

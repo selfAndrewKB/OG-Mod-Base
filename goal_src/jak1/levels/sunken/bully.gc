@@ -238,12 +238,12 @@
           ((= (-> arg3 param 1) 'flop) (go bully-die) (return #t) v0-0)
           ((or (= arg2 'touch) (= arg2 'attack))
            (cond
-             ((>= (- (-> (target-pos 0) y) (-> self root trans y)) 6144.0)
+             ((>= (- (-> (target-pos-for (the-as target arg0) 0) y) (-> self root trans y)) 6144.0)
               (let* ((f0-6 (fmax 0.6 (* 0.000023935356 (-> self travel-speed))))
                      (f28-0 (* 8192.0 f0-6))
                      (f30-0 (* 8192.0 f0-6))
                      (s4-0 (new 'stack-no-clear 'vector)))
-                (vector-! s4-0 (target-pos 0) (-> self root trans))
+                (vector-! s4-0 (target-pos-for (the-as target arg0) 0) (-> self root trans))
                 (let ((f26-0 (atan (-> s4-0 x) (-> s4-0 z))))
                   (when (< 0.0 (-> self travel-speed))
                     (let ((f0-11 (deg- f26-0 (-> self travel-ry))))
@@ -283,13 +283,14 @@
                (send-event-function arg0 a1-14))))))))))
 
 (defbehavior bully-post bully ()
-  (when (and (-> self hit-player?)
-             (or (not *target*)
-                 (and (not (logtest? (-> *target* state-flags)
-                                     (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
-                      (time-elapsed? (-> self hit-player-time) (seconds 0.05)))))
-    (set-collide-offense (-> self root) 2 (collide-offense normal-attack))
-    (set! (-> self hit-player?) #f))
+  (let ((tgt (closest-target-to (-> self root trans))))
+    (when (and (-> self hit-player?)
+               (or (not tgt)
+                   (and (not (logtest? (-> tgt state-flags)
+                                       (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
+                        (time-elapsed? (-> self hit-player-time) (seconds 0.05)))))
+      (set-collide-offense (-> self root) 2 (collide-offense normal-attack))
+      (set! (-> self hit-player?) #f)))
   (transform-post)
   (none))
 
@@ -362,11 +363,12 @@
       0)
   :trans
     (behavior ()
-      (when (and (and *target*
-                      (>= (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-                 (time-elapsed? (-> self state-time) (-> self reaction-delay)))
-        (start-hint-timer (text-id sunken-bully-dive-hint))
-        (go bully-notice)))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (when (and (and tgt
+                        (>= (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+                   (time-elapsed? (-> self state-time) (-> self reaction-delay)))
+          (start-hint-timer (text-id sunken-bully-dive-hint))
+          (go bully-notice))))
   :code
     (behavior ((arg0 symbol))
       (ja-channel-push! 1 (seconds 0.075))
@@ -382,13 +384,13 @@
   :event bully-default-event-handler
   :trans
     (behavior ()
-      (when *target*
-        (if *target*
-          (look-at-enemy! (-> *target* neck)
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (when tgt
+          (look-at-enemy! (-> tgt neck)
                           (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core world-sphere)
                           'attacking
-                          self))
-        (set-target! (-> self neck) (target-pos 5))))
+                          self)
+          (set-target! (-> self neck) (target-pos-for tgt 5)))))
   :code
     (behavior ()
       (set! (-> self travel-speed) 0.0)
@@ -408,11 +410,12 @@
                                                   #f
                                                   #f
                                                   #f)
-        (when *target*
-          (let ((gp-3 (new 'stack-no-clear 'vector)))
-            (vector-! gp-3 (target-pos 0) (-> self root trans))
-            (seek-toward-heading-vec! (-> self root) gp-3 524288.0 (seconds 0.1)))
-          (set! (-> self facing-ry) (quaternion-y-angle (-> self root quat))))
+        (let ((tgt (closest-target-to (-> self root trans))))
+          (when tgt
+            (let ((gp-3 (new 'stack-no-clear 'vector)))
+              (vector-! gp-3 (target-pos-for tgt 0) (-> self root trans))
+              (seek-toward-heading-vec! (-> self root) gp-3 524288.0 (seconds 0.1)))
+            (set! (-> self facing-ry) (quaternion-y-angle (-> self root quat)))))
         (suspend))
       (ja-no-eval :group! bully-notice-land-ja :num! (seek!) :frame-num 0.0)
       (until (ja-done? 0)
@@ -430,19 +433,20 @@
       (set! (-> self slow-down) (rand-vu-int-range (seconds 4) (seconds 8)))
       (set! (-> self speed-u) 0.2)
       (set! (-> self bounced?) #f)
-      (let ((gp-0 (new 'stack-no-clear 'vector)))
-        (if *target* (vector-! gp-0 (target-pos 0) (-> self root trans)) (vector-z-quaternion! gp-0 (-> self root quat)))
+      (let ((gp-0 (new 'stack-no-clear 'vector))
+            (tgt (closest-target-to (-> self root trans))))
+        (if tgt (vector-! gp-0 (target-pos-for tgt 0) (-> self root trans)) (vector-z-quaternion! gp-0 (-> self root quat)))
         (set! (-> self travel-ry) (atan (-> gp-0 x) (-> gp-0 z))))
       (+! (-> self travel-ry) (rand-vu-float-range -910.2222 910.2222)))
   :trans
     (behavior ()
-      (when *target*
-        (if *target*
-          (look-at-enemy! (-> *target* neck)
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (when tgt
+          (look-at-enemy! (-> tgt neck)
                           (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core world-sphere)
                           'attacking
-                          self))
-        (set-target! (-> self neck) (target-pos 5)))
+                          self)
+          (set-target! (-> self neck) (target-pos-for tgt 5))))
       (cond
         ((time-elapsed? (-> self start-spin-time) (-> self slow-down))
          (seek! (-> self speed-u) 0.0 (* 0.5555556 (seconds-per-frame)))
@@ -501,13 +505,13 @@
       (set! (-> self bounced?) #f))
   :trans
     (behavior ()
-      (when *target*
-        (if *target*
-          (look-at-enemy! (-> *target* neck)
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (when tgt
+          (look-at-enemy! (-> tgt neck)
                           (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core world-sphere)
                           'attacking
-                          self))
-        (set-target! (-> self neck) (target-pos 5))))
+                          self)
+          (set-target! (-> self neck) (target-pos-for tgt 5)))))
   :code
     (behavior ()
       (local-vars (v1-17 symbol) (v1-35 symbol))
@@ -533,9 +537,10 @@
                 (ja :num! (seek!))
                 (set! v1-35 (or (ja-done? 0) (-> self bounced?)))))
             (ja-channel-push! 1 (seconds 0.2)))))
-      (if (or (not *target*)
-              (< (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-        (go bully-idle #f))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (if (or (not tgt)
+                (< (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+          (go bully-idle #f)))
       (go bully-start-spinning))
   :post bully-post)
 

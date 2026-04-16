@@ -1114,7 +1114,7 @@
 (defmethod run-logic? ((this process-drawable))
   (or (not (logtest? (-> this mask) (process-mask actor-pause)))
       (or (>= (+ (-> *ACTOR-bank* pause-dist) (-> this root pause-adjust-distance))
-              (vector-vector-distance (-> this root trans) (math-camera-pos)))
+              (min-camera-distance (-> this root trans)))
           (and (nonzero? (-> this skel)) (!= (-> this skel root-channel 0) (-> this skel channel)))
           (and (nonzero? (-> this draw)) (logtest? (-> this draw status) (draw-status no-skeleton-update))))))
 
