@@ -545,10 +545,11 @@
   (set! (-> this eco-green-mask) (the-as uint 0))
   (let ((s4-0 (-> this path curve num-cverts))
         (s3-0 (get-death-count *game-info* #f))
-        (s5-0 (-> this money-mask)))
-    (when (and *target*
-               (or (and (= s3-0 1) (and (>= 1.0 (-> *target* fact health)) (rand-vu-percent? 0.1)))
-                   (and (< 1 s3-0) (and (>= 2.0 (-> *target* fact health)) (rand-vu-percent? 0.05)))))
+        (s5-0 (-> this money-mask))
+        (tgt (closest-target-to (-> this root trans))))
+    (when (and tgt
+               (or (and (= s3-0 1) (and (>= 1.0 (-> tgt fact health)) (rand-vu-percent? 0.1)))
+                   (and (< 1 s3-0) (and (>= 2.0 (-> tgt fact health)) (rand-vu-percent? 0.05)))))
       (let ((v1-14 (gnawer-method-28 this s4-0 (the-as int s5-0))))
         (logior s5-0 (the-as uint v1-14))
         (set! (-> this eco-green-mask) (the-as uint (logior (-> this eco-green-mask) (the-as uint v1-14)))))))
@@ -609,7 +610,8 @@
       (stop! (-> self sound2)))
   :trans
     (behavior ()
-      (if (and *target* (>= 81920.0 (vector-vector-distance (target-pos 0) (-> self root trans)))) (go gnawer-retreat-into-post)))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (if (and tgt (>= 81920.0 (vector-vector-distance (target-pos-for tgt 0) (-> self root trans)))) (go gnawer-retreat-into-post))))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.075))
