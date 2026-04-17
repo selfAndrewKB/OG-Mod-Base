@@ -315,7 +315,7 @@
       (set! (-> self control reaction) target-collision-reaction)
       (fill-cache-integrate-and-collide! (-> self control) (-> self control transv) (-> self control root-prim collide-with))
       (if (logtest? (-> self control root-prim prim-core action) (collide-action edgegrab-possible))
-        (find-edge-grabs! *target* *collide-cache*))
+        (find-edge-grabs! self *collide-cache*))
       (if *debug-segment*
         (add-frame (-> *display* frames (-> *display* on-screen) frame profile-bar 0)
                    'draw

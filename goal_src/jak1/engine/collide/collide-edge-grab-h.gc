@@ -150,3 +150,5 @@
             (new 'static 'sphere :x 1720.32 :y 8601.6 :w 2949.12))))
 
 (define-perm *edge-grab-info* edge-grab-info (new 'global 'edge-grab-info))
+;; Session 41 co-op: per-player grab info so P1 and P2 hanging simultaneously don't overwrite each other.
+(define-perm *edge-grab-info-p2* edge-grab-info (new 'global 'edge-grab-info))
