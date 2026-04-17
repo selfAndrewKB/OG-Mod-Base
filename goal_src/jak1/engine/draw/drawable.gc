@@ -444,7 +444,13 @@
          (vf5 :class vf))
     (init-vf0-vector)
     (set! sv-16 arg0)
-    (logclear! (-> arg1 status) (draw-status was-drawn))
+    ;; Co-op: only the first render pass clears was-drawn so the flag captures
+    ;; "visible to ANY camera" instead of pass-2's frustum result alone. Without
+    ;; this, actors visible to P1 but outside P2's frustum end the frame with
+    ;; was-drawn cleared by pass-2's entry, breaking nav-enemy-idle wake-up and
+    ;; every other consumer of the flag. *active-render-cam* is 0 in single-player.
+    (if (zero? *active-render-cam*)
+      (logclear! (-> arg1 status) (draw-status was-drawn)))
     (when (zero? (logand (-> arg1 status) (draw-status hidden no-anim no-skeleton-update)))
       (let ((s4-0 (the-as vector (+ 48 (the-as int (scratchpad-object int)))))
             (vu-lgt (the-as vu-lights (+ 64 (the-as int (scratchpad-object int)))))
