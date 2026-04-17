@@ -4,6 +4,7 @@
 (require "engine/common-obs/process-drawable.gc")
 (require "engine/gfx/foreground/ripple.gc")
 (require "engine/common-obs/water-h.gc")
+(require "engine/camera/camera-h.gc") ;; co-op: *camera-p2* / *p2-math-camera* for underwater-hide fix
 
 ;; DECOMP BEGINS
 
@@ -586,9 +587,20 @@
   :trans
     (behavior ()
       (let ((t9-0 (-> (method-of-type water-vol water-vol-idle) trans))) (if t9-0 (t9-0)))
-      (if (< (-> (math-camera-pos) y) (+ -8192.0 (-> self root trans y)))
-        (logior! (-> self draw status) (draw-status hidden))
-        (logclear! (-> self draw status) (draw-status hidden)))
+      ;; Co-op: hide only when BOTH cameras are below the water surface. The P1-only
+      ;; test meant P1 walking onto the mud (camera dips below the surface threshold)
+      ;; set `hidden` on the shared draw-status — and because this flag is checked
+      ;; by every render pass, P2's view lost the water/mud too. Show if EITHER
+      ;; camera is above water-y - 2m; only hide when both are submerged.
+      (let ((water-y-threshold (+ -8192.0 (-> self root trans y))))
+        (cond
+          ((>= (-> (math-camera-pos) y) water-y-threshold)
+           (logclear! (-> self draw status) (draw-status hidden)))
+          ((and *camera-p2* (nonzero? (-> *camera-p2* tracked-target))
+                (>= (-> *p2-math-camera* trans y) water-y-threshold))
+           (logclear! (-> self draw status) (draw-status hidden)))
+          (else
+           (logior! (-> self draw status) (draw-status hidden)))))
       (if (and (-> self play-ambient-sound?) (nonzero? (-> self sound))) (update! (-> self sound))))
   :code
     (behavior ()
