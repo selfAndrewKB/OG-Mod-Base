@@ -5,6 +5,7 @@
 (require "levels/finalboss/robotboss-misc.gc")
 (require "levels/finalboss/robotboss-weapon.gc")
 (require "levels/finalboss/green-eco-lurker.gc")
+(define-extern closest-target-to (function vector target))
 
 ;; DECOMP BEGINS
 
@@ -569,7 +570,10 @@
     (let ((s5-0 (new 'stack-no-clear 'vector)))
       (vector<-cspace! gp-0 (joint-node robotboss-basic-lod0-jg Lyellow_ecoBarrell))
       (set! (-> gp-0 y) 1972633.6)
-      (if *target* (set! (-> s5-0 quad) (-> (target-pos 0) quad)) (set! (-> s5-0 quad) (-> self entity extra trans quad)))
+      (let ((tgt-ys (closest-target-to (-> self root trans))))
+        (if tgt-ys
+          (set! (-> s5-0 quad) (-> tgt-ys control trans quad))
+          (set! (-> s5-0 quad) (-> self entity extra trans quad))))
       (set! (-> s5-0 y) (+ 8192.0 (-> self entity extra trans y)))
       (vector-! s5-0 s5-0 gp-0)
       (vector-normalize! s5-0 (the-as float 819200.0))
@@ -751,8 +755,9 @@
           (go robotboss-yellow-dark-bomb))))
   :post
     (behavior ()
-      (when *target*
-        (if (nonzero? (-> self yellow-gun)) (set-target! (-> self yellow-gun) (target-pos 5))))
+      (let ((tgt-yg (closest-target-to (-> self root trans))))
+        (when tgt-yg
+          (if (nonzero? (-> self yellow-gun)) (set-target! (-> self yellow-gun) (-> tgt-yg control trans)))))
       (transform-post)))
 
 (defstate robotboss-yellow (robotboss)
@@ -784,7 +789,8 @@
         (ja :num! (seek!)))
       (loop
         (cond
-          ((and *target* (< (+ 81920.0 (-> self entity extra trans y)) (-> (target-pos 0) y)))
+          ((let ((tgt-yh (closest-target-to (-> self root trans))))
+             (and tgt-yh (< (+ 81920.0 (-> self entity extra trans y)) (-> tgt-yh control trans y))))
            (when (not (ja-group? robotboss-idle-hover-lookup-no-red-ja))
              (ja-channel-push! 1 (seconds 0.8))
              (ja :group! robotboss-idle-hover-lookup-no-red-ja)))
@@ -811,8 +817,13 @@
   :trans
     (behavior ()
       (robotboss-always-trans robotboss-yellow)
-      (if (and (< (-> self children-spawned) 0) (or (not *target*) (!= (-> *target* control unknown-surface00 name) 'launch-jump)))
-        (go robotboss-yellow))
+      (let ((lj-any #f))
+        (dotimes (lji (-> *target-list* length))
+          (let ((ljtp (handle->process (-> *target-list* lji))))
+            (when (and ljtp (= (-> (the-as target ljtp) control unknown-surface00 name) 'launch-jump))
+              (set! lj-any #t))))
+        (if (and (< (-> self children-spawned) 0) (not lj-any))
+          (go robotboss-yellow)))
       (robotboss-position))
   :code
     (behavior ()
@@ -1170,8 +1181,13 @@
   :trans
     (behavior ()
       (robotboss-always-trans robotboss-red)
-      (if (and (< (-> self children-spawned) 0) (or (not *target*) (!= (-> *target* control unknown-surface00 name) 'launch-jump)))
-        (go robotboss-red))
+      (let ((lj-any #f))
+        (dotimes (lji (-> *target-list* length))
+          (let ((ljtp (handle->process (-> *target-list* lji))))
+            (when (and ljtp (= (-> (the-as target ljtp) control unknown-surface00 name) 'launch-jump))
+              (set! lj-any #t))))
+        (if (and (< (-> self children-spawned) 0) (not lj-any))
+          (go robotboss-red)))
       (robotboss-position))
   :code
     (behavior ()
@@ -1433,8 +1449,13 @@
   :trans
     (behavior ()
       (robotboss-always-trans robotboss-green)
-      (if (and (< (-> self children-spawned) 0) (or (not *target*) (!= (-> *target* control unknown-surface00 name) 'launch-jump)))
-        (go robotboss-green))
+      (let ((lj-any #f))
+        (dotimes (lji (-> *target-list* length))
+          (let ((ljtp (handle->process (-> *target-list* lji))))
+            (when (and ljtp (= (-> (the-as target ljtp) control unknown-surface00 name) 'launch-jump))
+              (set! lj-any #t))))
+        (if (and (< (-> self children-spawned) 0) (not lj-any))
+          (go robotboss-green)))
       (robotboss-position))
   :code
     (behavior ()
@@ -1454,7 +1475,8 @@
         (ja :num! (seek!)))
       (loop
         (cond
-          ((and *target* (< (+ 81920.0 (-> self entity extra trans y)) (-> (target-pos 0) y)))
+          ((let ((tgt-bh (closest-target-to (-> self root trans))))
+             (and tgt-bh (< (+ 81920.0 (-> self entity extra trans y)) (-> tgt-bh control trans y))))
            (when (not (ja-group? robotboss-idle-hover-lookup-no-blue-ja))
              (ja-channel-push! 1 (seconds 0.8))
              (ja :group! robotboss-idle-hover-lookup-no-blue-ja)))
@@ -1519,22 +1541,24 @@
        (spawn (-> self particle 0) s4-0)
        (when (and arg1 (nonzero? (-> self looping-sound 0)))
          (update! (-> self looping-sound 0))
-         (when (and *target*
-                    (not (logtest? (-> *target* state-flags)
-                                   (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))
-           (let ((t2-0 (new 'stack-no-clear 'collide-tri-result))
-                 (a2-0 (new 'stack-no-clear 'vector)))
-             (vector-! a2-0 gp-0 s4-0)
-             (if (>= (fill-and-probe-using-line-sphere *collide-cache*
-                                                       s4-0
-                                                       a2-0
-                                                       (the-as float 4096.0)
-                                                       (collide-kind target)
-                                                       self
-                                                       t2-0
-                                                       (new 'static 'pat-surface :noentity #x1))
-                     0.0)
-               (send-event *target* 'attack #f (static-attack-info ((shove-up (meters 2.5)) (shove-back (meters 7.5))))))))))
+         (dotimes (bbi (-> *target-list* length))
+           (let ((bbtp (handle->process (-> *target-list* bbi))))
+             (when (and bbtp
+                        (not (logtest? (-> (the-as target bbtp) state-flags)
+                                       (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))
+               (let ((t2-0 (new 'stack-no-clear 'collide-tri-result))
+                     (a2-0 (new 'stack-no-clear 'vector)))
+                 (vector-! a2-0 gp-0 s4-0)
+                 (when (>= (fill-and-probe-using-line-sphere *collide-cache*
+                                                             s4-0
+                                                             a2-0
+                                                             (the-as float 4096.0)
+                                                             (collide-kind target)
+                                                             self
+                                                             t2-0
+                                                             (new 'static 'pat-surface :noentity #x1))
+                           0.0)
+                   (send-event bbtp 'attack #f (static-attack-info ((shove-up (meters 2.5)) (shove-back (meters 7.5))))))))))))
       ((nonzero? (-> self looping-sound 0)) (stop! (-> self looping-sound 0))))
     (cond
       ((and (>= (- (-> *display* game-frame-counter) (-> self state-time)) (seconds 1.4))
@@ -1542,11 +1566,13 @@
        (spawn (-> self particle 1) gp-0)
        (when (and arg1 (nonzero? (-> self looping-sound 1)))
          (update! (-> self looping-sound 1))
-         (if (and *target*
-                  (not (logtest? (-> *target* state-flags)
-                                 (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
-                  (>= 8192.0 (vector-vector-distance gp-0 (target-pos 0))))
-           (send-event *target* 'attack #f (static-attack-info ((shove-up (meters 2.5)) (shove-back (meters 7.5))))))))
+         (dotimes (rri (-> *target-list* length))
+           (let ((rrtp (handle->process (-> *target-list* rri))))
+             (when (and rrtp
+                        (not (logtest? (-> (the-as target rrtp) state-flags)
+                                       (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying)))
+                        (>= 8192.0 (vector-vector-distance gp-0 (-> (the-as target rrtp) control trans))))
+               (send-event rrtp 'attack #f (static-attack-info ((shove-up (meters 2.5)) (shove-back (meters 7.5))))))))))
       ((nonzero? (-> self looping-sound 1)) (stop! (-> self looping-sound 1)))))
   (none))
 
