@@ -7,6 +7,11 @@
 (require "levels/common/battlecontroller.gc")
 (require "engine/camera/pov-camera-h.gc")
 
+;; Session 40 co-op: forward decl — multi-debug.gc is in GAME.CGO and loads
+;; before any SWA.DGO level code runs. Declared here so swamp-spike and
+;; balance-plat can gate their diagnostic logs through the 'spike category.
+(define-extern multi-log-enabled? (function symbol symbol))
+
 ;; note: changed for high fps
 
 (declare-type swampgate swamp-spike)
@@ -171,9 +176,29 @@
           (until (>= (get-current-phase (-> self sync)) 0.5)
             (ja :num-func num-func-identity :frame-num 0.0)
             (suspend))
-          (let ((s5-0 (or (not *target*) (< 204800.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))))
-            (if (and (and *target* (>= 61440.0 (vector-vector-distance (-> self root trans) (-> *target* control trans)))) *camera*)
-              (set! s5-0 (< (* (vector4-dot gp-0 (target-pos 0)) (vector4-dot gp-0 (camera-pos))) 0.0)))
+          ;; Session 40 co-op: iterate *target-list* so swamp-spikes react to
+          ;; EITHER player. Default skip-rise; clear when any target is within
+          ;; far-cull range; apply the camera-side plane test using whichever
+          ;; target is closest within near range.
+          (let ((s5-0 #t)
+                (near-tgt (the-as target #f))
+                (near-dist (the-as float 10000000000.0))
+                (near-idx -1))
+            (dotimes (idx (-> *target-list* length))
+              (let ((tgt (get-target idx)))
+                (when tgt
+                  (let ((d (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+                    (when (>= 204800.0 d)
+                      (set! s5-0 #f))
+                    (when (and (>= 61440.0 d) (< d near-dist))
+                      (set! near-tgt tgt)
+                      (set! near-dist d)
+                      (set! near-idx idx))))))
+            (when (and near-tgt *camera*)
+              (set! s5-0 (< (* (vector4-dot gp-0 (-> near-tgt control trans)) (vector4-dot gp-0 (camera-pos))) 0.0)))
+            (when (multi-log-enabled? 'spike)
+              (format 0 "[MULTI:spike] spike ~A near-idx=~D dist=~F skip?=~A~%"
+                      (process->ppointer self) near-idx near-dist s5-0))
             (cond
               (s5-0 (until (< (get-current-phase (-> self sync)) 0.5) (suspend)))
               (else
@@ -347,7 +372,15 @@
               ((and (-> self root riders) (nonzero? (-> self root riders num-riders)))
                (set-state-time) ;; added for high-fps, record last ride to gate to 60 FPS
                ;; has rider, accelerate downwards
-               (send-event *target* 'no-look-around (seconds 0.25))
+               ;; Session 40 co-op: send 'no-look-around to the ACTUAL rider,
+               ;; not always *target* (= P1). Otherwise P1's camera pan locks
+               ;; while only P2 is standing on the plat.
+               (let ((rider-proc (handle->process (-> self root riders rider 0 rider-handle))))
+                 (when rider-proc
+                   (when (multi-log-enabled? 'spike)
+                     (format 0 "[MULTI:spike] balance-plat ~A no-look-around -> ~A~%"
+                             (process->ppointer self) (-> rider-proc type)))
+                   (send-event rider-proc 'no-look-around (seconds 0.25))))
                (set! (-> self y-accel) (fmin 4.096 (fmax -4.096 (+ -0.2048 (-> self y-accel)))))
                (set! (-> self y-vel) (fmin f28-0 (fmax f30-0 (+ (-> self y-vel) (* DISPLAY_FPS_RATIO (-> self y-accel))))))
                ;; tell linked platforms to go up

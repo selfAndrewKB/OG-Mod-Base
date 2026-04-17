@@ -4,6 +4,10 @@
 (require "engine/target/logic-target.gc")
 (define-extern target-powerup-effect (function symbol none :behavior target))
 
+;; Session 40 co-op: forward decl — multi-debug.gc compiles AFTER this file
+;; but the binding is live by the time any target receives events in-game.
+(define-extern multi-log-enabled? (function symbol symbol))
+
 ;; DECOMP BEGINS
 
 (defbehavior target-generic-event-handler target ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
@@ -526,6 +530,11 @@
     (('clone-anim) (go target-clone-anim (process->handle (the-as process (-> arg3 param 0)))))
     (('edge-grab) (go target-edge-grab))
     (('pole-grab)
+     (when (multi-log-enabled? 'pole)
+       (format 0 "[MULTI:pole] ~A received 'pole-grab from pole ~A already-active?=~A~%"
+               (-> self type)
+               (process->ppointer (the-as process (-> arg3 param 0)))
+               (logtest? (-> self control root-prim prim-core action) (collide-action swingpole-active))))
      (if (not (logtest? (-> self control root-prim prim-core action) (collide-action swingpole-active)))
        (go target-pole-cycle (process->handle (the-as process (-> arg3 param 0))))))
     (('swim)

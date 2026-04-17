@@ -5,6 +5,7 @@
 (require "engine/collide/collide-shape.gc")
 (require "engine/gfx/shadow/shadow-cpu-h.gc")
 (require "engine/common-obs/process-drawable-h.gc")
+(require "engine/camera/camera-h.gc") ;; Session 40 co-op: target-camera helper needs camera-master type + *camera-p2* extern
 (define-extern target-collide-set! (function symbol float int :behavior target))
 
 ;; DECOMP BEGINS
@@ -790,6 +791,17 @@
   (cond
     (tgt (if (zero? arg0) (-> tgt control trans) (vector<-cspace! (new 'static 'vector) (-> tgt node-list data arg0))))
     (else (camera-pos))))
+
+;; Session 40 co-op: route per-target camera messages (ease-in / damp-up /
+;; slave-option) to the camera slaved to THIS target. P1 → *camera*, any other
+;; live target → *camera-p2* when its pipeline is up (tracked-target non-null).
+;; Falls back to *camera* when P2's pipeline is dormant, so a send is never lost.
+(defun target-camera ((tgt target))
+  (the-as camera-master
+          (cond
+            ((or (not tgt) (= tgt (get-target 0))) *camera*)
+            ((and *camera-p2* (nonzero? (-> *camera-p2* tracked-target))) *camera-p2*)
+            (else *camera*))))
 
 (defun target-pos ((arg0 int))
   (target-pos-for *target* arg0))

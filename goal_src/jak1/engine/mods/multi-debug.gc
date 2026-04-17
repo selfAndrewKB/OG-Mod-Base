@@ -15,6 +15,9 @@
 ;;   (set! *multi-dbg-draw* #t)     ;; split-screen draw-pass transitions
 ;;   (set! *multi-dbg-ai* #t)       ;; enemy AI targeting (enemy-target, closest-target-to)
 ;;   (set! *multi-dbg-part* #t)     ;; particle spawn gating (is-visible?, falloff)
+;;   (set! *multi-dbg-pole* #t)     ;; swing-pole stance / active / grab-receive
+;;   (set! *multi-dbg-tube* #t)     ;; slide-control watch / ride / 'update receive
+;;   (set! *multi-dbg-spike* #t)    ;; swamp-spike-idle proximity / camera-dot
 ;;
 ;; Gate all log calls through multi-log-enabled? and emit inline via format;
 ;; do NOT build intermediate strings — the helper that did so was removed.
@@ -33,6 +36,9 @@
 (define *multi-dbg-draw*   #f)   ;; split-screen activation transitions + per-pass dumps
 (define *multi-dbg-ai*     #f)   ;; enemy AI targeting — enemy-target handle + closest-target-to selection
 (define *multi-dbg-part*   #f)   ;; particle spawn gating — is-visible? / falloff distance per camera
+(define *multi-dbg-pole*   #f)   ;; swing-pole stance eligibility, grab-receive, active-wait occupancy
+(define *multi-dbg-tube*   #f)   ;; slide-control watch/ride entry, 'update per-rider path-pos
+(define *multi-dbg-spike*  #f)   ;; swamp-spike-idle per-target distance + camera-dot sign
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Logging helpers
@@ -50,6 +56,9 @@
       (('draw)    *multi-dbg-draw*)
       (('ai)      *multi-dbg-ai*)
       (('part)    *multi-dbg-part*)
+      (('pole)    *multi-dbg-pole*)
+      (('tube)    *multi-dbg-tube*)
+      (('spike)   *multi-dbg-spike*)
       (else #t)
       )
     )

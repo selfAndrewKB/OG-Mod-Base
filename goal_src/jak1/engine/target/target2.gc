@@ -581,7 +581,11 @@
       (target-collide-set! 'pole (the-as float 0.0))
       (set! (-> self control unknown-vector102 quad) (-> self control transv quad))
       (set! (-> self control transv quad) (the-as uint128 0))
-      (send-event *camera* 'ease-in)
+      ;; Session 40 co-op: route camera ease-in to THIS target's camera. When
+      ;; P2 grabs a pole with *camera* (P1's) receiving ease-in, P1's view
+      ;; zooms to focus on P2. target-camera (target-util.gc) returns *camera*
+      ;; for P1, *camera-p2* for P2 (liveness-gated).
+      (send-event (target-camera self) 'ease-in)
       (set! (-> self control unknown-int21) (the-as int #f)))
   :exit
     (behavior ()
@@ -668,7 +672,8 @@
   :code
     (behavior ((arg0 float) (arg1 float))
       (sound-play "jump")
-      (send-event *camera* 'damp-up)
+      ;; Session 40 co-op: damp-up THIS target's camera, not P1's globally.
+      (send-event (target-camera self) 'damp-up)
       (ja :group! eichar-pole-jump-loop-ja :num! min)
       (let ((f0-1 (target-height-above-ground))
             (f1-1 (vector-dot (-> self control dynam gravity-normal) (-> self control transv))))

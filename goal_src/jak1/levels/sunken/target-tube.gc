@@ -6,6 +6,11 @@
 (require "engine/geometry/path.gc")
 (define-extern *tube-surface* surface) ;; unknown type
 
+;; Session 40 co-op: forward decl — multi-debug.gc in GAME.CGO, loaded before
+;; any SUN.DGO level code runs. Gates diagnostic logs under 'tube category.
+(define-extern multi-log-enabled? (function symbol symbol))
+(define-extern *camera-p2* camera-master)
+
 ;; DECOMP BEGINS
 
 (define *tube-mods*
@@ -131,7 +136,11 @@
    (turn-anim-frame float)
    (turn-anim-vel   float)
    (tube-sound-id   sound-id)
-   (tube-sound-vol  float)))
+   (tube-sound-vol  float)
+   ;; Session 40 co-op: per-rider path position. slide-control no longer owns
+   ;; a single shared 'pos — each rider carries their own path progress so
+   ;; two riders don't stomp each other's coordinate every frame.
+   (path-pos        float)))
 
 
 (deftype tube-bank (basic) ())
@@ -274,12 +283,18 @@
                                       (vector-z-quaternion! (new 'stack-no-clear 'vector) (-> self control dir-targ))
                                       (-> self control local-normal))
       (do-rotations1)
-      (send-event (handle->process (-> self tube tube))
-                  'update
-                  (-> self tube centertube)
-                  (-> self tube downtube)
-                  (-> self tube sidetube)
-                  (-> self tube foretube))
+      ;; Session 40 co-op: pass rider's path-pos as param 0; coordinator uses
+      ;; it as find-target-point search hint and returns the new pos, which we
+      ;; stash back on tube-info.path-pos so the next frame resumes correctly.
+      (set! (-> self tube path-pos)
+            (the-as float
+                    (send-event (handle->process (-> self tube tube))
+                                'update
+                                (-> self tube path-pos)
+                                (-> self tube centertube)
+                                (-> self tube downtube)
+                                (-> self tube sidetube)
+                                (-> self tube foretube))))
       (vector-flatten! (-> self tube downhill)
                        (vector-negate! (new-stack-vector0) (-> self control dynam gravity-normal))
                        (-> self control local-normal))
@@ -353,14 +368,29 @@
         (set! (-> self control dynam gravity-length) (-> self control unknown-dynamics00 gravity-length))
         (target-collide-set! 'normal 0.0)
         (set! (-> self control reaction) target-collision-reaction)
-        (send-event *camera* 'clear-slave-option #x6000)
+        ;; Session 40 co-op: clear slave-option on the SAME camera we set it
+        ;; on at entry (P1 → *camera*, P2 → *camera-p2*).
+        (let ((my-cam (cond
+                        ((= self (get-target 0)) *camera*)
+                        ((and *camera-p2* (nonzero? (-> *camera-p2* tracked-target))) *camera-p2*)
+                        (else *camera*))))
+          (send-event my-cam 'clear-slave-option #x6000))
         (sound-stop (-> self tube tube-sound-id))
         (set! (-> self tube tube-sound-id) (new 'static 'sound-id))
         (send-event (handle->process (-> self tube tube)) 'end-mode)
         (target-exit)))
   :code
     (behavior ((arg0 handle))
-      (send-event *camera* 'set-slave-option #x6000)
+      ;; Session 40 co-op: route camera slave-option to THIS rider's camera
+      ;; (P1 → *camera*, P2 → *camera-p2*). Without this P2's tube-ride would
+      ;; flip P1's shared camera into tube-follow mode even when P1 is doing
+      ;; something else entirely. Fall back to *camera* if P2's pipeline is
+      ;; dormant (tracked-target=0).
+      (let ((my-cam (cond
+                      ((= self (get-target 0)) *camera*)
+                      ((and *camera-p2* (nonzero? (-> *camera-p2* tracked-target))) *camera-p2*)
+                      (else *camera*))))
+        (send-event my-cam 'set-slave-option #x6000))
       (target-exit)
       (set! *display-profile* #f)
       (set! *display-entity-errors* #f)
@@ -368,6 +398,10 @@
       (if (zero? (-> self tube)) (set! (-> self tube) (new 'process 'tube-info)))
       (set! (-> self tube tube) arg0)
       (set! (-> self tube entity) #f)
+      ;; Session 40 co-op: start this rider at path-pos 0.2 (matches the
+      ;; coordinator's old initial pos in watch :enter). find-target-point
+      ;; will drift it forward from here.
+      (set! (-> self tube path-pos) 0.2)
       (let ((a0-4 (handle->process arg0))) (if a0-4 (set! (-> self tube entity) (-> a0-4 entity))))
       (set-time! (-> self tube start-time))
       (set! (-> self tube tube-sound-id) (new-sound-id))
@@ -377,21 +411,25 @@
       (set! (-> self control unknown-float01) 0.0)
       (logior! (-> self control root-prim prim-core action) (collide-action tube))
       (remove-exit)
-      (cond
-        ((< (the-as float
-                    (send-event (handle->process (-> self tube tube))
-                                'update
-                                (-> self tube centertube)
-                                (-> self tube downtube)
-                                (-> self tube sidetube)
-                                (-> self tube foretube)))
-            0.5)
-         (vector-normalize-copy! (-> self control transv) (-> self tube downtube) 40960.0)
-         (forward-up-nopitch->quaternion (-> self control dir-targ)
-                                         (vector-normalize-copy! (new 'stack-no-clear 'vector) (-> self control transv) 1.0)
-                                         (-> self control dynam gravity-normal))
-         (go target-tube-jump (-> *TARGET-bank* tube-jump-height-min) (-> *TARGET-bank* tube-jump-height-max)))
-        (else (go target-tube))))
+      ;; Session 40 co-op: pass rider path-pos as first arg; stash returned
+      ;; new pos back onto tube-info.path-pos before branching.
+      (let ((new-pos (the-as float
+                             (send-event (handle->process (-> self tube tube))
+                                         'update
+                                         (-> self tube path-pos)
+                                         (-> self tube centertube)
+                                         (-> self tube downtube)
+                                         (-> self tube sidetube)
+                                         (-> self tube foretube)))))
+        (set! (-> self tube path-pos) new-pos)
+        (cond
+          ((< new-pos 0.5)
+           (vector-normalize-copy! (-> self control transv) (-> self tube downtube) 40960.0)
+           (forward-up-nopitch->quaternion (-> self control dir-targ)
+                                           (vector-normalize-copy! (new 'stack-no-clear 'vector) (-> self control transv) 1.0)
+                                           (-> self control dynam gravity-normal))
+           (go target-tube-jump (-> *TARGET-bank* tube-jump-height-min) (-> *TARGET-bank* tube-jump-height-max)))
+          (else (go target-tube)))))
   :post target-post)
 
 (defbehavior target-tube-turn-anim target ()
@@ -509,12 +547,16 @@
         event)
   :enter
     (behavior ((arg0 symbol) (arg1 attack-info))
-      (send-event (handle->process (-> self tube tube))
-                  'update
-                  (-> self tube centertube)
-                  (-> self tube downtube)
-                  (-> self tube sidetube)
-                  (-> self tube foretube)))
+      ;; Session 40 co-op: new 'update contract — pass rider path-pos, stash returned new pos.
+      (set! (-> self tube path-pos)
+            (the-as float
+                    (send-event (handle->process (-> self tube tube))
+                                'update
+                                (-> self tube path-pos)
+                                (-> self tube centertube)
+                                (-> self tube downtube)
+                                (-> self tube sidetube)
+                                (-> self tube foretube)))))
   :exit
     (behavior ()
       (if (!= (-> self next-state name) 'target-tube-death) (logclear! (-> self state-flags) (state-flags being-attacked dying)))
@@ -623,7 +665,13 @@
 
 (deftype slide-control (process-drawable)
   ((target handle)
-   (pos    float)
+   ;; Session 40 co-op: `pos` repurposed from persistent shared path progress
+   ;; to per-call scratch (a rider's path-pos is stashed here before each
+   ;; find-target-point call, then read back out). `rider-count` tracks how
+   ;; many riders are currently on the tube so ride→watch only fires when
+   ;; ALL riders have exited (not just the first one to send 'end-mode).
+   (pos          float)
+   (rider-count  int32)
    (trans  vector :inline)
    (rot    vector :inline)
    (side   vector :inline))
@@ -674,13 +722,33 @@
       (eval-path-curve-div! (-> self path) (-> self trans) 0.2 'interp)
       (eval-path-curve-div! (-> self path) (-> self root trans) 0.2 'interp)
       (path-control-method-12 (-> self path) (-> self rot) 0.2)
-      (set! (-> self pos) 0.2))
+      (set! (-> self pos) 0.2)
+      (set! (-> self rider-count) 0))
   :trans
     (behavior ()
-      (if (and (and *target* (>= 81920.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-               (and (< 0.0 (vector-dot (vector-! (new 'stack-no-clear 'vector) (-> *target* control trans) (-> self trans)) (-> self rot)))
-                    (send-event *target* 'change-mode 'tube self)))
-        (go-virtual slide-control-ride)))
+      ;; Session 40 co-op: iterate *target-list* ONCE, collect accepted riders
+      ;; in a local counter, then go-virtual after the loop. Iterating-and-
+      ;; transitioning-inside-the-body risked missing the second eligible
+      ;; player when both were at the trigger zone simultaneously (whether
+      ;; go-virtual unwinds or continues mid-loop is subtle). The counter
+      ;; pre-sets rider-count on the coordinator BEFORE go-virtual so ride's
+      ;; :enter doesn't need to reset it.
+      (let ((accepted 0))
+        (dotimes (idx (-> *target-list* length))
+          (let ((tgt (get-target idx)))
+            (when (and tgt
+                       (>= 81920.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
+                       (< 0.0 (vector-dot (vector-! (new 'stack-no-clear 'vector) (-> tgt control trans) (-> self trans)) (-> self rot))))
+              (when (multi-log-enabled? 'tube)
+                (format 0 "[MULTI:tube] watch P~D eligible dist=~F~%"
+                        idx (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+              (when (send-event tgt 'change-mode 'tube self)
+                (+! accepted 1)
+                (when (multi-log-enabled? 'tube)
+                  (format 0 "[MULTI:tube] watch P~D change-mode ACCEPTED (count=~D)~%" idx accepted))))))
+        (when (> accepted 0)
+          (set! (-> self rider-count) accepted)
+          (go-virtual slide-control-ride))))
   :code anim-loop)
 
 (defstate slide-control-ride (slide-control)
@@ -688,32 +756,86 @@
   :event
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
       (case message
-        (('end-mode) (go-virtual slide-control-watch))
+        (('end-mode)
+         ;; Session 40 co-op: decrement rider count; only transition back to
+         ;; watch when ALL riders have exited. Previously a single jump-off
+         ;; would strand any other rider mid-slide.
+         (+! (-> self rider-count) -1)
+         (when (multi-log-enabled? 'tube)
+           (format 0 "[MULTI:tube] 'end-mode received, rider-count=~D~%" (-> self rider-count)))
+         (when (<= (-> self rider-count) 0)
+           (set! (-> self rider-count) 0)
+           (go-virtual slide-control-watch)))
         (('update)
+         ;; Session 40 co-op: new contract — param 0 = rider's path-pos (float,
+         ;; per-rider), param 1..4 = the rider's 4 scratch vectors. Stash the
+         ;; incoming path-pos into self.pos so find-target-point uses it as
+         ;; search hint; the function writes the new pos back into self.pos,
+         ;; which we return so the rider stashes it in their own tube-info.
          (let* ((s4-0 proc)
-                (gp-0 (if (and (nonzero? s4-0) (type-type? (-> s4-0 type) process-drawable)) s4-0)))
+                (gp-0 (if (and (nonzero? s4-0) (type-type? (-> s4-0 type) process-drawable)) s4-0))
+                (rider-in-pos (the-as float (-> block param 0))))
+           (set! (-> self pos) rider-in-pos)
            (if gp-0 (find-target-point (-> (the-as process-drawable gp-0) root trans)))
-           (set! (-> (the-as vector (-> block param 0)) quad) (-> self trans quad))
-           (set! (-> (the-as vector (-> block param 1)) quad) (-> self rot quad))
-           (set! (-> (the-as vector (-> block param 2)) quad) (-> self side quad))
-           (eval-path-curve-div! (-> self path) (the-as vector (-> block param 3)) (+ 0.2 (-> self pos)) 'interp)
+           (set! (-> (the-as vector (-> block param 1)) quad) (-> self trans quad))
+           (set! (-> (the-as vector (-> block param 2)) quad) (-> self rot quad))
+           (set! (-> (the-as vector (-> block param 3)) quad) (-> self side quad))
+           (eval-path-curve-div! (-> self path) (the-as vector (-> block param 4)) (+ 0.2 (-> self pos)) 'interp)
+           (when (multi-log-enabled? 'tube)
+             (format 0 "[MULTI:tube] 'update rider=~A in=~F out=~F count=~D~%"
+                     (if gp-0 (-> gp-0 type) 'no-rider)
+                     rider-in-pos (-> self pos) (-> self rider-count)))
            (if (>= (-> self pos) (+ -0.2 (the float (+ (-> self path curve num-cverts) -1)))) (send-event gp-0 'end-mode)))
          (-> self pos))))
   :enter
     (behavior ()
       (set! (-> self pos) 0.0)
+      ;; Session 40 co-op: track the first rider (cosmetic — state control now
+      ;; uses rider-count). rider-count is pre-set by watch :trans before
+      ;; go-virtual fires, so DO NOT overwrite it here.
       (set! (-> self target) (process->handle *target*))
+      (if (<= (-> self rider-count) 0) (set! (-> self rider-count) 1))
       (process-entity-status! self (entity-perm-status bit-3) #t))
   :exit
     (behavior ()
       (set! (-> self target) (the-as handle #f))
+      (set! (-> self rider-count) 0)
       (process-entity-status! self (entity-perm-status bit-3) #f))
   :trans
     (behavior ()
-      (let ((gp-0 (handle->process (-> self target))))
-        (cond
-          ((if (and (nonzero? gp-0) (type-type? (-> gp-0 type) process-drawable)) gp-0))
-          (else (go-virtual slide-control-watch)))))
+      ;; Session 40 co-op: accept additional riders mid-slide.
+      ;;
+      ;; Key fix vs original attempt: eligibility must reference the TUBE
+      ;; ENTRANCE, not the current slide position. find-target-point
+      ;; overwrites self.trans/rot with whichever rider most recently called
+      ;; 'update — those drift down the path with the lead rider. A second
+      ;; player standing AT THE ENTRANCE was then "behind" that drifted
+      ;; reference and failed the forward-dot cone test, making late joins
+      ;; impossible. self.root.trans was written at path-pos 0.2 in watch
+      ;; :enter and is never overwritten, so it's still the entrance. For
+      ;; forward direction we recompute path-control-method-12 at 0.2 each
+      ;; frame (cheap — a handful of vertex interpolations on a short path).
+      (let ((entrance-rot (new 'stack-no-clear 'vector))
+            (to-tgt       (new 'stack-no-clear 'vector)))
+        (path-control-method-12 (-> self path) entrance-rot 0.2)
+        (dotimes (idx (-> *target-list* length))
+          (let ((tgt (get-target idx)))
+            (when (and tgt
+                       (not (and (nonzero? (-> tgt tube))
+                                 (= (handle->process (-> tgt tube tube)) self)
+                                 (logtest? (-> tgt control root-prim prim-core action) (collide-action tube))))
+                       (>= 81920.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
+                       (< 0.0 (vector-dot (vector-! to-tgt (-> tgt control trans) (-> self root trans)) entrance-rot)))
+              (when (send-event tgt 'change-mode 'tube self)
+                (+! (-> self rider-count) 1)
+                (when (multi-log-enabled? 'tube)
+                  (format 0 "[MULTI:tube] mid-ride P~D joined, rider-count=~D~%"
+                          idx (-> self rider-count))))))))
+      ;; safety: if all riders have exited (e.g. via simultaneous deaths) fall
+      ;; back to watch. rider-count is normally updated by 'end-mode.
+      (when (<= (-> self rider-count) 0)
+        (set! (-> self rider-count) 0)
+        (go-virtual slide-control-watch)))
   :code anim-loop)
 
 (defmethod init-from-entity! ((this slide-control) (arg0 entity-actor))
@@ -723,5 +845,6 @@
   (set! (-> this path) (new 'process 'curve-control this 'path -1000000000.0))
   (logior! (-> this path flags) (path-control-flag display draw-line draw-point draw-text))
   (set! (-> this target) (the-as handle #f))
+  (set! (-> this rider-count) 0)
   (go (method-of-object this slide-control-watch))
   (none))

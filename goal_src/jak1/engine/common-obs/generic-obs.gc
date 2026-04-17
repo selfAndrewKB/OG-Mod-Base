@@ -9,6 +9,12 @@
 
 ;; note: changed for high fps
 
+;; Session 40: forward decl for multi-log-enabled? — multi-debug.gc lives in GAME.CGO
+;; and compiles AFTER this file, but the runtime binding is in place before any
+;; swingpole process spawns in-level. Keeps swingpole logging gated behind the
+;; 'pole debug toggle without pulling a hard (require) on a later module.
+(define-extern multi-log-enabled? (function symbol symbol))
+
 (define-extern convert-to-hud-object (function process-drawable hud none :behavior process-drawable))
 
 ;; TODO - temporary
@@ -79,23 +85,46 @@
   0
   (none))
 
+;; Session 40 co-op: iterate *target-list* so EITHER player can grab a swing-pole.
+;; Original P1-only gate (the single `*target*` dereference) left P2 unable to
+;; interact with poles in Firecanyon / Misty ruins. Per-target `swingpole-active`
+;; action flag (target-handler.gc 'pole-grab receive) still provides first-come
+;; mutual exclusion, so only one rider ever latches to a given pole at a time.
 (defstate swingpole-stance (swingpole)
   :code
     (behavior ()
       (loop
-        (when (and *target*
-                   (< (vector-vector-distance (-> self root trans) (-> *target* control unknown-vector90)) (-> self range))
-                   (logtest? (-> *target* control root-prim prim-core action) (collide-action edgegrab-possible))
-                   (< (-> *target* control unknown-vector90 y) (+ (-> self root trans y) (/ (-> self range) 2))))
-          (if (send-event *target* 'pole-grab self) (go swingpole-active)))
+        (dotimes (idx (-> *target-list* length))
+          (let ((tgt (get-target idx)))
+            (when (and tgt
+                       (< (vector-vector-distance (-> self root trans) (-> tgt control unknown-vector90)) (-> self range))
+                       (logtest? (-> tgt control root-prim prim-core action) (collide-action edgegrab-possible))
+                       (< (-> tgt control unknown-vector90 y) (+ (-> self root trans y) (/ (-> self range) 2))))
+              (when (multi-log-enabled? 'pole)
+                (format 0 "[MULTI:pole] P~D eligible stance dist=~F edgegrab=#t y-ok=#t~%"
+                        idx (vector-vector-distance (-> self root trans) (-> tgt control unknown-vector90))))
+              (when (send-event tgt 'pole-grab self)
+                (when (multi-log-enabled? 'pole)
+                  (format 0 "[MULTI:pole] P~D grab ACCEPTED on pole ~A~%" idx (process->ppointer self)))
+                (go swingpole-active)))))
         (suspend))))
 
+;; Session 40 co-op: exit ride when NO target has unknown-handle10 pointing at
+;; this pole — supports the case where P2 grabs, not P1.
 (defstate swingpole-active (swingpole)
   :code
     (behavior ()
       (suspend)
-      (while (and *target* (= (handle->process (-> *target* control unknown-handle10)) self))
-        (suspend))
+      (let ((any-occupant #t))
+        (until (not any-occupant)
+          (set! any-occupant #f)
+          (dotimes (idx (-> *target-list* length))
+            (let ((tgt (get-target idx)))
+              (when (and tgt (= (handle->process (-> tgt control unknown-handle10)) self))
+                (set! any-occupant #t))))
+          (when any-occupant (suspend))))
+      (when (multi-log-enabled? 'pole)
+        (format 0 "[MULTI:pole] pole ~A released — all targets off~%" (process->ppointer self)))
       (suspend-for (seconds 0.5))
       (go swingpole-stance)))
 

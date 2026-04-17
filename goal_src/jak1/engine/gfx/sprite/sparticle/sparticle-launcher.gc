@@ -9,6 +9,11 @@
 (require "engine/collide/collide-shape-h.gc")
 (require "engine/camera/cam-interface-h.gc") ;; co-op: min-camera-distance + *camera-p2* liveness
 
+;; Session 40 fresh-build fix: multi-debug.gc in GAME.CGO compiles AFTER this
+;; file; the Session 38 log call at ~line 728 resolves at link time in
+;; incremental builds but fails a full rebuild without this forward-decl.
+(define-extern multi-log-enabled? (function symbol symbol))
+
 ;; og:preserve-this added macro
 ;; the rate was defaulted to DISPLAY_FPS_RATIO before, but sp-launch-particles-var checks
 ;; if the rate is not 1.0 and crashes the game.
