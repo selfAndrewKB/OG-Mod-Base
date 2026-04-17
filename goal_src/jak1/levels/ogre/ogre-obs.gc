@@ -4,6 +4,7 @@
 (require "engine/anim/joint-mod-h.gc")
 (require "engine/game/projectiles.gc")
 (require "engine/common-obs/rigid-body.gc")
+(define-extern closest-target-to (function vector target))
 
 ;; DECOMP BEGINS
 
@@ -457,7 +458,7 @@
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s5-0 reaction) default-collision-reaction)
     (set! (-> s5-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s5-0 1)
+    (alloc-riders s5-0 4)
     (let ((s4-0 (new 'process 'collide-shape-prim-mesh s5-0 (the-as uint 0) (the-as uint 0))))
       (set! (-> s4-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s4-0 collide-with) (collide-kind target))
@@ -689,9 +690,11 @@
       (ogre-bridge-update-joints))
   :trans
     (behavior ()
-      (if (and (and *target* (>= 286720.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-               (send-event *target* 'query 'powerup (pickup-type eco-blue)))
-        (go ogre-bridge-activate))
+      (let ((tgt (closest-target-to (-> self root trans))))
+        (when (and tgt
+                   (>= 286720.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
+                   (send-event tgt 'query 'powerup (pickup-type eco-blue)))
+          (go ogre-bridge-activate)))
       0)
   :code
     (behavior ()
@@ -708,7 +711,9 @@
           0))
       (ja-no-eval :group! ogre-bridge-assemble-ja :num! (seek!) :frame-num 0.0)
       (until (ja-done? 0)
-        (if (rand-vu-percent? 0.2) (spawn-projectile-blue *target*))
+        (when (rand-vu-percent? 0.2)
+          (let ((bridge-tgt (closest-target-to (-> self root trans))))
+            (if bridge-tgt (spawn-projectile-blue bridge-tgt))))
         (suspend)
         (ja :num! (seek!)))
       (go ogre-bridge-activated))
@@ -757,7 +762,7 @@
     (set! (-> s4-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s4-0 reaction) default-collision-reaction)
     (set! (-> s4-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s4-0 1)
+    (alloc-riders s4-0 4)
     (let ((s3-0 (new 'process 'collide-shape-prim-group s4-0 (the-as uint 17) 0)))
       (set! (-> s3-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s3-0 collide-with) (collide-kind target))
