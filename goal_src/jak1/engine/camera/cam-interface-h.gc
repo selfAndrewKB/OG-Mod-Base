@@ -27,3 +27,8 @@
 
 ;; TODO - forward declaration for weather-part
 (define-extern matrix-local->world (function symbol symbol matrix))
+
+;; Split-screen helpers — see cam-interface.gc for bodies.
+(define-extern min-camera-distance (function vector float))
+(define-extern min-camera-xz-distance (function vector float))
+(define-extern min-camera-distance-squared (function vector float))

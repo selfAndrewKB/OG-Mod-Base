@@ -14,6 +14,7 @@
 ;;   (set! *multi-dbg-detail* #t)   ;; verbose field dumps
 ;;   (set! *multi-dbg-draw* #t)     ;; split-screen draw-pass transitions
 ;;   (set! *multi-dbg-ai* #t)       ;; enemy AI targeting (enemy-target, closest-target-to)
+;;   (set! *multi-dbg-part* #t)     ;; particle spawn gating (is-visible?, falloff)
 ;;
 ;; Gate all log calls through multi-log-enabled? and emit inline via format;
 ;; do NOT build intermediate strings — the helper that did so was removed.
@@ -31,6 +32,7 @@
 (define *multi-dbg-detail* #f)   ;; verbose struct dumps (heavy)
 (define *multi-dbg-draw*   #f)   ;; split-screen activation transitions + per-pass dumps
 (define *multi-dbg-ai*     #f)   ;; enemy AI targeting — enemy-target handle + closest-target-to selection
+(define *multi-dbg-part*   #f)   ;; particle spawn gating — is-visible? / falloff distance per camera
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Logging helpers
@@ -47,6 +49,7 @@
       (('detail)  *multi-dbg-detail*)
       (('draw)    *multi-dbg-draw*)
       (('ai)      *multi-dbg-ai*)
+      (('part)    *multi-dbg-part*)
       (else #t)
       )
     )

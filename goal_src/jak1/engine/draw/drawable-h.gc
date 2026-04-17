@@ -55,6 +55,12 @@
 
 (define-extern sphere-in-view-frustum? (function sphere symbol))
 
+;; Co-op P2 variant. Reads *p2-math-camera* planes. See drawable.gc for body.
+;; Callers MUST gate on *camera-p2* liveness (*camera-p2* non-null AND
+;; tracked-target nonzero) — before P2 is wired, *p2-math-camera* planes are
+;; zero and every point would pass the frustum test (false positives).
+(define-extern sphere-in-p2-view-frustum? (function sphere symbol))
+
 (declare-type draw-control basic)
 
 (define-extern add-process-drawable (function process-drawable draw-control symbol dma-buffer none))

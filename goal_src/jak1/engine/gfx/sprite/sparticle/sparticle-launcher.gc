@@ -7,6 +7,7 @@
 (require "engine/gfx/sprite/sprite.gc")
 (require "kernel/gstate.gc")
 (require "engine/collide/collide-shape-h.gc")
+(require "engine/camera/cam-interface-h.gc") ;; co-op: min-camera-distance + *camera-p2* liveness
 
 ;; og:preserve-this added macro
 ;; the rate was defaulted to DISPLAY_FPS_RATIO before, but sp-launch-particles-var checks
@@ -672,12 +673,33 @@
          (if (and *display-actor-vis* (or (not *display-actor-anim*) (name= *display-actor-anim* (-> this proc name))))
            (add-debug-sphere *display-actor-vis* (bucket-id debug) gp-1 (-> gp-1 w) (new 'static 'rgba :g #xff :a #x80)))
          ;; og:preserve-this can we see it?
+         ;; Co-op: is-visible? gates particle SPAWN (not just render), so a P1-only
+         ;; frustum test silently eats particles that P2 should see. Accept if
+         ;; EITHER camera can see the sphere; renderer culls per-pass at draw time.
+         ;; Liveness guard: before P2 pipeline is wired, *p2-math-camera* planes
+         ;; are zero and every point trivially passes — skip the P2 test until
+         ;; *camera-p2* has a tracked-target (mirrors min-camera-distance pattern).
+         ;; `and` with *camera-p2* (a camera-master = basic) widens its return
+         ;; type's LUB past symbol, breaking `or` return-type inference against
+         ;; the declared (is-visible? vector) -> symbol. Cast is safe: at runtime
+         ;; `and` yields either #f (short-circuit) or sphere-in-p2's symbol result
+         ;; — *camera-p2* itself is only evaluated for truthiness, never returned.
          (#if (not PC_PORT)
-           (sphere-in-view-frustum? (the-as sphere gp-1))
+           (or (sphere-in-view-frustum? (the-as sphere gp-1))
+               (the symbol
+                    (and *camera-p2* (nonzero? (-> *camera-p2* tracked-target))
+                         (sphere-in-p2-view-frustum? (the-as sphere gp-1)))))
            (if (-> *pc-settings* ps2-parts?)
              ;; og:preserve-this pc port: launchers have larger bsphere if you have ps2 parts off
-             (sphere-in-view-frustum? (the-as sphere gp-1))
-             (sphere-in-view-frustum? (the-as sphere (begin (*! (-> gp-1 w) 8.0) gp-1))))))))))
+             (or (sphere-in-view-frustum? (the-as sphere gp-1))
+                 (the symbol
+                      (and *camera-p2* (nonzero? (-> *camera-p2* tracked-target))
+                           (sphere-in-p2-view-frustum? (the-as sphere gp-1)))))
+             (let ((big-sphere (the-as sphere (begin (*! (-> gp-1 w) 8.0) gp-1))))
+               (or (sphere-in-view-frustum? big-sphere)
+                   (the symbol
+                        (and *camera-p2* (nonzero? (-> *camera-p2* tracked-target))
+                             (sphere-in-p2-view-frustum? big-sphere))))))))))))
 
 (defmethod spawn ((this sparticle-launch-control) (arg0 vector))
   (set! (-> this center quad) (-> arg0 quad))
@@ -696,9 +718,18 @@
       (set! s5-0 (-> this local-clock))
       (+! (-> this local-clock) (logand (the-as int (-> *sp-frame-time* x)) 255))
       (set! s4-0 (-> this local-clock)))
-    (let ((f30-0 (vector-vector-distance arg0 (math-camera-pos)))
+    ;; Co-op: distance falloff picks MIN across both cameras, so a trail launcher
+    ;; near P2 but far from P1 doesn't get its rate ramped to zero. Single-player
+    ;; and pre-P2-wired states fall back to P1 distance via min-camera-distance's
+    ;; liveness gate.
+    (let ((f30-0 (min-camera-distance arg0))
           ;; hour mask
           (s3-1 (ash 1 (if *time-of-day-proc* (-> *time-of-day-proc* 0 hour) 0))))
+      (when (multi-log-enabled? 'part)
+        (format 0 "[part] ~S pos=(~F ~F ~F) d_min=~F~%"
+                (if (-> this group) (-> this group name) "<no-group>")
+                (-> arg0 x) (-> arg0 y) (-> arg0 z)
+                f30-0))
       (if (nonzero? (-> this matrix)) ;; if we have an additional matrix, say we're at the camera so we always draw.
         (set! f30-0 0.0))
       ;; og:preserve-this if we have ps2 particles off, say we're at the camera
