@@ -4,6 +4,7 @@
 (require "engine/util/sync-info.gc")
 (require "engine/common-obs/water-anim.gc")
 (require "engine/common-obs/nav-enemy.gc")
+(define-extern closest-target-to (function vector target))
 
 ;; DECOMP BEGINS
 
@@ -544,8 +545,9 @@
       (ja-channel-set! 1))
   :trans
     (behavior ()
-      (if (and *target* (>= 163840.0 (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-        (go starfish-patrol)))
+      (let ((tgt (closest-target-to (-> self collide-info trans))))
+        (if (and tgt (>= 163840.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+          (go starfish-patrol))))
   :code
     (behavior ()
       (loop
@@ -560,8 +562,9 @@
   :trans
     (behavior ()
       (when (time-elapsed? (-> self state-time) (seconds 1))
-        (if (or (not *target*) (< 204800.0 (vector-vector-distance (-> self collide-info trans) (-> *target* control trans))))
-          (go starfish-idle))))
+        (let ((tgt (closest-target-to (-> self collide-info trans))))
+          (if (or (not tgt) (< 204800.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
+            (go starfish-idle)))))
   :code
     (behavior ()
       (set! (-> self target-speed) 4096.0)
@@ -674,9 +677,10 @@
       (loop
         (when (time-elapsed? (-> self state-time) (seconds 0.5))
           (set-time! (-> self state-time))
-          (if (and (and *target* (>= 204800.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-                   (< (process-drawable-child-count) (-> self child-count)))
-            (starfish-spawn-child)))
+          (let ((tgt (closest-target-to (-> self root trans))))
+            (if (and (and tgt (>= 204800.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
+                     (< (process-drawable-child-count) (-> self child-count)))
+              (starfish-spawn-child))))
         (suspend)))
   :post #f)
 

@@ -2,6 +2,7 @@
 (in-package goal)
 (bundles "GAME.CGO")
 (require "engine/common-obs/nav-enemy.gc")
+(define-extern closest-target-to (function vector target))
 
 ;; DECOMP BEGINS
 
@@ -98,8 +99,9 @@
       (set! (-> self rotate-speed) 218453.33)
       (set! (-> self turn-time) (seconds 0.5))
       (ja-channel-push! 1 (seconds 0.15))
-      (let ((s4-0 (-> self collide-info))
-            (s5-0 (target-pos 0)))
+      (let* ((s4-0 (-> self collide-info))
+             (closest-tgt (closest-target-to (-> s4-0 trans)))
+             (s5-0 (if closest-tgt (-> closest-tgt control trans) (target-pos 0))))
         (when (< (fabs (deg-diff (y-angle s4-0) (vector-y-angle (vector-! (new 'stack-no-clear 'vector) s5-0 (-> s4-0 trans)))))
                  12743.111)
           (ja-no-eval :group! babak-give-up-ja :num! (seek!) :frame-num 0.0)
