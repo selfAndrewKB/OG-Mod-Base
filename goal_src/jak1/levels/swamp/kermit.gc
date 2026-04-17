@@ -532,7 +532,12 @@
    (tongue-pulse-pos float)
    (miss-count       int8)
    (charged-up       symbol)
-   (sound-id         sound-id))
+   (sound-id         sound-id)
+   ;; co-op: closest player handle, refreshed per-tick from `:trans` bodies.
+   ;; Read by helpers (kermit-player-target-pos, kermit-set-rotate-dir-to-player,
+   ;; kermit-set-nav-mesh-target). Joint-mod-tracker callback is a no-op now;
+   ;; tongue-control target-pos is written directly from `:trans`/`:code`.
+   (target-handle    handle))
   (:states
    kermit-attack
    kermit-chase
@@ -587,11 +592,20 @@
   (set! (-> arg1 quad) (-> arg0 node-list data 8 bone transform vector 2 quad))
   (vector-normalize! arg1 1.0))
 
-(defun kermit-player-target-pos ()
-  (target-pos 26))
+;; co-op: resolve closest-player target-pos via stored handle on the kermit.
+;; Falls back to P1 (target-pos 26) if handle is stale or hasn't been written
+;; yet (defensive — :trans bodies should write before this is read).
+(defun kermit-player-target-pos ((krm kermit))
+  (let ((tgt (the-as target (handle->process (-> krm target-handle)))))
+    (if tgt
+        (target-pos-for tgt 26)
+        (target-pos 26))))
 
+;; co-op: joint-mod-tracker callback runs at render time when `self` is
+;; unreliable. The :trans/:code bodies that need fresh tongue targeting now
+;; write `tongue-control target-pos` directly, so this callback is a no-op
+;; identity — it preserves whatever target-pos was last written.
 (defun kermit-get-tongue-target-callback ((arg0 vector))
-  (set! (-> arg0 quad) (-> (kermit-player-target-pos) quad))
   arg0)
 
 (defbehavior kermit-check-tongue-is-clear? kermit ()
@@ -614,7 +628,7 @@
 
 (defbehavior kermit-check-to-hit-player? kermit ((arg0 float))
   (let* ((s5-0 (kermit-tongue-pos self))
-         (v1-0 (kermit-player-target-pos))
+         (v1-0 (kermit-player-target-pos self))
          (s4-1 (vector-! (new 'stack-no-clear 'vector) v1-0 s5-0))
          (f30-0 (vector-length s4-1))
          (s5-1 (new 'stack-no-clear 'vector))
@@ -623,8 +637,19 @@
          (v0-5 (>= (vector-dot (kermit-get-head-dir-xz self (new 'stack-no-clear 'vector)) s5-2) (cos arg0))))
     (and (< f30-0 49152.0) v0-5)))
 
+;; co-op: refresh `target-handle` from current closest player. Returns the
+;; resolved target (or #f) so callers can re-use the result as a guard/binding.
+;; Call this once at the top of every `:trans`/`:code` body that downstream
+;; will hit kermit-set-nav-mesh-target / kermit-set-rotate-dir-to-player /
+;; kermit-player-target-pos.
+(defbehavior kermit-update-target-handle kermit ()
+  (let ((tgt (closest-target-to (-> self collide-info trans))))
+    (set! (-> self target-handle) (if tgt (process->handle tgt) (the-as handle #f)))
+    tgt))
+
 (defbehavior kermit-set-nav-mesh-target kermit ((arg0 vector))
-  (let* ((gp-0 (target-pos 0))
+  (let* ((tgt (the-as target (handle->process (-> self target-handle))))
+         (gp-0 (if tgt (target-pos-for tgt 0) (target-pos 0)))
          (s5-1 (vector-! (new 'stack-no-clear 'vector) arg0 gp-0)))
     (vector-length s5-1)
     (let* ((a0-4 (vector-normalize-copy! (new 'stack-no-clear 'vector) s5-1 40960.0))
@@ -670,7 +695,10 @@
     (else (let ((v0-1 (-> self rotate-dir))) (set! (-> v0-1 quad) (-> self nav travel quad)) v0-1))))
 
 (defbehavior kermit-set-rotate-dir-to-player kermit ()
-  (vector-! (-> self rotate-dir) (target-pos 0) (-> self nav target-pos)))
+  (let ((tgt (the-as target (handle->process (-> self target-handle)))))
+    (vector-! (-> self rotate-dir)
+              (if tgt (target-pos-for tgt 0) (target-pos 0))
+              (-> self nav target-pos))))
 
 nav-enemy-default-event-handler
 
@@ -718,7 +746,7 @@ nav-enemy-default-event-handler
       0)
   :trans
     (behavior ()
-      (let ((tgt (closest-target-to (-> self collide-info trans))))
+      (let ((tgt (kermit-update-target-handle)))
         (if (and tgt
                  (>= (-> self enemy-info idle-distance)
                      (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
@@ -742,14 +770,14 @@ nav-enemy-default-event-handler
       (nav-control-method-11 (-> self nav) (-> self nav target-pos)))
   :trans
     (behavior ()
-      (let ((tgt (closest-target-to (-> self collide-info trans))))
+      (let ((tgt (kermit-update-target-handle)))
         (if (and (or (not tgt)
                      (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
                  (time-elapsed? (-> self state-time) (seconds 1)))
-          (go kermit-idle)))
-      (kermit-set-rotate-dir-to-nav-target)
-      (if (and (not (-> self airborne)) (nav-enemy-test-point-in-nav-mesh? (target-pos 0))) (go kermit-notice))
-      (if (logtest? (nav-control-flags navcf19) (-> self nav flags)) (kermit-get-new-patrol-point)))
+          (go kermit-idle))
+        (kermit-set-rotate-dir-to-nav-target)
+        (if (and (not (-> self airborne)) tgt (nav-enemy-test-point-in-nav-mesh? (target-pos-for tgt 0))) (go kermit-notice))
+        (if (logtest? (nav-control-flags navcf19) (-> self nav flags)) (kermit-get-new-patrol-point))))
   :code
     (behavior ()
       (loop
@@ -767,6 +795,7 @@ nav-enemy-default-event-handler
       (set-mode! (-> self neck) (joint-mod-handler-mode look-at)))
   :trans
     (behavior ()
+      (kermit-update-target-handle)
       (kermit-set-rotate-dir-to-player))
   :code
     (behavior ()
@@ -792,6 +821,7 @@ nav-enemy-default-event-handler
     (behavior ()
       (set-time! (-> self state-time))
       (set! (-> self miss-count) 0)
+      (kermit-update-target-handle)
       (let* ((a1-1 (kermit-get-head-dir-xz self (new 'stack-no-clear 'vector)))
              (gp-0 (vector-rotate-around-y! (new 'stack-no-clear 'vector) a1-1 16384.0))
              (s5-0 (new 'stack-no-clear 'vector))
@@ -829,25 +859,26 @@ nav-enemy-default-event-handler
     (behavior ()
       (set-time! (-> self state-time))
       (set-mode! (-> self neck) (joint-mod-handler-mode look-at))
+      (kermit-update-target-handle)
       (kermit-set-nav-mesh-target (-> self collide-info trans))
       (nav-control-method-11 (-> self nav) (-> self nav target-pos)))
   :trans
     (behavior ()
-      (kermit-set-nav-mesh-target (-> self collide-info trans))
-      (kermit-set-rotate-dir-to-player)
-      (if (nav-enemy-test-point-in-nav-mesh? (target-pos 0)) (set-time! (-> self state-time)))
-      (kermit-tongue-pos self)
-      (let ((v1-5 (kermit-player-target-pos))) (set! (-> self tongue-control target-pos quad) (-> v1-5 quad)))
-      (when (not (-> self airborne))
-        (let ((tgt (closest-target-to (-> self collide-info trans))))
+      (let ((tgt (kermit-update-target-handle)))
+        (kermit-set-nav-mesh-target (-> self collide-info trans))
+        (kermit-set-rotate-dir-to-player)
+        (if (and tgt (nav-enemy-test-point-in-nav-mesh? (target-pos-for tgt 0))) (set-time! (-> self state-time)))
+        (kermit-tongue-pos self)
+        (let ((v1-5 (kermit-player-target-pos self))) (set! (-> self tongue-control target-pos quad) (-> v1-5 quad)))
+        (when (not (-> self airborne))
           (if (or (not tgt)
                   (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
-            (go kermit-patrol)))
-        (let ((gp-1 (kermit-check-to-hit-player? 3640.889))
-              (v1-17 (kermit-check-tongue-is-clear?)))
-          (when gp-1
-            (if v1-17 (go kermit-attack) (go kermit-chase-new-position))))
-        (if (time-elapsed? (-> self state-time) (seconds 3)) (go kermit-give-up))))
+            (go kermit-patrol))
+          (let ((gp-1 (kermit-check-to-hit-player? 3640.889))
+                (v1-17 (kermit-check-tongue-is-clear?)))
+            (when gp-1
+              (if v1-17 (go kermit-attack) (go kermit-chase-new-position))))
+          (if (time-elapsed? (-> self state-time) (seconds 3)) (go kermit-give-up)))))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.17))
@@ -866,12 +897,14 @@ nav-enemy-default-event-handler
       (ja-channel-push! 1 (seconds 0.17))
       (set! (-> self tongue-control forward-scale-control) 0.0)
       (kermit-enable-tongue)
+      (kermit-update-target-handle)
       (let ((s5-0 #f)
             (gp-0 #f))
         (let ((f30-0 1.0))
           (ja-no-eval :group! kermit-lash-ja :num! (seek!) :frame-num 0.0)
           (until (ja-done? 0)
-            (set! (-> self tongue-control target-pos quad) (-> (kermit-player-target-pos) quad))
+            (kermit-update-target-handle)
+            (set! (-> self tongue-control target-pos quad) (-> (kermit-player-target-pos self) quad))
             (when (and (not s5-0) (>= (ja-aframe-num 0) 14.0))
               (set! s5-0 #t)
               (set! gp-0 (kermit-check-to-hit-player? 3640.889))
@@ -904,8 +937,15 @@ nav-enemy-default-event-handler
       (let ((v1-0 (-> self child-override))) (if v1-0 (deactivate (-> v1-0 0)))))
   :trans
     (behavior ()
-      (let ((s5-0 (kermit-player-target-pos))
+      ;; co-op: do NOT refresh target-handle here. Once the tongue grabs a
+      ;; player, the grab is locked to them — let-go is via retract or escape.
+      ;; Refreshing per-tick would oscillate target-pos between P1 and P2 when
+      ;; both are nearby, jittering the pulse position and accumulating
+      ;; prevent-attack/prevent-duck state flags on both players via
+      ;; target-apply-tongue. Confirmed crash on pulse impact (Session 36).
+      (let ((s5-0 (kermit-player-target-pos self))
             (gp-0 (kermit-tongue-pos self)))
+        (set! (-> self tongue-control target-pos quad) (-> s5-0 quad))
         (if (or (< 73728.0 (vector-vector-distance s5-0 gp-0))
                 (or (not (kermit-check-tongue-is-clear?)) (not (-> self child-override))))
           (go kermit-retract-tongue))
@@ -916,7 +956,8 @@ nav-enemy-default-event-handler
                  (s4-0 (if v1-13 (-> v1-13 0 self-override)))
                  (v1-15 (vector-lerp! (new 'stack-no-clear 'vector) gp-0 s5-0 (-> self tongue-pulse-pos))))
             (set! (-> s4-0 root trans quad) (-> v1-15 quad))))
-        (send-event *target* 'tongue gp-0)))
+        (let ((tgt-for-event (the-as target (handle->process (-> self target-handle)))))
+          (when tgt-for-event (send-event tgt-for-event 'tongue gp-0)))))
   :code
     (behavior ()
       (ja-channel-push! 1 (seconds 0.1))
@@ -928,7 +969,11 @@ nav-enemy-default-event-handler
           (ja :num! (seek!)))))
   :post
     (behavior ()
-      (seek-to-point-toward-point! (-> self collide-info) (target-pos 0) (-> self rotate-speed) (seconds 0.05))
+      (let ((tgt (the-as target (handle->process (-> self target-handle)))))
+        (seek-to-point-toward-point! (-> self collide-info)
+                                     (if tgt (target-pos-for tgt 0) (target-pos 0))
+                                     (-> self rotate-speed)
+                                     (seconds 0.05)))
       (kermit-simple-post)))
 
 (defstate kermit-retract-tongue (kermit)
@@ -944,6 +989,7 @@ nav-enemy-default-event-handler
       (kermit-disable-tongue))
   :trans
     (behavior ()
+      (kermit-update-target-handle)
       (kermit-set-nav-mesh-target (-> self collide-info trans))
       (kermit-set-rotate-dir-to-player)
       (when (not (-> self airborne))
@@ -1067,5 +1113,6 @@ nav-enemy-default-event-handler
   (set! (-> this part) (create-launch-control group-kermit-charged-up this))
   (set! (-> this charging-part) (create-launch-control group-kermit-charging-up this))
   (set! (-> this sound-id) (new-sound-id))
+  (set! (-> this target-handle) (the-as handle #f))
   (go kermit-idle)
   (none))

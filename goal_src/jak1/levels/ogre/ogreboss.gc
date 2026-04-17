@@ -741,7 +741,9 @@
 
 (defbehavior ogreboss-player-inside-range? ogreboss ((arg0 float))
   (let ((tgt (closest-target-to (-> self far-pos))))
-    (and tgt (< (vector-vector-distance (-> self far-pos) (-> tgt control trans)) arg0))))
+    (if tgt
+        (< (vector-vector-distance (-> self far-pos) (-> tgt control trans)) arg0)
+        #f)))
 
 (defun ogreboss-set-stage1-camera ()
   0

@@ -62,6 +62,12 @@
   :bounds (static-spherem 0 1 0 4.4)
   :longest-edge (meters 1.2))
 
+;; co-op: closest player to this ram-boss (or #f if none in range).
+;; Use only from `defbehavior`/state bodies where `self` is bound; defmethod
+;; bodies use `this` and must call `closest-target-to` inline.
+(defbehavior ram-boss-current-target ram-boss ()
+  (closest-target-to (-> self collide-info trans)))
+
 (define *ram-boss-nav-enemy-info*
   (new 'static
        'nav-enemy-info
@@ -784,7 +790,7 @@
        (let ((v1-66 arg0))
          (cond
            ((= (-> arg3 param 0) 'attack)
-            (let ((tgt (closest-target-to (-> self collide-info trans))))
+            (let ((tgt (ram-boss-current-target)))
               (when (and tgt (= (-> arg3 param 1) tgt))
                 (set! (-> self frustration) 0)
                 (go-virtual nav-enemy-victory)
@@ -1020,7 +1026,7 @@
         (let ((a0-4 (-> self parent-override 0 node-list data 9 bone transform)))
           (set! (-> self collide-info trans quad) (-> a0-4 vector 3 quad)))
         (transform-post)
-        (let ((tgt (closest-target-to (-> self collide-info trans))))
+        (let ((tgt (ram-boss-current-target)))
           (when tgt
             (look-at-enemy! (-> tgt neck)
                             (-> (the-as collide-shape-prim-group (-> self collide-info root-prim)) prims 0 prim-core world-sphere)
@@ -1041,7 +1047,7 @@
             (gp-0 (-> self node-list data 0 bone transform)))
         (let ((s1-0 (new 'stack-no-clear 'matrix))
               (s4-0 (new 'stack-no-clear 'vector))
-              (tgt (closest-target-to (-> self collide-info trans))))
+              (tgt (ram-boss-current-target)))
           (matrix-4x4-inverse! s1-0 gp-0)
           (vector-matrix*! s4-0 (target-pos-for tgt 0) s1-0)
           (set-vector! s5-0 -49152.0 -32768.0 16384.0 1.0)
@@ -1071,7 +1077,7 @@
       (ja-no-eval :group! ram-boss-dismount-start-ja :num! (seek!) :frame-num 0.0)
       (until (ja-done? 0)
         (let ((gp-0 (new 'stack-no-clear 'vector))
-              (tgt (closest-target-to (-> self collide-info trans))))
+              (tgt (ram-boss-current-target)))
           (vector-! gp-0 (target-pos-for tgt 0) (-> self collide-info trans))
           (set! (-> gp-0 y) 0.0)
           (seek-toward-heading-vec! (-> self collide-info) gp-0 182044.44 (seconds 0.01)))
@@ -1108,7 +1114,7 @@
         (vector-matrix*! (-> self collide-info trans) a1-0 a2-0))
       (move-to-ground (-> self collide-info) 40960.0 40960.0 #t (collide-kind background))
       (let ((gp-0 (new 'stack-no-clear 'vector))
-            (tgt (closest-target-to (-> self collide-info trans))))
+            (tgt (ram-boss-current-target)))
         (vector-! gp-0 (target-pos-for tgt 0) (-> self collide-info trans))
         (set! (-> gp-0 y) 0.0)
         (set-heading-vec! (-> self collide-info) gp-0))
@@ -1128,7 +1134,7 @@
   :code
     (behavior ()
       (set! (-> self frustration) 0)
-      (let ((tgt (closest-target-to (-> self collide-info trans))))
+      (let ((tgt (ram-boss-current-target)))
         (when tgt
           (let ((f30-0 (vector-vector-distance (target-pos-for tgt 0) (-> self collide-info trans))))
             (cond
@@ -1150,7 +1156,7 @@
       (ja-channel-push! 1 (seconds 0.3)))
   :trans
     (behavior ()
-      (let ((tgt (closest-target-to (-> self collide-info trans))))
+      (let ((tgt (ram-boss-current-target)))
         (when tgt
           (let ((f0-0 (vector-vector-distance (target-pos-for tgt 0) (-> self collide-info trans))))
             (if (>= 18432.0 f0-0) (go ram-boss-tracking)))))
@@ -1164,7 +1170,7 @@
       (let ((t9-0 (-> (method-of-type nav-enemy nav-enemy-chase) enter))) (if t9-0 (t9-0))))
   :trans
     (behavior ()
-      (let* ((tgt (closest-target-to (-> self collide-info trans)))
+      (let* ((tgt (ram-boss-current-target))
              (f30-0 (if tgt (vector-vector-distance (target-pos-for tgt 0) (-> self collide-info trans)) 1000000000.0)))
         (if (>= 18432.0 f30-0) (go ram-boss-tracking))
         (when (time-elapsed? (-> self state-time) (-> self reaction-time))
@@ -1207,7 +1213,7 @@
   :trans
     (behavior ()
       (set-jump-height-factor! self (the-as int (time-elapsed? (-> self state-time) (seconds 0.75))))
-      (let ((tgt (closest-target-to (-> self collide-info trans))))
+      (let ((tgt (ram-boss-current-target)))
         (if (not tgt) (go-virtual nav-enemy-patrol))
         (let ((gp-0 (new 'stack-no-clear 'vector)))
           (vector-! gp-0 (target-pos-for tgt 0) (-> self collide-info trans))
@@ -1320,7 +1326,7 @@
   :exit #f
   :trans
     (behavior ()
-      (let ((tgt (closest-target-to (-> self collide-info trans))))
+      (let ((tgt (ram-boss-current-target)))
         (when tgt
           (let ((f0-0 (vector-vector-distance (target-pos-for tgt 0) (-> self collide-info trans))))
             (if (and (>= 18432.0 f0-0) (-> self has-shield?)) (go ram-boss-tracking))))))
