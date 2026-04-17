@@ -26,6 +26,7 @@
    (try              int32)
    (camera           handle)
    (money            handle)
+   (swallowed-player handle)
    (try-inc          symbol))
   (:states (plant-boss-attack int)
    (plant-boss-dead symbol)
@@ -157,7 +158,10 @@
           v0-0))))
     (('target)
      (case (-> arg3 param 0)
-       (('die) (if (= (-> arg3 param 1) 'plant-boss) (go plant-boss-eat)))))))
+       (('die)
+        (when (= (-> arg3 param 1) 'plant-boss)
+          (set! (-> self swallowed-player) (process->handle arg0))
+          (go plant-boss-eat)))))))
 
 (defbehavior plant-boss-default-event-handler plant-boss ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (case arg2
@@ -774,9 +778,15 @@
       (set! (-> self neck flex-blend) 1.0))
   :trans
     (behavior ()
+      (let ((pbi-min (the-as float 10000000000.0)))
+        (dotimes (pbi (-> *target-list* length))
+          (let ((pbtgt (get-target pbi)))
+            (when pbtgt
+              (let ((d (vector-vector-distance (-> self root trans) (-> pbtgt control trans))))
+                (if (< d pbi-min) (set! pbi-min d))))))
+        (if (< 409600.0 pbi-min) (go plant-boss-far-idle)))
       (let* ((tgt (closest-target-to (-> self root trans)))
              (f30-0 (if tgt (vector-vector-distance (-> tgt control trans) (-> self root trans)) 1000000000.0)))
-        (if (< 409600.0 f30-0) (go plant-boss-far-idle))
         (if (and (< f30-0 143360.0)
                  (time-elapsed? (-> self state-time)
                                 (cond
@@ -855,9 +865,15 @@
                    (else 3)))))
   :trans
     (behavior ()
+      (let ((pbs-min (the-as float 10000000000.0)))
+        (dotimes (pbsi (-> *target-list* length))
+          (let ((pbstgt (get-target pbsi)))
+            (when pbstgt
+              (let ((d (vector-vector-distance (-> self root trans) (-> pbstgt control trans))))
+                (if (< d pbs-min) (set! pbs-min d))))))
+        (if (< 409600.0 pbs-min) (go plant-boss-far-idle)))
       (let* ((tgt (closest-target-to (-> self root trans)))
              (f0-0 (if tgt (vector-vector-distance (-> tgt control trans) (-> self root trans)) 1000000000.0)))
-        (if (< 409600.0 f0-0) (go plant-boss-far-idle))
         (cond
           ((zero? (-> self want-aphid-count))
            enter-state
@@ -1041,7 +1057,8 @@
         (ja-blend-eval)
         (suspend)
         (ja :num! (seek!)))
-      (send-event *target* 'end-mode)
+      (let ((sp (handle->process (-> self swallowed-player))))
+        (if sp (send-event sp 'end-mode)))
       (logclear! (-> self skel status) (janim-status inited))
       (go plant-boss-idle))
   :post plant-boss-post)
@@ -1405,6 +1422,7 @@
   (set! (-> this cam-tracker) (the-as handle #f))
   (set! (-> this camera) (the-as handle #f))
   (set! (-> this money) (the-as handle #f))
+  (set! (-> this swallowed-player) (the-as handle #f))
   (set! (-> this try-inc) #f)
   (set! (-> this neck) (new 'process 'joint-mod (joint-mod-handler-mode flex-blend) this 13))
   (set-vector! (-> this neck twist-max) 3640.889 8192.0 0.0 1.0)
