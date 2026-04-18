@@ -39,6 +39,7 @@
 (define *multi-dbg-pole*   #f)   ;; swing-pole stance eligibility, grab-receive, active-wait occupancy
 (define *multi-dbg-tube*   #f)   ;; slide-control watch/ride entry, 'update per-rider path-pos
 (define *multi-dbg-spike*  #f)   ;; swamp-spike-idle per-target distance + camera-dot sign
+(define *multi-dbg-fps*    #f)   ;; first-person aim mode entry/exit, HUD lifecycle
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Logging helpers
@@ -59,6 +60,7 @@
       (('pole)    *multi-dbg-pole*)
       (('tube)    *multi-dbg-tube*)
       (('spike)   *multi-dbg-spike*)
+      (('fps)     *multi-dbg-fps*)
       (else #t)
       )
     )

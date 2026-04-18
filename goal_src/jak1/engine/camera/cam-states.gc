@@ -8,6 +8,7 @@
 (require "engine/collide/collide-cache-h.gc")
 (require "engine/anim/joint-h.gc")
 (require "engine/debug/debug.gc")
+(define-extern multi-log-enabled? (function symbol symbol))
 
 ;; note: changed for high fps
 
@@ -268,10 +269,24 @@
       (set! (-> self fov) 11650.845))
   :exit
     (behavior ()
-      (if (and *target*
-               (logtest? (-> (-> self my-master) master-options) 2)
-               (logtest? (-> *target* state-flags) (state-flags first-person-mode)))
-        (send-event *target* 'end-mode)))
+      ;; Co-op: route 'end-mode to the rich-tracked target (the player whose
+      ;; FPS this cam-eye was serving), not unconditionally to *target*.
+      (let ((mm (-> self my-master)))
+        (when (multi-log-enabled? 'fps)
+          (format 0 "[MULTI:fps] cam-eye :exit self=~A mm=~A~%" self mm))
+        (when mm
+          (let ((tgt (-> mm tracked-target)))
+            (when (multi-log-enabled? 'fps)
+              (format 0 "[MULTI:fps]   pad=~D mopts=~D tgt=~A~%"
+                      (-> mm pad-index) (-> mm master-options) tgt))
+            (when (and tgt
+                       (logtest? (-> mm master-options) 2)
+                       (logtest? (-> tgt state-flags) (state-flags first-person-mode)))
+              (when (multi-log-enabled? 'fps)
+                (format 0 "[MULTI:fps]   sending 'end-mode~%"))
+              (send-event tgt 'end-mode)))))
+      (when (multi-log-enabled? 'fps)
+        (format 0 "[MULTI:fps] cam-eye :exit DONE~%")))
   :trans
     (behavior ()
       (if (not (logtest? (-> (-> self my-master) master-options) 2)) (go cam-free-floating)))
@@ -284,13 +299,13 @@
                   (s5-0 (new-stack-matrix0)))
               (when *camera-read-analog*
                 (let ((f30-0 (analog-input-horizontal-first ;; og:preserve-this changed for pc port
-                               (the-as int (+ (-> *cpad-list* cpads 0 rightx) -256 (-> *cpad-list* cpads 0 leftx)))
+                               (the-as int (+ (-> *cpad-list* cpads (-> (-> self my-master) pad-index) rightx) -256 (-> *cpad-list* cpads (-> (-> self my-master) pad-index) leftx)))
                                (the-as float 0.0)
                                (the-as float 48.0)
                                (the-as float 110.0)
                                (the-as float -1.0)))
                       (f0-0 (analog-input-vertical-first ;; og:preserve-this changed for pc port
-                              (the-as int (+ (-> *cpad-list* cpads 0 righty) -256 (-> *cpad-list* cpads 0 lefty)))
+                              (the-as int (+ (-> *cpad-list* cpads (-> (-> self my-master) pad-index) righty) -256 (-> *cpad-list* cpads (-> (-> self my-master) pad-index) lefty)))
                               (the-as float 0.0)
                               (the-as float 48.0)
                               (the-as float 110.0)
@@ -391,7 +406,7 @@
             0.0
             (when *camera-read-analog*
               (let ((f1-0 (analog-input-horizontal-first ;; og:preserve-this changed for pc port
-                            (the-as int (+ (-> *cpad-list* cpads 0 rightx) -256 (-> *cpad-list* cpads 0 leftx)))
+                            (the-as int (+ (-> *cpad-list* cpads (-> (-> self my-master) pad-index) rightx) -256 (-> *cpad-list* cpads (-> (-> self my-master) pad-index) leftx)))
                             (the-as float 0.0)
                             (the-as float 48.0)
                             (the-as float 110.0)

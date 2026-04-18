@@ -5,6 +5,7 @@
 (require "engine/common-obs/generic-obs.gc")
 (require "engine/target/target.gc")
 (declare-type first-person-hud process)
+(define-extern multi-log-enabled? (function symbol symbol))
 
 ;; DECOMP BEGINS
 
@@ -105,7 +106,11 @@
    (in-out-position     int32)
    (sides-x-scale       float)
    (sides-y-scale       float)
-   (x-offset            int32))
+   (x-offset            int32)
+   ;; Co-op: index of the player that spawned this HUD (0 = P1, 1 = P2, ...).
+   ;; Used by find-active-fp-hud to filter per render pass so P2's reticle does
+   ;; not draw in P1's viewport (and vice versa). Defaults to 0 in single-player.
+   (owner-pad           int8))
   (:methods
    (spawn-particles! (_type_) none))
   (:states
@@ -115,15 +120,55 @@
    hud-waiting))
 
 
-(define *fp-hud-stack* (malloc 'global #x3800))
+;; Co-op: one #x4000 stack region per player so simultaneous FPS entries do
+;; not corrupt each other's process memory. Spawn callsites pick their slot
+;; via (-> self control unknown-cpad-info00 number).
+;;
+;; CRITICAL: stride MUST equal process-spawn's default :stack-size (#x4000),
+;; AND the spawn callsites pass (* #x4000 (+ 1 slot)) — :stack is the stack
+;; TOP (high address) and GOAL stacks grow DOWN. Slot N's top sits at the
+;; upper boundary of slot N's region.
+;;
+;; History:
+;; - Earlier attempt used #x3800 stride with default #x4000 :stack-size →
+;;   2KB overlap between P1 and P2's regions, kernel deactivate corrupted
+;;   the surviving hud and crashed.
+;; - Then changed offset to (* #x4000 slot) thinking :stack was a base
+;;   address. It is not — slot 0's stack wrote below the malloc into invalid
+;;   memory and crashed even in single-player.
+(define *fp-hud-stack* (malloc 'global (* #x4000 NUM_MAX_TARGET)))
 
 (defmethod deactivate ((this first-person-hud))
+  (when (multi-log-enabled? 'fps)
+    (format 0 "[MULTI:fps] fp-hud deactivate ENTRY this=~A owner-pad=~D~%"
+            this (the int (-> this owner-pad))))
   (dotimes (s5-0 (-> this nb-of-particles))
     (kill-and-free-particles (-> this particles s5-0 part))
     (set! (-> this particles s5-0 part matrix) -1))
+  (when (multi-log-enabled? 'fps)
+    (format 0 "[MULTI:fps]   after kill-particles~%"))
   (enable-hud)
-  (set! (-> *target* fp-hud) (the-as handle #f))
+  (when (multi-log-enabled? 'fps)
+    (format 0 "[MULTI:fps]   after enable-hud~%"))
+  ;; Iterate *target-list* and clear fp-hud on whichever player owned this hud.
+  ;; Boxed-array slots are zero-initialised — `handle->process` null-derefs on
+  ;; raw=0 (gkernel-h.gc:369 checks the pointer field, which is null for a zero
+  ;; handle, but treats null as truthy and then dereferences). Skip zero raws.
+  (let ((this-handle (process->handle (the-as process this)))
+        (tlen (-> *target-list* length)))
+    (dotimes (di tlen)
+      (let ((raw (-> *target-list* di)))
+        (when (nonzero? raw)
+          (let ((tgt (the-as target (handle->process raw))))
+            (when (and tgt (= (-> tgt fp-hud) this-handle))
+              (when (multi-log-enabled? 'fps)
+                (format 0 "[MULTI:fps]   clearing fp-hud on slot ~D~%" di))
+              (set! (-> tgt fp-hud) (the-as handle #f))))))))
+  (when (multi-log-enabled? 'fps)
+    (format 0 "[MULTI:fps]   after target-list clear, calling parent~%"))
   (call-parent-method this)
+  (when (multi-log-enabled? 'fps)
+    (format 0 "[MULTI:fps]   DONE this=~A~%" this))
   (none))
 
 (defbehavior first-person-hud-init-by-other first-person-hud ()
@@ -172,21 +217,27 @@
   (the-as first-person-hud ((method-of-type process relocate) this offset)))
 
 (defmethod spawn-particles! ((this first-person-hud))
-  (dotimes (s5-0 (-> this nb-of-particles))
-    (set! (-> this particles s5-0 pos x) (+ -256.0 (-> this particles s5-0 init-pos x)))
-    (set! (-> this particles s5-0 pos y)
-          (* 0.5
-             (- (* (-> this particles s5-0 init-pos y) (-> *video-parms* relative-y-scale)) (the float (-> *video-parms* screen-sy)))))
-    (set! (-> this particles s5-0 pos z) (-> this particles s5-0 init-pos z))
-    (if (> (-> this particles s5-0 part matrix) 0)
-      (set-vector! (sprite-get-user-hvdf (-> this particles s5-0 part matrix))
-                   (the float (+ (the int (-> this particles s5-0 pos x)) 2048))
-                   (the float (+ (the int (-> this particles s5-0 pos y)) 2048))
-                   (- (-> *math-camera* hvdf-off z) (* 1024.0 (-> this particles s5-0 pos z)))
-                   (-> *math-camera* hvdf-off w)))
-    ;; og:preserve-this Positioning of first person hud sprites
-    (when (or (-> *pc-settings* use-vis?) (= s5-0 2))
-      (spawn (-> this particles s5-0 part) *null-vector*)))
+  ;; Co-op: HUD sprites are screen-space and render in BOTH viewports per pass,
+  ;; so spawning P2's reticle particles makes them appear on P1's view too.
+  ;; Suppress spawn for non-P1 owners until per-pass sprite filtering exists.
+  ;; P2 still gets functional FPS (camera, controls, projectiles) — just no
+  ;; visible reticle. TODO: route reticle through a per-camera sprite system.
+  (when (zero? (the int (-> this owner-pad)))
+    (dotimes (s5-0 (-> this nb-of-particles))
+      (set! (-> this particles s5-0 pos x) (+ -256.0 (-> this particles s5-0 init-pos x)))
+      (set! (-> this particles s5-0 pos y)
+            (* 0.5
+               (- (* (-> this particles s5-0 init-pos y) (-> *video-parms* relative-y-scale)) (the float (-> *video-parms* screen-sy)))))
+      (set! (-> this particles s5-0 pos z) (-> this particles s5-0 init-pos z))
+      (if (> (-> this particles s5-0 part matrix) 0)
+        (set-vector! (sprite-get-user-hvdf (-> this particles s5-0 part matrix))
+                     (the float (+ (the int (-> this particles s5-0 pos x)) 2048))
+                     (the float (+ (the int (-> this particles s5-0 pos y)) 2048))
+                     (- (-> *math-camera* hvdf-off z) (* 1024.0 (-> this particles s5-0 pos z)))
+                     (-> *math-camera* hvdf-off w)))
+      ;; og:preserve-this Positioning of first person hud sprites
+      (when (or (-> *pc-settings* use-vis?) (= s5-0 2))
+        (spawn (-> this particles s5-0 part) *null-vector*))))
   0
   (none))
 
@@ -247,8 +298,25 @@
     (behavior ()
       (spawn-particles! self)))
 
+(defun find-active-fp-hud ()
+  "Return the first live FP HUD found across *target-list*.
+   Skips zero-init *target-list* slots — handle->process null-derefs on raw=0
+   (gkernel-h.gc:369 treats the null pointer field as truthy and dereferences)."
+  (let ((res (the-as process #f)))
+    (dotimes (fpi (-> *target-list* length))
+      (when (not res)
+        (let ((raw (-> *target-list* fpi)))
+          (when (nonzero? raw)
+            (let ((fptgt (the-as target (handle->process raw))))
+              (when fptgt
+                (let ((hraw (-> fptgt fp-hud)))
+                  (when (nonzero? hraw)
+                    (let ((fphud (handle->process hraw)))
+                      (when fphud (set! res fphud)))))))))))
+    res))
+
 (defun part-first-person-hud-left-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((s5-0 (handle->process (-> *target* fp-hud))))
+  (let ((s5-0 (find-active-fp-hud)))
     (when s5-0
       (let ((f30-0 (* 0.00024414062 (the float (-> (the-as first-person-hud s5-0) in-out-position)))))
         (if (or (-> *setting-control* current movie) (movie?)) (set! f30-0 1.0))
@@ -261,7 +329,7 @@
   (none))
 
 (defun part-first-person-hud-right-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((s5-0 (handle->process (-> *target* fp-hud))))
+  (let ((s5-0 (find-active-fp-hud)))
     (when s5-0
       (let ((f30-0 (* 0.00024414062 (the float (-> (the-as first-person-hud s5-0) in-out-position)))))
         (if (or (-> *setting-control* current movie) (movie?)) (set! f30-0 1.0))
@@ -274,7 +342,7 @@
   (none))
 
 (defun part-first-person-hud-selector-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((v1-2 (handle->process (-> *target* fp-hud))))
+  (let ((v1-2 (find-active-fp-hud)))
     (when v1-2
       (let ((f30-0 (* 0.00024414062 (the float (-> (the-as first-person-hud v1-2) in-out-position)))))
         (if (or (-> *setting-control* current movie) (movie?)) (set! f30-0 1.0))
@@ -302,7 +370,7 @@
                (set! (-> a1-0 from) self)
                (set! (-> a1-0 num-params) 0)
                (set! (-> a1-0 message) 'dist-from-interp-src)
-               (and (< (send-event-function *camera* a1-0) 4915.2)
+               (and (< (send-event-function (target-camera self) a1-0) 4915.2)
                     (not (time-elapsed? (-> self state-time) (seconds 0.07)))
                     (zero? (ja-group-size))))
         (suspend))
@@ -320,25 +388,71 @@
         (else (target-standard-event-handler proc argc message block))))
   :enter
     (behavior ()
+      (when (multi-log-enabled? 'fps)
+        (format 0 "[MULTI:fps] target-look-around :enter pad=~D~%"
+                (-> self control unknown-cpad-info00 number)))
       (set! (-> self cam-user-mode) 'look-around)
       (set! (-> self control unknown-surface00) *duck-mods*)
       (logior! (-> self state-flags) (state-flags first-person-mode))
-      (send-event *camera* 'blend-from-as-fixed)
-      (send-event *camera* 'no-intro)
-      (camera-change-to (the-as string 'cam-eye) 60 #f)
+      (send-event (target-camera self) 'blend-from-as-fixed)
+      (send-event (target-camera self) 'no-intro)
+      (send-event (target-camera self) 'change-state cam-eye 60)
       (let ((a0-5 (handle->process (-> self fp-hud)))) (if a0-5 (deactivate a0-5)))
-      (set! (-> self fp-hud)
-            (ppointer->handle (process-spawn first-person-hud :to *dproc* :stack (&+ *fp-hud-stack* #x3800)))))
+      ;; Co-op: only P1 (slot=0) gets a real fp-hud process. P2's hud was already
+      ;; gated to render nothing (owner-pad=0 spawn-particles guard) so spawning
+      ;; one for P2 just creates an invisible process that adds concurrency
+      ;; hazard — multiple legacy code paths (find-active-fp-hud, enable/disable
+      ;; -hud counter, kernel deactivate of two simultaneously dying same-stack
+      ;; -region processes) all assumed exactly one fp-hud alive at a time.
+      ;; Until per-viewport HUD work lands, P2's reticle is deferred. Camera,
+      ;; controls, and projectile-firing all live in this state's body, not in
+      ;; the hud — P2's functional FPS gameplay is unaffected.
+      (let ((slot (the int (-> self control unknown-cpad-info00 number))))
+        (cond
+          ((zero? slot)
+            ;; CRITICAL: :stack is the stack-TOP (high address); GOAL stacks
+            ;; grow DOWN. Stride MUST match :stack-size default (#x4000); see
+            ;; *fp-hud-stack* definition. Slot 0's top sits at offset #x4000.
+            (let ((pp (process-spawn first-person-hud :to self
+                                     :stack (&+ *fp-hud-stack* (* #x4000 (+ 1 slot))))))
+              (when pp
+                (set! (-> (the-as first-person-hud (-> pp 0)) owner-pad) (the int8 slot)))
+              (set! (-> self fp-hud) (ppointer->handle pp))))
+          (else
+            (when (multi-log-enabled? 'fps)
+              (format 0 "[MULTI:fps] target-look-around :enter pad=~D — fp-hud spawn skipped (P2+ deferred)~%" slot))
+            (set! (-> self fp-hud) (the-as handle #f))))))
   :exit
     (behavior ()
+      (when (multi-log-enabled? 'fps)
+        (format 0 "[MULTI:fps] target-look-around :exit ENTRY pad=~D~%"
+                (-> self control unknown-cpad-info00 number)))
       (let ((a0-1 (handle->process (-> self fp-hud)))) (if a0-1 (send-event a0-1 'go-away)))
+      (when (multi-log-enabled? 'fps)
+        (format 0 "[MULTI:fps]   :exit after go-away pad=~D~%"
+                (-> self control unknown-cpad-info00 number)))
       (set! (-> self cam-user-mode) 'normal)
       (target-exit)
-      (when (send-event *camera* 'query-state cam-eye)
-        (send-event *camera* 'no-intro)
-        (send-event *camera* 'force-blend (seconds 0.2))
-        (send-event *camera* 'clear-entity)
-        (camera-change-to (the-as string 'base) 60 #f)))
+      (when (multi-log-enabled? 'fps)
+        (format 0 "[MULTI:fps]   :exit after target-exit pad=~D~%"
+                (-> self control unknown-cpad-info00 number)))
+      (when (send-event (target-camera self) 'query-state cam-eye)
+        (when (multi-log-enabled? 'fps)
+          (format 0 "[MULTI:fps]   :exit query-state cam-eye TRUE pad=~D~%"
+                  (-> self control unknown-cpad-info00 number)))
+        (send-event (target-camera self) 'no-intro)
+        (send-event (target-camera self) 'force-blend (seconds 0.2))
+        (send-event (target-camera self) 'clear-entity)
+        (when (multi-log-enabled? 'fps)
+          (format 0 "[MULTI:fps]   :exit pre-change-state pad=~D~%"
+                  (-> self control unknown-cpad-info00 number)))
+        (send-event (target-camera self) 'change-state *camera-base-mode* 60)
+        (when (multi-log-enabled? 'fps)
+          (format 0 "[MULTI:fps]   :exit post-change-state pad=~D~%"
+                  (-> self control unknown-cpad-info00 number))))
+      (when (multi-log-enabled? 'fps)
+        (format 0 "[MULTI:fps] target-look-around :exit DONE pad=~D~%"
+                (-> self control unknown-cpad-info00 number))))
   :trans
     (behavior ()
       (local-vars (sv-48 vector))
@@ -381,7 +495,7 @@
           (set! (-> self cam-user-mode) 'normal))))
   :code
     (behavior ()
-      (while (let ((f30-0 8192.0)) (< f30-0 (send-event *camera* 'dist-from-interp-dest)))
+      (while (let ((f30-0 8192.0)) (< f30-0 (send-event (target-camera self) 'dist-from-interp-dest)))
         (if (!= (-> self cam-user-mode) 'look-around) (go target-stance))
         (suspend))
       (ja-channel-set! 0)
@@ -403,20 +517,31 @@
       (set! (-> self neck flex-blend) 0.0)
       (set! (-> self control unknown-surface00) *duck-mods*)
       (logior! (-> self state-flags) (state-flags first-person-mode))
-      (send-event *camera* 'blend-from-as-fixed)
-      (send-event *camera* 'clear-entity)
-      (send-event *camera* 'no-intro)
-      (camera-change-to (the-as string 'cam-billy) 0 #f)
+      (send-event (target-camera self) 'blend-from-as-fixed)
+      (send-event (target-camera self) 'clear-entity)
+      (send-event (target-camera self) 'no-intro)
+      (send-event (target-camera self) 'change-state cam-billy 0)
       (let ((a0-6 (handle->process (-> self fp-hud)))) (if a0-6 (deactivate a0-6)))
-      (set! (-> self fp-hud)
-            (ppointer->handle (process-spawn first-person-hud :to *dproc* :stack (&+ *fp-hud-stack* #x3800)))))
+      ;; Co-op: only P1 (slot=0) gets a real fp-hud — see target-look-around
+      ;; :enter for the full rationale (single-fp-hud invariant; concurrency
+      ;; hazard from multiple alive at once).
+      (let ((slot (the int (-> self control unknown-cpad-info00 number))))
+        (cond
+          ((zero? slot)
+            (let ((pp (process-spawn first-person-hud :to self
+                                     :stack (&+ *fp-hud-stack* (* #x4000 (+ 1 slot))))))
+              (when pp
+                (set! (-> (the-as first-person-hud (-> pp 0)) owner-pad) (the int8 slot)))
+              (set! (-> self fp-hud) (ppointer->handle pp))))
+          (else
+            (set! (-> self fp-hud) (the-as handle #f))))))
   :exit
     (behavior ()
       (let ((a0-1 (handle->process (-> self fp-hud)))) (if a0-1 (send-event a0-1 'go-away)))
-      (when (send-event *camera* 'query-state cam-billy)
-        (send-event *camera* 'no-intro)
-        (send-event *camera* 'force-blend 0)
-        (camera-change-to (the-as string 'base) 0 #f))
+      (when (send-event (target-camera self) 'query-state cam-billy)
+        (send-event (target-camera self) 'no-intro)
+        (send-event (target-camera self) 'force-blend 0)
+        (send-event (target-camera self) 'change-state *camera-base-mode* 0))
       (target-exit))
   :trans
     (behavior ()
