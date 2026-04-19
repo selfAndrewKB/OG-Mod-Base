@@ -492,6 +492,16 @@
         ;; increase the health!
         (seek! (-> this health) (-> this health-max) amount))
        (else
+        ;; Session 51 diag — log every damage application to fact.health to confirm
+        ;; whether co-op damage is per-target (expected) or shared (the bug we need
+        ;; to find). Default-active when *multi-coop-active*. Look for whether ONE
+        ;; line fires per damage event (per-target, expected) vs TWO (shared bug).
+        (when *multi-coop-active*
+          (format 0 "[HUD:dmg] target-pid=~D before=~F amount=~F src=~D~%"
+            (if (-> this process) (-> (the-as process (-> this process)) pid) -1)
+            (-> this health) amount
+            (let ((src (if (zero? source-handle) #f (handle->process source-handle))))
+              (if src (-> (the-as process src) pid) -1))))
         ;; negative health. Subtract.
         (seek! (-> this health) 0.0 (- amount))
         ;; not sure why we do this. But this will set the eco pill collection time.
@@ -557,6 +567,13 @@
                  (-> this eco-level)
                  0.0 ;; we don't have this kind of eco.
                  )))
+     ;; Session 51 diag — log every eco powerup credit. Default-active when MP.
+     ;; If both viewports' hud-power animate identically, look for whether ONE line
+     ;; per pickup (per-target, expected) vs TWO (shared bug).
+     (when *multi-coop-active*
+       (format 0 "[HUD:eco] target-pid=~D kind=~A amount=~F prev-type=~D prev-timeout=~D~%"
+         (if (-> this process) (-> (the-as process (-> this process)) pid) -1)
+         kind amount (-> this eco-type) (-> this eco-timeout)))
      ;; new type of eco. Reset and use the new type.
      (when (!= (-> this eco-type) kind)
        ;; as far as I can tell, the eco-level isn't really used other than just 1 or 0.
