@@ -430,7 +430,32 @@
   (none))
 
 (defun send-hud-increment-event ((arg0 hud))
-  (if (-> arg0 increment-on-event) (send-event arg0 'increment)))
+  (when (-> arg0 increment-on-event)
+    (send-event arg0 'increment)
+    ;; Session 51 B4 fix: in MP, also broadcast 'increment to same-type HUDs in
+    ;; the other viewports so their target-value advances in lockstep with the
+    ;; picker's. Without this, mirror HUDs's tally-value branch 1 fails the
+    ;; (!= value target-value) gate (target-value never advances), so value
+    ;; stays stale until branch 2 SNAPs after 1.5s of last-target-equal-time
+    ;; elapsed — visible as "P2 counter several seconds late + second slide-in".
+    ;;
+    ;; CRITICAL: must use (zero? (-> *target-list* i)) BEFORE handle->process —
+    ;; the handle->process macro (gkernel-h.gc:369) does (if (-> the-handle process))
+    ;; which assumes the kernel sets the field to #f for invalid handles. But for
+    ;; zero-initialized *target-list* slots (unused player slots in 2P co-op),
+    ;; the field is integer 0 (truthy in GOAL — only #f is false), so handle->process
+    ;; derefs a null pointer and crashes. Pattern stolen from get-target (target-h.gc:160).
+    (when *multi-coop-active*
+      (dotimes (i (-> *target-list* length))
+        (when (not (zero? (-> *target-list* i)))
+          (let* ((other-parts (-> *hud-parts-list* slots i))
+                 (want-type (-> arg0 type)))
+            (dotimes (hi 9)
+              (let ((proc (ppointer->process (-> other-parts parts hi))))
+                (when (and proc
+                           (!= proc (the-as process-tree arg0))
+                           (= (-> proc type) want-type))
+                  (send-event proc 'increment))))))))))
 
 (defstate hud-collecting (process-drawable)
   :trans
