@@ -1633,17 +1633,42 @@
   0
   (none))
 
+;; Session 51 Phase B3 — co-op aware mass-event functions.
+;; The legacy *hud-parts* targets only slot 0 (P1). In MP, iterate every active
+;; player's hud-parts via *hud-parts-list* so subtitle hides, cutscene hides,
+;; etc. apply to BOTH viewports symmetrically. Without this, P1's HUDs get
+;; hidden but P2's don't (or vice versa), producing the "P2 sees counter,
+;; P1 doesn't" symptom on scout fly pickup (subtitle.gc:424 every-frame hide).
+;; CRITICAL: zero-guard *target-list* slots before handle->process — see
+;; feedback_handle_to_process_zero_guard.md.
+
 (defun hide-hud ()
   (when *target*
-    (dotimes (gp-0 9)
-      (if (-> *hud-parts* parts gp-0) (send-event (ppointer->process (-> *hud-parts* parts gp-0)) 'hide))))
+    (cond
+      (*multi-coop-active*
+       (dotimes (slot (-> *target-list* length))
+         (when (not (zero? (-> *target-list* slot)))
+           (let ((parts (-> *hud-parts-list* slots slot)))
+             (dotimes (gp-0 9)
+               (if (-> parts parts gp-0) (send-event (ppointer->process (-> parts parts gp-0)) 'hide)))))))
+      (else
+       (dotimes (gp-0 9)
+         (if (-> *hud-parts* parts gp-0) (send-event (ppointer->process (-> *hud-parts* parts gp-0)) 'hide))))))
   0
   (none))
 
 (defun hide-bottom-hud ()
   (when *target*
-    (dotimes (gp-0 4)
-      (if (-> *hud-parts* parts (+ gp-0 4)) (send-event (ppointer->process (-> *hud-parts* parts (+ gp-0 4))) 'hide))))
+    (cond
+      (*multi-coop-active*
+       (dotimes (slot (-> *target-list* length))
+         (when (not (zero? (-> *target-list* slot)))
+           (let ((parts (-> *hud-parts-list* slots slot)))
+             (dotimes (gp-0 4)
+               (if (-> parts parts (+ gp-0 4)) (send-event (ppointer->process (-> parts parts (+ gp-0 4))) 'hide)))))))
+      (else
+       (dotimes (gp-0 4)
+         (if (-> *hud-parts* parts (+ gp-0 4)) (send-event (ppointer->process (-> *hud-parts* parts (+ gp-0 4))) 'hide))))))
   0
   (none))
 
@@ -1659,22 +1684,46 @@
 
 (defun enable-hud ()
   (when *target*
-    (dotimes (gp-0 9)
-      (if (-> *hud-parts* parts gp-0) (send-event (ppointer->process (-> *hud-parts* parts gp-0)) 'enable))))
+    (cond
+      (*multi-coop-active*
+       (dotimes (slot (-> *target-list* length))
+         (when (not (zero? (-> *target-list* slot)))
+           (let ((parts (-> *hud-parts-list* slots slot)))
+             (dotimes (gp-0 9)
+               (if (-> parts parts gp-0) (send-event (ppointer->process (-> parts parts gp-0)) 'enable)))))))
+      (else
+       (dotimes (gp-0 9)
+         (if (-> *hud-parts* parts gp-0) (send-event (ppointer->process (-> *hud-parts* parts gp-0)) 'enable))))))
   0
   (none))
 
 (defun hide-hud-quick ()
   (when *target*
-    (dotimes (gp-0 9)
-      (if (-> *hud-parts* parts gp-0) (send-event (ppointer->process (-> *hud-parts* parts gp-0)) 'hide-quick))))
+    (cond
+      (*multi-coop-active*
+       (dotimes (slot (-> *target-list* length))
+         (when (not (zero? (-> *target-list* slot)))
+           (let ((parts (-> *hud-parts-list* slots slot)))
+             (dotimes (gp-0 9)
+               (if (-> parts parts gp-0) (send-event (ppointer->process (-> parts parts gp-0)) 'hide-quick)))))))
+      (else
+       (dotimes (gp-0 9)
+         (if (-> *hud-parts* parts gp-0) (send-event (ppointer->process (-> *hud-parts* parts gp-0)) 'hide-quick))))))
   0
   (none))
 
 (defun show-hud ()
   (when (and *target* (or (not *progress-process*) (hidden? (-> *progress-process* 0))))
-    (dotimes (gp-0 9)
-      (if (-> *hud-parts* parts gp-0) (send-event (ppointer->process (-> *hud-parts* parts gp-0)) 'show))))
+    (cond
+      (*multi-coop-active*
+       (dotimes (slot (-> *target-list* length))
+         (when (not (zero? (-> *target-list* slot)))
+           (let ((parts (-> *hud-parts-list* slots slot)))
+             (dotimes (gp-0 9)
+               (if (-> parts parts gp-0) (send-event (ppointer->process (-> parts parts gp-0)) 'show)))))))
+      (else
+       (dotimes (gp-0 9)
+         (if (-> *hud-parts* parts gp-0) (send-event (ppointer->process (-> *hud-parts* parts gp-0)) 'show))))))
   0
   (none))
 

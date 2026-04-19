@@ -264,9 +264,13 @@
                      (= (-> self type) hud-pickups)
                      (= (-> self type) hud-power)
                      (= (-> self type) hud-health)))
-        (format 0 "[HUD:event-arriving] type=~A self-pid=~D msg=~A from-pid=~D val=~D tgt=~D~%"
-          (-> self type) (-> self pid) message
-          (if proc (-> proc pid) -1) (-> self value) (-> self target-value)))
+        (begin
+          (format 0 "[HUD:event-arriving] type=~A self-pid=~D msg=~A from-pid=~D"
+            (-> self type) (-> self pid) message
+            (if proc (-> proc pid) -1))
+          (format 0 " from-type=~A val=~D tgt=~D~%"
+            (if proc (-> proc type) 'NONE)
+            (-> self value) (-> self target-value))))
       (case message
         (('hide-quick)
          (set-time! (-> self last-hide-time))

@@ -1306,6 +1306,12 @@
       (clear-collide-with-as (-> self root))
       (if (nonzero? (-> self sound)) (stop! (-> self sound)))
       (when (not arg0)
+        (when *multi-coop-active*
+          (let ((picker (if (zero? arg1) #f (handle->process arg1))))
+            (format 0 "[HUD:buzzer-spawn] buzzer-pid=~D picker-pid=~D frame=~D~%"
+                    (-> self pid)
+                    (if picker (-> (the-as process picker) pid) -1)
+                    (-> *display* integral-frame-counter))))
         (let ((v1-18 (manipy-spawn (-> self root trans) #f *buzzer-sg* #f :to *entity-pool*)))
           (send-event (ppointer->process v1-18) 'become-hud-object (ppointer->process (-> *hud-parts* buzzers)))))
       (let* ((s5-2 (logand (the int (-> self fact pickup-amount)) #xffff))
