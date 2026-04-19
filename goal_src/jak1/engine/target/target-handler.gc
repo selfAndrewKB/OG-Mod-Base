@@ -8,6 +8,9 @@
 ;; but the binding is live by the time any target receives events in-game.
 (define-extern multi-log-enabled? (function symbol symbol))
 (define-extern *multi-dbg-hud* symbol)
+;; Session 51 B5 follow-up: also need *multi-coop-active* for the level-enter
+;; per-viewport hud-buzzers hide-quick + sync broadcast.
+(define-extern *multi-coop-active* symbol)
 
 ;; DECOMP BEGINS
 
@@ -33,6 +36,20 @@
      (let ((v1-21 (level-get *level* (the-as symbol (-> arg3 param 0)))))
        (when v1-21
          (let ((s5-1 (-> v1-21 info)))
+           ;; Session 51 B5 follow-up: in MP, send 'hide-quick to ALL viewports'
+           ;; hud-buzzers BEFORE rewriting fact.buzzer. fact.buzzer is per-task and
+           ;; gets reset to the new task's count on every 'level-enter, which any
+           ;; in-active hud-buzzers would auto-detect as a value change → tally-value
+           ;; → go hud-arriving (visible "auto-trigger" on level cross). Forcing
+           ;; hidden state first means hud-update doesn't run during the rewrite,
+           ;; so the val change is absorbed silently. The 'sync below sets first-init
+           ;; on each so the NEXT manually-triggered display (LT-hold, pickup) snaps
+           ;; without animation. SP path: only P1 exists, legacy *hud-parts* is fine.
+           (when *multi-coop-active*
+             (dotimes (slot (-> *target-list* length))
+               (when (not (zero? (-> *target-list* slot)))
+                 (let ((bz (-> *hud-parts-list* slots slot buzzers)))
+                   (if bz (send-event (ppointer->process bz) 'hide-quick))))))
            (let ((v1-22 (-> s5-1 buzzer)))
              (if (zero? v1-22)
                (set! (-> self fact buzzer) 0.0)
@@ -42,7 +59,16 @@
              (set-time! (-> *game-info* enter-level-time (-> *level-task-data-remap* (+ (-> s5-1 index) -1))))))
          (when *multi-dbg-hud*
            (format 0 "[MULTI:hud] level-enter->sync from pid=~D level=~A~%" (-> self pid) (-> arg3 param 0)))
-         (send-event (ppointer->process (-> *hud-parts* buzzers)) 'sync)
+         ;; Session 51 B5 follow-up: send 'sync to ALL viewports' hud-buzzers in MP,
+         ;; not just P1's slot. Each gets first-init=#t so next display snaps.
+         (cond
+           (*multi-coop-active*
+            (dotimes (slot (-> *target-list* length))
+              (when (not (zero? (-> *target-list* slot)))
+                (let ((bz (-> *hud-parts-list* slots slot buzzers)))
+                  (if bz (send-event (ppointer->process bz) 'sync))))))
+           (else
+            (send-event (ppointer->process (-> *hud-parts* buzzers)) 'sync)))
          (format #t "GAMEPLAY: enter ~A~%" (-> arg3 param 0)))))
     (('get-attack-count)
      (set! v0-0 (+ (-> self control unknown-dword51) (-> arg3 param 0)))
