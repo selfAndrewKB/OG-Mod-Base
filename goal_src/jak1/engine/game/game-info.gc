@@ -385,9 +385,78 @@
 
 (declare-type vent process-drawable)
 
+;; Per-viewport HUD redesign Phase 1 — forward-decls into multi-debug.gc / localmulti.gc
+;; (both compile after game-info.gc in game.gp lines 2120/2121).
+(define-extern multi-log-enabled? (function symbol symbol))
+(define-extern *multi-coop-active* symbol)
+
+(defun mirror-shared-pickup! ((picker fact-info-target) (kind pickup-type) (amount float) (source-handle handle))
+  "Per-viewport HUD Phase 1: mirror per-fact pickup deltas to all live targets except PICKER.
+
+   IMPORTANT: target.game is a POINTER to the GLOBAL *game-info* (logic-target.gc:1263).
+   Money / fuel-cell / power cells / buzzer-total live there and are ALREADY shared
+   across all targets — no mirroring needed for those. We only mirror per-fact-info-target
+   fields, which DO live per-target:
+     - fact.buzzer   (cached count of the global buzzer bitfield)
+     - fact.eco-pill (per-player green-eco storage; pickup credits all)
+
+   Health and powerup eco (red/blue/yellow) live per-fact too but are PER-PLAYER resources —
+   not mirrored.
+
+   Side effects (sound, level-hint, orb-all anim, blue-eco magnet, task-spawn) are
+   picker-only and already fired by the wrapping pickup-collectable! method's case dispatch.
+   No-op when *multi-coop-active* is false."
+  (when (and *multi-coop-active* *target-list*)
+    (let ((mirror-count 0)
+          (picker-tgt (-> picker process)))
+      (dotimes (i (-> *target-list* length))
+        (let ((other-tgt (get-target i)))
+          (when (and other-tgt (!= (the-as process other-tgt) (the-as process picker-tgt)))
+            (let ((other-fact (-> other-tgt fact)))
+              (case kind
+                (((pickup-type buzzer))
+                 ;; the global buzzer bitfield was already updated by the picker's adjust;
+                 ;; recompute each mirrored player's per-fact buzzer count from it.
+                 (let ((buzz-task (logand (the int amount) #xffff)))
+                   (when (> (the-as uint buzz-task) 0)
+                     (let* ((ctrl (get-task-control (the-as game-task buzz-task)))
+                            (buzz-bits (get-reminder ctrl 0))
+                            (buzz-count 0.0))
+                       (countdown (v1 (the int (-> *FACT-bank* buzzer-max-default)))
+                         (if (logtest? buzz-bits (ash 1 v1))
+                           (set! buzz-count (+ 1.0 buzz-count))))
+                       (when (!= buzz-count (-> other-fact buzzer))
+                         (set-time! (-> other-fact buzzer-pickup-time)))
+                       (set! (-> other-fact buzzer) buzz-count)))))
+                (((pickup-type eco-pill))
+                 (when (>= amount 0.0)
+                   (set-time! (-> other-fact eco-pill-pickup-time))
+                   (seek! (-> other-fact eco-pill) (-> other-fact eco-pill-max) amount))))
+              (+! mirror-count 1)))))
+      (when (multi-log-enabled? 'hud-pickup)
+        (format 0 "[HUD:pickup] kind=~A amount=~F picker=~A mirrored-to=~D~%"
+          kind amount picker-tgt mirror-count))))
+  (none))
+
+(defun sync-shared-pickups-to! ((new-tgt target))
+  "Per-viewport HUD Phase 1: when a new target spawns mid-game, copy per-fact shared
+   counters (buzzer, eco-pill) from the existing *target* so the new player's HUDs read
+   correct values from frame zero. Called by start-extra-target before activate-hud.
+   No-op when *target* is nil (no source to copy from)."
+  (when (and *target* new-tgt (!= (the-as process new-tgt) (the-as process *target*)))
+    (let ((src-fact (-> *target* fact))
+          (dst-fact (-> new-tgt fact)))
+      (set! (-> dst-fact buzzer) (-> src-fact buzzer))
+      (set! (-> dst-fact eco-pill) (-> src-fact eco-pill))
+      (when (multi-log-enabled? 'hud-pickup)
+        (format 0 "[HUD:pickup] sync-on-spawn dst=~A buzzer=~F eco-pill=~F~%"
+          new-tgt (-> dst-fact buzzer) (-> dst-fact eco-pill)))))
+  (none))
+
 (defmethod pickup-collectable! ((this fact-info-target) (kind pickup-type) (amount float) (source-handle handle))
   "Pickup a thing!"
-  (case kind
+  (let ((picker-result
+    (case kind
     (((pickup-type eco-green))
      ;; big green eco.  This counts toward the health (up to 3), and if that's full, maxes out the little green ecos to 50.
      (cond
@@ -547,7 +616,9 @@
                :to
                s5-1)))))
      (-> this eco-level))
-    (else ((method-of-type fact-info pickup-collectable!) this kind amount source-handle))))
+    (else ((method-of-type fact-info pickup-collectable!) this kind amount source-handle)))))
+    (mirror-shared-pickup! this kind amount source-handle)
+    picker-result))
 
 (defmethod lookup-entity-perm-by-aid ((this game-info) (aid actor-id))
   (let ((v1-0 (-> this perm-list)))

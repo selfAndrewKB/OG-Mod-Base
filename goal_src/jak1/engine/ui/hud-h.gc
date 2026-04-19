@@ -128,6 +128,21 @@
        :bike-heat #f
        :money-all #f))
 
+;; Per-viewport HUD redesign Phase 2: per-player HUD process sets.
+;; Each slot indexes into NUM_MAX_TARGET parallel HUD instances, one per active
+;; player. activate-hud (in hud-classes.gc) spawns the 6 HUD processes for a
+;; target into its slot, parented to that target. Each HUD process therefore
+;; knows its owner via (-> self parent 0) — eliminating the *hud-draw-target*
+;; global multiplexing pattern. Slot 0 always mirrors *hud-parts* so legacy
+;; callers (collectables.gc, target-handler.gc, hide-hud, etc.) continue to
+;; reach P1's HUD set without changes.
+(deftype hud-parts-list (basic)
+  ((slots hud-parts NUM_MAX_TARGET :inline)))
+
+(define *hud-parts-list* (new 'global 'hud-parts-list))
+
+;; (Phase 4 cleanup deleted *hud-draw-target* — owner is resolved via parent process.)
+
 ;; added for pc port
 (defenum hud-collectable-view
   (original)

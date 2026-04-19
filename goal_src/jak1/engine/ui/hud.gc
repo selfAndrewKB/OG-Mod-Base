@@ -2,6 +2,9 @@
 (in-package goal)
 (bundles "ENGINE.CGO" "GAME.CGO")
 (require "engine/common-obs/collectables.gc")
+(define-extern multi-log-enabled? (function symbol symbol))
+(define-extern *multi-coop-active* symbol)
+(define-extern *multi-dbg-hud* symbol)
 
 ;; DECOMP BEGINS
 
@@ -11,6 +14,9 @@
   (the-as hud ((method-of-type process relocate) this arg0)))
 
 (defmethod deactivate ((this hud))
+  (when (multi-log-enabled? 'hud-life)
+    (format 0 "[HUD:life] deactivate type=~A pid=~D parts=~D~%"
+      (-> this type) (-> this pid) (-> this nb-of-particles)))
   (dotimes (v1-0 9)
     (if (and (-> *hud-parts* parts v1-0) (= (ppointer->process (-> *hud-parts* parts v1-0)) this))
       (set! (-> *hud-parts* parts v1-0) (the-as (pointer hud) #f))))
@@ -19,6 +25,20 @@
     (set! (-> this particles s5-0 part matrix) -1))
   ((method-of-type process deactivate) this)
   (none))
+
+;; Per-viewport HUD: resolve the *hud-parts-list* slot owned by THIS hud's parent target.
+;; Each spawned hud is parented :to its target (slot 0 = P1, 1 = P2, ...). Walks parent
+;; pointer, then locates that target in *target-list* to identify its slot. Falls back
+;; to legacy *hud-parts* if no parent or owner not found in target-list (covers the SP
+;; pre-coop boot path where *hud-parts-list* is empty and only *hud-parts* is populated).
+(defun find-owner-hud-parts ((this hud))
+  (let ((owner (if (-> this parent) (the-as process (-> this parent 0)) (the-as process #f))))
+    (when owner
+      (dotimes (i (-> *target-list* length))
+        (let ((tgt (handle->process (-> *target-list* i))))
+          (when (and tgt (= tgt owner))
+            (return (-> *hud-parts-list* slots i))))))
+    *hud-parts*))
 
 (defmethod draw-hud ((this hud))
   (when (and (not (hidden? this)) (not (paused?)))
@@ -62,7 +82,15 @@
          (set-time! (-> this last-target-equal-time))))
       (set! (-> this value2) arg1)
       (when (and (not (movie?)) (= *master-mode* 'game) (not (-> this first-init)) (not (-> this disable)))
-        (if (>= (-> this friend) 0) (send-event (ppointer->process (-> *hud-parts* parts (-> this friend))) 'show))
+        ;; Per-viewport HUD: friend send routes to the OWNER's hud-parts slot, not the
+        ;; legacy *hud-parts* (which mirrors only slot 0). Eg. P2's hud-pickups friend
+        ;; send must reach P2's hud-health, not P1's.
+        (when (>= (-> this friend) 0)
+          (let ((owner-parts (find-owner-hud-parts this)))
+            (send-event (ppointer->process (-> owner-parts parts (-> this friend))) 'show)))
+        (when (multi-log-enabled? 'hud-state)
+          (format 0 "[HUD:state] type=~A go hud-arriving val=~D->~D target=~D~%"
+            (-> this type) (-> this value) arg0 (-> this target-value)))
         (go hud-arriving))
       (set-time! (-> this trigger-time))
       (set! (-> this first-init) #f)))
@@ -147,6 +175,8 @@
   :event
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
       (local-vars (v0-0 object))
+      (when (multi-log-enabled? 'hud-event)
+        (format 0 "[HUD:event] hud-hidden type=~A msg=~A from=~A~%" (-> self type) message proc))
       (case message
         (('show) (if (and (not *progress-process*) (!= (-> self last-hide-time) (current-time))) (go hud-arriving)))
         (('hide) (set! v0-0 (current-time)) (set! (-> self last-hide-time) (the-as time-frame v0-0)) v0-0)
@@ -157,6 +187,9 @@
         (('enable) (set! (-> self disable) #f) #f)))
   :enter
     (behavior ()
+      ;; NOTE: do not call multi-log-enabled? here — hud-init-by-other ends with
+      ;; (go hud-hidden), and hud-init-by-other can fire at LOAD TIME via
+      ;; hud-classes-pc.gc:464. multi-debug.gc loads later → unbound symbol crash.
       (set! (-> self offset) 128)
       (draw-icons self)
       (draw-particles self)
@@ -184,6 +217,8 @@
   :event
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
       (local-vars (v0-3 object))
+      (when (multi-log-enabled? 'hud-event)
+        (format 0 "[HUD:event] hud-arriving type=~A msg=~A from=~A~%" (-> self type) message proc))
       (case message
         (('hide-quick)
          (set-time! (-> self last-hide-time))
@@ -201,12 +236,20 @@
         (('enable) (set! (-> self disable) #f) #f)))
   :enter
     (behavior ()
+      (when (multi-log-enabled? 'hud-state)
+        (format 0 "[HUD:state] enter hud-arriving type=~A val=~D target=~D parts=~D~%"
+          (-> self type) (-> self value) (-> self target-value) (-> self nb-of-particles)))
       (let ((gp-0 (-> self child)))
         (while gp-0
           (send-event (ppointer->process gp-0) 'draw #t)
           (set! gp-0 (-> gp-0 0 brother))))
       (dotimes (gp-1 (-> self nb-of-particles))
-        (if (= (-> self particles gp-1 part matrix) -1) (set! (-> self particles gp-1 part matrix) (sprite-allocate-user-hvdf)))))
+        (if (= (-> self particles gp-1 part matrix) -1)
+          (let ((slot (sprite-allocate-user-hvdf)))
+            (when (multi-log-enabled? 'hud-render)
+              (format 0 "[HUD:render] type=~A particle=~D allocated hvdf-slot=~D~%"
+                (-> self type) gp-1 slot))
+            (set! (-> self particles gp-1 part matrix) slot)))))
   :code
     (behavior ()
       (loop
@@ -225,13 +268,21 @@
   :post
     (behavior ()
       (hud-update self)
-      (draw-particles self)
-      (draw-hud self)))
+      ;; In co-op, hud-draw-for-pass calls draw-particles + draw-hud per pass with the
+      ;; correct *math-camera*. SP path keeps the in-state draw inline.
+      (when (not *multi-coop-active*)
+        (draw-particles self)
+        (draw-hud self))))
 
 (defstate hud-in (hud)
   :event
     (-> hud-arriving
         event)
+  :enter
+    (behavior ()
+      (when (multi-log-enabled? 'hud-state)
+        (format 0 "[HUD:state] enter hud-in type=~A val=~D target=~D~%"
+          (-> self type) (-> self value) (-> self target-value))))
   :code
     (behavior ()
       (set-time! (-> self trigger-time))
@@ -256,6 +307,11 @@
   :event
     (-> hud-arriving
         event)
+  :enter
+    (behavior ()
+      (when (multi-log-enabled? 'hud-state)
+        (format 0 "[HUD:state] enter hud-leaving type=~A val=~D target=~D~%"
+          (-> self type) (-> self value) (-> self target-value))))
   :code
     (behavior ((arg0 int))
       (loop
@@ -276,6 +332,11 @@
         post))
 
 (defbehavior hud-init-by-other hud ((arg0 int))
+  ;; NOTE: do not call multi-log-enabled? here — hud-classes-pc.gc:464 invokes
+  ;; (activate-hud-pc *display-pool*) at LOAD TIME, which spawns hud-battle-enemy
+  ;; with this init. multi-debug.gc loads later in GAME.CGO, so multi-log-enabled?
+  ;; would be unbound at that moment → access-violation crash on boot. Lifecycle
+  ;; logging is covered by activate-hud (hud-classes.gc) which fires post-DGO-load.
   (set! (-> self nb-of-icons) 0)
   (set! (-> self nb-of-particles) 0)
   (set! (-> self max-nb-of-particles) 7)

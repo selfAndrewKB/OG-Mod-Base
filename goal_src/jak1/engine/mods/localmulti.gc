@@ -381,6 +381,14 @@
     ;; first draw tick sees the correct position.
     (set! *multi-pending-initial-offset* #t)
     (set! (-> *target-list* idx) (process->handle tgt))
+    ;; Per-viewport HUD Phase 1: copy per-fact shared counters (buzzer/eco-pill) from
+    ;; *target* so the new player's HUD reads correct values from frame zero. Game-info
+    ;; (money, fuel, buzzer-total) is already shared via the global *game-info* pointer.
+    (sync-shared-pickups-to! tgt)
+    ;; Per-viewport HUD Phase 2: spawn this target's own HUD set into
+    ;; *hud-parts-list* slots[idx], parented to tgt. hud-draw-for-pass picks it up
+    ;; per render pass; each HUD's hud-update reads its owner via parent process.
+    (activate-hud tgt)
     ;; Per-player color tints (from OG co-op PoC). P2 green disabled per user
     ;; request — Jak's natural model is preferred. P3/P4 tints kept for now
     ;; until those slots have final color assignments.

@@ -18,6 +18,17 @@
 ;;   (set! *multi-dbg-pole* #t)     ;; swing-pole stance / active / grab-receive
 ;;   (set! *multi-dbg-tube* #t)     ;; slide-control watch / ride / 'update receive
 ;;   (set! *multi-dbg-spike* #t)    ;; swamp-spike-idle proximity / camera-dot
+;;   (set! *multi-dbg-fps*   #t)    ;; first-person mode entry/exit, HUD lifecycle
+;;   (set! *multi-dbg-hud*   #t)    ;; HUD render-pipeline timing: spawn-particles!/draw-hud/draw-world-pass
+;;
+;; Per-viewport HUD redesign sub-categories (Phase 0 of the per-viewport HUD plan):
+;;   (set! *multi-dbg-hud-life*   #t) ;; spawn / despawn / init-by-other / deactivate
+;;   (set! *multi-dbg-hud-state*  #t) ;; state-machine transitions (hidden->arriving->in->leaving)
+;;   (set! *multi-dbg-hud-event*  #t) ;; 'increment / 'sync / 'show / 'hide event reception
+;;   (set! *multi-dbg-hud-value*  #t) ;; value-field changes only (gated on (!= cached arg0))
+;;   (set! *multi-dbg-hud-render* #t) ;; first frame of each pass per HUD per visibility window
+;;   (set! *multi-dbg-hud-pickup* #t) ;; pickup mirror events: type, picker, recipients
+;;   (set! *multi-dbg-hud-fp*     #t) ;; fp-hud spawn / despawn / state changes
 ;;
 ;; Gate all log calls through multi-log-enabled? and emit inline via format;
 ;; do NOT build intermediate strings — the helper that did so was removed.
@@ -40,6 +51,16 @@
 (define *multi-dbg-tube*   #f)   ;; slide-control watch/ride entry, 'update per-rider path-pos
 (define *multi-dbg-spike*  #f)   ;; swamp-spike-idle per-target distance + camera-dot sign
 (define *multi-dbg-fps*    #f)   ;; first-person aim mode entry/exit, HUD lifecycle
+(define *multi-dbg-hud*    #f)   ;; HUD render-pipeline timing: spawn-particles! / draw-hud / draw-world-pass
+
+;; Per-viewport HUD redesign sub-categories — all default #f, enable individually
+(define *multi-dbg-hud-life*   #f) ;; HUD process spawn/despawn/init-by-other/deactivate
+(define *multi-dbg-hud-state*  #f) ;; HUD state-machine transitions (rare, per pickup)
+(define *multi-dbg-hud-event*  #f) ;; HUD event reception: 'increment / 'sync / 'show / 'hide
+(define *multi-dbg-hud-value*  #f) ;; HUD value-field changes only (gated on inequality)
+(define *multi-dbg-hud-render* #f) ;; HUD first-frame-of-pass markers (throttled)
+(define *multi-dbg-hud-pickup* #f) ;; Pickup mirror layer: type, picker, recipients
+(define *multi-dbg-hud-fp*     #f) ;; fp-hud spawn / despawn / state changes
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Logging helpers
@@ -61,6 +82,14 @@
       (('tube)    *multi-dbg-tube*)
       (('spike)   *multi-dbg-spike*)
       (('fps)     *multi-dbg-fps*)
+      (('hud)     *multi-dbg-hud*)
+      (('hud-life)   *multi-dbg-hud-life*)
+      (('hud-state)  *multi-dbg-hud-state*)
+      (('hud-event)  *multi-dbg-hud-event*)
+      (('hud-value)  *multi-dbg-hud-value*)
+      (('hud-render) *multi-dbg-hud-render*)
+      (('hud-pickup) *multi-dbg-hud-pickup*)
+      (('hud-fp)     *multi-dbg-hud-fp*)
       (else #t)
       )
     )

@@ -2,6 +2,11 @@
 (in-package goal)
 (bundles "ENGINE.CGO" "GAME.CGO")
 (require "engine/ui/hud.gc")
+(define-extern multi-log-enabled? (function symbol symbol))
+(define-extern *multi-coop-active* symbol)
+(define-extern *multi-dbg-hud* symbol)
+;; get-target is defined in engine/target/target-h.gc; forward-declared here for hud-draw-for-pass.
+(define-extern get-target (function int target))
 
 ;; note: changed for high fps
 
@@ -124,6 +129,8 @@
   (let* ((s5-0 (-> *display* frames (-> *display* on-screen) frame global-buf))
          (gp-0 (-> s5-0 base)))
     (let ((s4-0 draw-string-xy))
+      ;; Per-viewport HUD Phase 3: hud-update populates this->value from owner via
+      ;; parent process; cached this->value is correct in both SP and co-op.
       (format (clear *temp-string*) "~D" (-> this value))
       (s4-0 *temp-string*
             s5-0
@@ -147,7 +154,12 @@
   (none))
 
 (defmethod hud-update ((this hud-pickups))
-  (if *target* (tally-value this (the int (+ 0.5 (-> *target* fact eco-pill))) 0))
+  ;; Per-viewport HUD Phase 2: read owner from parent process. Each viewport's HUD
+  ;; shows its OWN player's eco-pill count. Phase 1 mirror keeps counts in lockstep
+  ;; on pickup; per-player consumption causes natural drift.
+  (when (-> this parent)
+    (let ((owner (the-as target (-> this parent 0))))
+      (tally-value this (the int (+ 0.5 (-> owner fact eco-pill))) 0)))
   0
   (none))
 
@@ -235,37 +247,55 @@
   ((scale float)))
 
 
+;; Per-viewport HUD Phase 3: ownership-from-particle-key. Each particle was spawned by
+;; a specific HUD process; arg1.key.proc points at it. Read scale from THAT HUD and
+;; (-> hud-self parent 0) to resolve the owning target. Eliminates *active-render-cam*
+;; routing — ownership is baked into the launcher's key.proc field at spawn time.
 (defun part-hud-health-01-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-0 (-> *hud-parts* health 0 scale))) (set! (-> arg2 vector 0 w) f0-0) (set! (-> arg2 vector 1 w) f0-0))
-  (cond
-    ((and *target* (< (-> *target* fact health) 1.0)) (set! (-> arg2 vector 2 w) 32.0))
-    (else
-     (let ((f0-3 128.0))
-       ;; low health flashing
-       ;; og:preserve-this modified to support high fps
-       (when (and *target* (= (-> *target* fact health) 1.0))
-         (let* ((scaled-frame-counter (the int (* DISPLAY_FPS_RATIO (-> *display* integral-frame-counter))))
-                (v1-16 (logand scaled-frame-counter 7)))
-           (set! f0-3
-                 (if (not (logtest? scaled-frame-counter 8))
-                   (+ 128.0 (* 18.142857 (the float v1-16)))
-                   (- 255.0 (* 18.142857 (the float v1-16)))))))
-       (set! (-> arg2 vector 2 x) f0-3)
-       (set! (-> arg2 vector 2 y) f0-3)
-       (set! (-> arg2 vector 2 z) f0-3))
-     (set! (-> arg2 vector 2 w) 128.0)))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-health (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (owner (the-as target (if (and hud-self (-> hud-self parent)) (-> hud-self parent 0) #f)))
+         (f0-0 (if hud-self (-> hud-self scale) 0.0)))
+    (set! (-> arg2 vector 0 w) f0-0)
+    (set! (-> arg2 vector 1 w) f0-0)
+    (cond
+      ((and owner (< (-> owner fact health) 1.0)) (set! (-> arg2 vector 2 w) 32.0))
+      (else
+       (let ((f0-3 128.0))
+         ;; low health flashing
+         (when (and owner (= (-> owner fact health) 1.0))
+           (let* ((scaled-frame-counter (the int (* DISPLAY_FPS_RATIO (-> *display* integral-frame-counter))))
+                  (v1-16 (logand scaled-frame-counter 7)))
+             (set! f0-3
+                   (if (not (logtest? scaled-frame-counter 8))
+                     (+ 128.0 (* 18.142857 (the float v1-16)))
+                     (- 255.0 (* 18.142857 (the float v1-16)))))))
+         (set! (-> arg2 vector 2 x) f0-3)
+         (set! (-> arg2 vector 2 y) f0-3)
+         (set! (-> arg2 vector 2 z) f0-3))
+       (set! (-> arg2 vector 2 w) 128.0))))
   0
   (none))
 
 (defun part-hud-health-02-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-0 (-> *hud-parts* health 0 scale))) (set! (-> arg2 vector 0 w) f0-0) (set! (-> arg2 vector 1 w) f0-0))
-  (if (and *target* (< (-> *target* fact health) 2.0)) (set! (-> arg2 vector 2 w) 32.0) (set! (-> arg2 vector 2 w) 128.0))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-health (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (owner (the-as target (if (and hud-self (-> hud-self parent)) (-> hud-self parent 0) #f)))
+         (f0-0 (if hud-self (-> hud-self scale) 0.0)))
+    (set! (-> arg2 vector 0 w) f0-0)
+    (set! (-> arg2 vector 1 w) f0-0)
+    (if (and owner (< (-> owner fact health) 2.0)) (set! (-> arg2 vector 2 w) 32.0) (set! (-> arg2 vector 2 w) 128.0)))
   0
   (none))
 
 (defun part-hud-health-03-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-0 (-> *hud-parts* health 0 scale))) (set! (-> arg2 vector 0 w) f0-0) (set! (-> arg2 vector 1 w) f0-0))
-  (if (and *target* (< (-> *target* fact health) 3.0)) (set! (-> arg2 vector 2 w) 32.0) (set! (-> arg2 vector 2 w) 128.0))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-health (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (owner (the-as target (if (and hud-self (-> hud-self parent)) (-> hud-self parent 0) #f)))
+         (f0-0 (if hud-self (-> hud-self scale) 0.0)))
+    (set! (-> arg2 vector 0 w) f0-0)
+    (set! (-> arg2 vector 1 w) f0-0)
+    (if (and owner (< (-> owner fact health) 3.0)) (set! (-> arg2 vector 2 w) 32.0) (set! (-> arg2 vector 2 w) 128.0)))
   0
   (none))
 
@@ -275,7 +305,11 @@
   (none))
 
 (defmethod hud-update ((this hud-health))
-  (if *target* (tally-value this (the int (-> *target* fact health)) (the-as int (-> *target* fact health-pickup-time))))
+  ;; Per-viewport HUD Phase 2: each player's health bar displays only their OWN health.
+  ;; No cross-player encoding — owner identified by parent process.
+  (when (-> this parent)
+    (let ((owner (the-as target (-> this parent 0))))
+      (tally-value this (the int (-> owner fact health)) (the-as int (-> owner fact health-pickup-time)))))
   0
   (none))
 
@@ -426,6 +460,8 @@
   (none))
 
 (defmethod hud-update ((this hud-money-all))
+  ;; hud-money-all is a single-display orb summary — only spawned for slot 0.
+  ;; Per-viewport instances are out of scope (deferred from per-viewport HUD plan).
   (when *target*
     (hide-bottom-hud)
     (when (!= *master-mode* 'pause)
@@ -557,17 +593,19 @@
                                 (font-flags shadow kerning large)
                                 0.8))
         (((hud-collectable-view level-totals))
-         (let ((lvl-idx (-> *level-task-data-remap* (+ (-> *target* current-level info index) -1))))
-           ;; show orbs collected/total this level
-           (draw-string-xy-scaled (string-format "~D~%/~D" (-> *game-info* money-per-level lvl-idx) (-> *game-counts* data lvl-idx money-count))
-                                  buf
-                                  string-x
-                                  (- string-y 5)
-                                  (font-color yellow)
-                                  (font-flags shadow kerning large)
-                                  0.8)))
+         ;; Per-viewport HUD Phase 3: read OWNER's current-level via parent process.
+         (when (-> this parent)
+           (let* ((owner (the-as target (-> this parent 0)))
+                  (lvl-idx (-> *level-task-data-remap* (+ (-> owner current-level info index) -1))))
+             (draw-string-xy-scaled (string-format "~D~%/~D" (-> *game-info* money-per-level lvl-idx) (-> *game-counts* data lvl-idx money-count))
+                                    buf
+                                    string-x
+                                    (- string-y 5)
+                                    (font-color yellow)
+                                    (font-flags shadow kerning large)
+                                    0.8))))
         (((hud-collectable-view original))
-         ;; show original (total collected, unspent orbs)
+         ;; Per-viewport HUD Phase 3: hud-update tally-tracks owner's money.
          (draw-string-xy (string-format "~D" (-> this value))
                          buf
                          string-x
@@ -578,15 +616,19 @@
   (none))
 
 (defmethod hud-update ((this hud-money))
-  (when *target*
-    (when (!= *master-mode* 'pause)
-      (when (and (!= (-> this icons 0) 0) (-> this icons 0 icon))
-        (set! (-> this icons 0 scale-x) (-> this x-scale))
-        (set! (-> this icons 0 scale-y) (-> this y-scale))
-        (set! (-> this icons 0 icon-y) (* (-> this y-pos) (the int (-> *video-parms* relative-y-scale))))
-        (let ((a0-6 (-> this icons 0 icon 0 root)))
-          (set-yaw-angle-clear-roll-pitch! a0-6 (- (y-angle a0-6) (* 182.04445 (* 4.0 (-> *display* time-adjust-ratio))))))))
-    (tally-value this (the int (+ 0.5 (-> *target* game money))) 0))
+  ;; Per-viewport HUD Phase 2: orb count is team-shared via the GLOBAL *game-info*
+  ;; (target.game is a pointer to *game-info* — see logic-target.gc:1263), so every
+  ;; viewport naturally shows the same count. Owner is identified via parent process.
+  (when (-> this parent)
+    (let ((owner (the-as target (-> this parent 0))))
+      (when (!= *master-mode* 'pause)
+        (when (and (!= (-> this icons 0) 0) (-> this icons 0 icon))
+          (set! (-> this icons 0 scale-x) (-> this x-scale))
+          (set! (-> this icons 0 scale-y) (-> this y-scale))
+          (set! (-> this icons 0 icon-y) (* (-> this y-pos) (the int (-> *video-parms* relative-y-scale))))
+          (let ((a0-6 (-> this icons 0 icon 0 root)))
+            (set-yaw-angle-clear-roll-pitch! a0-6 (- (y-angle a0-6) (* 182.04445 (* 4.0 (-> *display* time-adjust-ratio))))))))
+      (tally-value this (the int (+ 0.5 (-> owner game money))) 0)))
   0
   (none))
 
@@ -878,22 +920,25 @@
                                 (font-flags shadow kerning large)
                                 0.8))
         (((hud-collectable-view level-totals))
-         (let ((lvl-idx (-> *level-task-data-remap* (+ (-> *target* current-level info index) -1)))
-               (completed-task-count 0))
-           ;; determine number of cells collected in this level
-           (dotimes (task-idx (-> *level-task-data* lvl-idx nb-of-tasks))
-             (if (= (get-task-status (-> *level-task-data* lvl-idx task-info task-idx task-id)) (task-status invalid))
-               (+! completed-task-count 1)))
-           ;; show cells/total collected this level
-           (draw-string-xy-scaled (string-format "~D~%/~D" completed-task-count (-> *level-task-data* lvl-idx nb-of-tasks))
-                                  buf
-                                  string-x
-                                  (- string-y 5)
-                                  (font-color yellow)
-                                  (font-flags shadow kerning large)
-                                  0.8)))
+         ;; Per-viewport HUD Phase 3: per-player level-totals display reads OWNER's
+         ;; current-level via parent process (each viewport shows ITS player's level cells).
+         (when (-> this parent)
+           (let* ((owner (the-as target (-> this parent 0)))
+                  (lvl-idx (-> *level-task-data-remap* (+ (-> owner current-level info index) -1)))
+                  (completed-task-count 0))
+             (dotimes (task-idx (-> *level-task-data* lvl-idx nb-of-tasks))
+               (if (= (get-task-status (-> *level-task-data* lvl-idx task-info task-idx task-id)) (task-status invalid))
+                 (+! completed-task-count 1)))
+             (draw-string-xy-scaled (string-format "~D~%/~D" completed-task-count (-> *level-task-data* lvl-idx nb-of-tasks))
+                                    buf
+                                    string-x
+                                    (- string-y 5)
+                                    (font-color yellow)
+                                    (font-flags shadow kerning large)
+                                    0.8))))
         (((hud-collectable-view original))
-         ;; show original (cells collected across entire game)
+         ;; Per-viewport HUD Phase 3: tally-value already tracks the owner's fuel via
+         ;; hud-update; just read this->value (uniform for SP and co-op).
          (draw-string-xy (string-format "~D" (-> this value))
                          buf
                          string-x
@@ -918,38 +963,50 @@
   (none))
 
 (defun fuel-cell-hud-starburst-3-callback ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (set! (-> arg2 vector 0 w) (-> *hud-parts* fuel-cell 0 scale-starburst-3-x))
-  (set! (-> arg2 vector 1 w) (-> *hud-parts* fuel-cell 0 scale-starburst-3-y))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-fuel-cell (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f)))))
+    (when hud-self
+      (set! (-> arg2 vector 0 w) (-> hud-self scale-starburst-3-x))
+      (set! (-> arg2 vector 1 w) (-> hud-self scale-starburst-3-y))))
   0
   (none))
 
 (defun fuel-cell-hud-starburst-4-callback ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (set! (-> arg2 vector 0 w) (-> *hud-parts* fuel-cell 0 scale-starburst-4-x))
-  (set! (-> arg2 vector 1 w) (-> *hud-parts* fuel-cell 0 scale-starburst-4-y))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-fuel-cell (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f)))))
+    (when hud-self
+      (set! (-> arg2 vector 0 w) (-> hud-self scale-starburst-4-x))
+      (set! (-> arg2 vector 1 w) (-> hud-self scale-starburst-4-y))))
   0
   (none))
 
 (defun fuel-cell-hud-center-callback ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-0 (-> *hud-parts* fuel-cell 0 scale-icon))
-        (f1-0 (-> *hud-parts* fuel-cell 0 scale-center)))
-    (set-vector! (-> *hud-parts* fuel-cell 0 icons 0 icon 0 root scale) f0-0 f0-0 f0-0 1.0)
-    (set! (-> arg2 vector 0 w) f1-0)
-    (set! (-> arg2 vector 1 w) f1-0))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-fuel-cell (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f)))))
+    (when hud-self
+      (let ((f0-0 (-> hud-self scale-icon))
+            (f1-0 (-> hud-self scale-center)))
+        (set-vector! (-> hud-self icons 0 icon 0 root scale) f0-0 f0-0 f0-0 1.0)
+        (set! (-> arg2 vector 0 w) f1-0)
+        (set! (-> arg2 vector 1 w) f1-0))))
   0
   (none))
 
 (defmethod hud-update ((this hud-fuel-cell))
-  (when *target*
-    (when (!= *master-mode* 'pause)
-      (let ((a0-2 (-> this icons 0 icon 0 root)))
-        (set-yaw-angle-clear-roll-pitch! a0-2 (+ (y-angle a0-2) (* 182.04445 (/ (-> *display* time-adjust-ratio) 2))))))
-    (set! (-> this icons 0 icon-y) (-> this icon-pos-y))
-    (tally-value this (the int (+ 0.5 (-> *target* game fuel))) 0)
-    (let ((s5-1 (new 'stack-no-clear 'vector)))
-      (vector<-cspace! s5-1 (-> this icons 0 icon 0 node-list data 3))
-      (set! (-> this particles 0 pos x) (-> s5-1 x))
-      (set! (-> this particles 0 pos y) (/ (-> s5-1 y) 2))
-      (set! (-> this particles 0 pos z) (+ 2.0 (* 0.05 (+ -2048.0 (-> s5-1 z)))))))
+  ;; Per-viewport HUD Phase 2: power cells are team-shared via global *game-info*.
+  ;; Owner from parent process.
+  (when (-> this parent)
+    (let ((owner (the-as target (-> this parent 0))))
+      (when (!= *master-mode* 'pause)
+        (let ((a0-2 (-> this icons 0 icon 0 root)))
+          (set-yaw-angle-clear-roll-pitch! a0-2 (+ (y-angle a0-2) (* 182.04445 (/ (-> *display* time-adjust-ratio) 2))))))
+      (set! (-> this icons 0 icon-y) (-> this icon-pos-y))
+      (tally-value this (the int (+ 0.5 (-> owner game fuel))) 0)
+      (let ((s5-1 (new 'stack-no-clear 'vector)))
+        (vector<-cspace! s5-1 (-> this icons 0 icon 0 node-list data 3))
+        (set! (-> this particles 0 pos x) (-> s5-1 x))
+        (set! (-> this particles 0 pos y) (/ (-> s5-1 y) 2))
+        (set! (-> this particles 0 pos z) (+ 2.0 (* 0.05 (+ -2048.0 (-> s5-1 z))))))))
   0
   (none))
 
@@ -1065,7 +1122,11 @@
 
 
 (defun part-hud-buzzer-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-0 (-> *hud-parts* buzzers 0 scale))) (set! (-> arg2 vector 0 w) f0-0) (set! (-> arg2 vector 1 w) f0-0))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-buzzers (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (f0-0 (if hud-self (-> hud-self scale) 0.0)))
+    (set! (-> arg2 vector 0 w) f0-0)
+    (set! (-> arg2 vector 1 w) f0-0))
   (none))
 
 (defmethod draw-hud ((this hud-buzzers))
@@ -1090,20 +1151,22 @@
                                 (font-flags shadow kerning large)
                                 0.8))
         (((hud-collectable-view level-totals))
-         (let ((lvl-idx (-> *level-task-data-remap* (+ (-> *target* current-level info index) -1))))
-           ;; show flies collected/total this level
-           (draw-string-xy-scaled (string-format " ~D~% /~D"
-                                                 (buzzer-count *game-info*
-                                                               (-> *level-task-data* lvl-idx task-info (-> *level-task-data* lvl-idx buzzer-task-index) task-id))
-                                                 (-> *game-counts* data lvl-idx buzzer-count))
-                                  buf
-                                  string-x
-                                  (- string-y 5)
-                                  (font-color yellow)
-                                  (font-flags shadow kerning large)
-                                  0.8)))
+         ;; Per-viewport HUD Phase 3: read OWNER's current-level via parent process.
+         (when (-> this parent)
+           (let* ((owner (the-as target (-> this parent 0)))
+                  (lvl-idx (-> *level-task-data-remap* (+ (-> owner current-level info index) -1))))
+             (draw-string-xy-scaled (string-format " ~D~% /~D"
+                                                   (buzzer-count *game-info*
+                                                                 (-> *level-task-data* lvl-idx task-info (-> *level-task-data* lvl-idx buzzer-task-index) task-id))
+                                                   (-> *game-counts* data lvl-idx buzzer-count))
+                                    buf
+                                    string-x
+                                    (- string-y 5)
+                                    (font-color yellow)
+                                    (font-flags shadow kerning large)
+                                    0.8))))
         (((hud-collectable-view original))
-         ;; show original (flies collected this level)
+         ;; Per-viewport HUD Phase 3: hud-update tally-tracks owner's buzzer count.
          (draw-string-xy (string-format " ~D" (-> this value))
                          buf
                          string-x
@@ -1114,7 +1177,12 @@
   (none))
 
 (defmethod hud-update ((this hud-buzzers))
-  (if *target* (tally-value this (the int (+ 0.5 (-> *target* fact buzzer))) 0))
+  ;; Per-viewport HUD Phase 2: per-fact buzzer count is mirrored on pickup (Phase 1)
+  ;; so all live targets stay in lockstep. Each viewport's HUD shows its owner's
+  ;; (== team total) buzzer count via parent process.
+  (when (-> this parent)
+    (let ((owner (the-as target (-> this parent 0))))
+      (tally-value this (the int (+ 0.5 (-> owner fact buzzer))) 0)))
   0
   (none))
 
@@ -1284,78 +1352,106 @@
   (none))
 
 (defun part-hud-eco-timer-01-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-2 (/ (the float
-                      (the-as uint
-                              (- (-> *target* fact eco-timeout)
-                                 (the-as uint (- (-> *display* game-frame-counter) (-> *target* fact eco-pickup-time))))))
-                 (the float (the-as uint (-> *FACT-bank* eco-full-timeout)))))
-        (a2-1 0)
-        (a3-0 64)
-        (t0-0 128))
-    (case (-> *target* fact eco-type)
-      (((pickup-type eco-yellow)) (set! a2-1 128) (set! a3-0 96) (set! t0-0 0))
-      (((pickup-type eco-red)) (set! a2-1 128) (set! a3-0 32) (set! t0-0 0))
-      (((pickup-type eco-green)) (set! a2-1 0) (set! a3-0 128) (set! t0-0 32)))
-    (calculate-rotation-and-color-for-slice 0 f0-2 a2-1 a3-0 t0-0 arg2))
-  (let ((f0-3 (-> *hud-parts* power 0 scale-blue))) (set! (-> arg2 vector 0 w) f0-3) (set! (-> arg2 vector 1 w) f0-3))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (owner (the-as target (if (and hud-self (-> hud-self parent)) (-> hud-self parent 0) #f))))
+    (when owner
+      (let ((f0-2 (/ (the float
+                          (the-as uint
+                                  (- (-> owner fact eco-timeout)
+                                     (the-as uint (- (-> *display* game-frame-counter) (-> owner fact eco-pickup-time))))))
+                     (the float (the-as uint (-> *FACT-bank* eco-full-timeout)))))
+            (a2-1 0)
+            (a3-0 64)
+            (t0-0 128))
+        (case (-> owner fact eco-type)
+          (((pickup-type eco-yellow)) (set! a2-1 128) (set! a3-0 96) (set! t0-0 0))
+          (((pickup-type eco-red)) (set! a2-1 128) (set! a3-0 32) (set! t0-0 0))
+          (((pickup-type eco-green)) (set! a2-1 0) (set! a3-0 128) (set! t0-0 32)))
+        (calculate-rotation-and-color-for-slice 0 f0-2 a2-1 a3-0 t0-0 arg2)))
+    (let ((f0-3 (if hud-self (-> hud-self scale-blue) 0.0)))
+      (set! (-> arg2 vector 0 w) f0-3)
+      (set! (-> arg2 vector 1 w) f0-3)))
   0
   (none))
 
 (defun part-hud-eco-timer-02-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-2 (/ (the float
-                      (the-as uint
-                              (- (-> *target* fact eco-timeout)
-                                 (the-as uint (- (-> *display* game-frame-counter) (-> *target* fact eco-pickup-time))))))
-                 (the float (the-as uint (-> *FACT-bank* eco-full-timeout)))))
-        (a2-1 0)
-        (a3-0 64)
-        (t0-0 128))
-    (case (-> *target* fact eco-type)
-      (((pickup-type eco-yellow)) (set! a2-1 128) (set! a3-0 96) (set! t0-0 0))
-      (((pickup-type eco-red)) (set! a2-1 128) (set! a3-0 32) (set! t0-0 0))
-      (((pickup-type eco-green)) (set! a2-1 0) (set! a3-0 128) (set! t0-0 32)))
-    (calculate-rotation-and-color-for-slice 1 f0-2 a2-1 a3-0 t0-0 arg2))
-  (let ((f0-3 (-> *hud-parts* power 0 scale-blue))) (set! (-> arg2 vector 0 w) f0-3) (set! (-> arg2 vector 1 w) f0-3))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (owner (the-as target (if (and hud-self (-> hud-self parent)) (-> hud-self parent 0) #f))))
+    (when owner
+      (let ((f0-2 (/ (the float
+                          (the-as uint
+                                  (- (-> owner fact eco-timeout)
+                                     (the-as uint (- (-> *display* game-frame-counter) (-> owner fact eco-pickup-time))))))
+                     (the float (the-as uint (-> *FACT-bank* eco-full-timeout)))))
+            (a2-1 0)
+            (a3-0 64)
+            (t0-0 128))
+        (case (-> owner fact eco-type)
+          (((pickup-type eco-yellow)) (set! a2-1 128) (set! a3-0 96) (set! t0-0 0))
+          (((pickup-type eco-red)) (set! a2-1 128) (set! a3-0 32) (set! t0-0 0))
+          (((pickup-type eco-green)) (set! a2-1 0) (set! a3-0 128) (set! t0-0 32)))
+        (calculate-rotation-and-color-for-slice 1 f0-2 a2-1 a3-0 t0-0 arg2)))
+    (let ((f0-3 (if hud-self (-> hud-self scale-blue) 0.0)))
+      (set! (-> arg2 vector 0 w) f0-3)
+      (set! (-> arg2 vector 1 w) f0-3)))
   0
   (none))
 
 (defun part-hud-eco-timer-03-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-2 (/ (the float
-                      (the-as uint
-                              (- (-> *target* fact eco-timeout)
-                                 (the-as uint (- (-> *display* game-frame-counter) (-> *target* fact eco-pickup-time))))))
-                 (the float (the-as uint (-> *FACT-bank* eco-full-timeout)))))
-        (a2-1 0)
-        (a3-0 64)
-        (t0-0 128))
-    (case (-> *target* fact eco-type)
-      (((pickup-type eco-yellow)) (set! a2-1 128) (set! a3-0 96) (set! t0-0 0))
-      (((pickup-type eco-red)) (set! a2-1 128) (set! a3-0 32) (set! t0-0 0))
-      (((pickup-type eco-green)) (set! a2-1 0) (set! a3-0 128) (set! t0-0 32)))
-    (calculate-rotation-and-color-for-slice 2 f0-2 a2-1 a3-0 t0-0 arg2))
-  (let ((f0-3 (-> *hud-parts* power 0 scale-blue))) (set! (-> arg2 vector 0 w) f0-3) (set! (-> arg2 vector 1 w) f0-3))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (owner (the-as target (if (and hud-self (-> hud-self parent)) (-> hud-self parent 0) #f))))
+    (when owner
+      (let ((f0-2 (/ (the float
+                          (the-as uint
+                                  (- (-> owner fact eco-timeout)
+                                     (the-as uint (- (-> *display* game-frame-counter) (-> owner fact eco-pickup-time))))))
+                     (the float (the-as uint (-> *FACT-bank* eco-full-timeout)))))
+            (a2-1 0)
+            (a3-0 64)
+            (t0-0 128))
+        (case (-> owner fact eco-type)
+          (((pickup-type eco-yellow)) (set! a2-1 128) (set! a3-0 96) (set! t0-0 0))
+          (((pickup-type eco-red)) (set! a2-1 128) (set! a3-0 32) (set! t0-0 0))
+          (((pickup-type eco-green)) (set! a2-1 0) (set! a3-0 128) (set! t0-0 32)))
+        (calculate-rotation-and-color-for-slice 2 f0-2 a2-1 a3-0 t0-0 arg2)))
+    (let ((f0-3 (if hud-self (-> hud-self scale-blue) 0.0)))
+      (set! (-> arg2 vector 0 w) f0-3)
+      (set! (-> arg2 vector 1 w) f0-3)))
   0
   (none))
 
 (defun part-hud-eco-timer-backing-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-0 (-> *hud-parts* power 0 scale-backing))) (set! (-> arg2 vector 0 w) f0-0) (set! (-> arg2 vector 1 w) f0-0))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (f0-0 (if hud-self (-> hud-self scale-backing) 0.0)))
+    (set! (-> arg2 vector 0 w) f0-0)
+    (set! (-> arg2 vector 1 w) f0-0))
   0
   (none))
 
 (defun part-hud-eco-timer-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-0 (-> *hud-parts* power 0 scale-timer))) (set! (-> arg2 vector 0 w) f0-0) (set! (-> arg2 vector 1 w) f0-0))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (f0-0 (if hud-self (-> hud-self scale-timer) 0.0)))
+    (set! (-> arg2 vector 0 w) f0-0)
+    (set! (-> arg2 vector 1 w) f0-0))
   0
   (none))
 
 (defmethod hud-update ((this hud-power))
-  (if *target*
-    (tally-value this
-                 (max 0
-                      (min (the-as int
-                                   (- (-> *target* fact eco-timeout)
-                                      (the-as uint (- (-> *display* game-frame-counter) (-> *target* fact eco-pickup-time)))))
-                           (the-as int (-> *target* fact eco-timeout))))
-                 (the-as int (-> *target* fact eco-timeout))))
+  ;; Per-viewport HUD Phase 2: power-up eco (red/blue/yellow) is per-player, owner from parent.
+  (when (-> this parent)
+    (let ((owner (the-as target (-> this parent 0))))
+      (tally-value this
+                   (max 0
+                        (min (the-as int
+                                     (- (-> owner fact eco-timeout)
+                                        (the-as uint (- (-> *display* game-frame-counter) (-> owner fact eco-pickup-time)))))
+                             (the-as int (-> owner fact eco-timeout))))
+                   (the-as int (-> owner fact eco-timeout)))))
   0
   (none))
 
@@ -1414,15 +1510,62 @@
   (none))
 
 (defun activate-hud ((arg0 process))
-  (set! (-> *hud-parts* pickups) (process-spawn hud-pickups :init hud-init-by-other 0 :to arg0))
-  (set! (-> *hud-parts* money) (process-spawn hud-money :init hud-init-by-other 0 :to arg0))
-  (set! (-> *hud-parts* fuel-cell) (process-spawn hud-fuel-cell :init hud-init-by-other 0 :to arg0))
-  (set! (-> *hud-parts* health) (process-spawn hud-health :init hud-init-by-other 0 :to arg0))
-  (set! (-> *hud-parts* buzzers) (process-spawn hud-buzzers :init hud-init-by-other 0 :to arg0))
-  (set! (-> *hud-parts* power) (process-spawn hud-power :init hud-init-by-other 0 :to arg0))
-  (set! (-> *hud-parts* bike-speed) (the-as (pointer hud-bike-speed) #f))
-  (set! (-> *hud-parts* bike-heat) (the-as (pointer hud-bike-heat) #f))
-  (set! (-> *hud-parts* money-all) (the-as (pointer hud-money-all) #f))
+  "Per-viewport HUD Phase 2: spawn a full HUD set for the target ARG0, parented to it.
+   Identifies ARG0's slot in *target-list* and writes the spawned processes into
+   *hud-parts-list* slots[slot]. For slot 0 (P1) ALSO mirrors into legacy *hud-parts*
+   so non-HUD callers (collectables.gc, target-handler.gc, hide-hud, etc.) continue
+   to find P1's HUDs at the well-known global without changes.
+
+   Each HUD process is parented to its owner via :to arg0, so hud-update methods
+   read owner's data via (the-as target (-> self parent 0)) — no global routing."
+  (let ((slot -1))
+    ;; Slot resolution: try *target-list* first, then fall back to "if arg0 is
+    ;; *target*, slot 0" since logic-target.gc:1291 calls activate-hud from inside
+    ;; init-target — before localmulti-run-eachframe gets to register slot 0.
+    (dotimes (i (-> *target-list* length))
+      (if (= (the-as process (get-target i)) arg0)
+        (set! slot i)))
+    (when (and (< slot 0) (= arg0 (the-as process *target*)))
+      (set! slot 0))
+    ;; If slot still unresolved, the caller invoked us before *target-list* was
+    ;; updated. Skip — caller (start / start-extra-target) is responsible for
+    ;; calling activate-hud AFTER process-spawn returns, with *target-list* set.
+    (when (and (< slot 0) (multi-log-enabled? 'hud-life))
+      (format 0 "[HUD:life] activate-hud SKIP — slot unresolved for target=~A *target*=~A~%" arg0 *target*))
+    (when (>= slot 0)
+      (let ((parts (-> *hud-parts-list* slots slot)))
+        (when (multi-log-enabled? 'hud-life)
+          ;; HVDF pool depth diagnostic — count alloc'd slots before first spawn.
+          (let ((used 0))
+            (dotimes (i 76) (if (nonzero? (-> *sprite-hvdf-control* alloc i)) (+! used 1)))
+            (format 0 "[HUD:life] activate-hud slot=~D target=~A hvdf-used=~D/76~%" slot arg0 used)))
+        ;; NOTE: do NOT tear down existing parts here. At first spawn the slots are
+        ;; #f. At respawn (level transition / death) the kernel already killed the
+        ;; old huds via parent death (they were :to arg0); ppointer->process on stale
+        ;; references would crash. Just overwrite — old references are safe to drop.
+        (when (multi-log-enabled? 'hud-life) (format 0 "[HUD:life]   pre pickups~%"))
+        (set! (-> parts pickups)    (process-spawn hud-pickups   :init hud-init-by-other 0 :to arg0))
+        (when (multi-log-enabled? 'hud-life) (format 0 "[HUD:life]   pre money~%"))
+        (set! (-> parts money)      (process-spawn hud-money     :init hud-init-by-other 0 :to arg0))
+        (when (multi-log-enabled? 'hud-life) (format 0 "[HUD:life]   pre fuel-cell~%"))
+        (set! (-> parts fuel-cell)  (process-spawn hud-fuel-cell :init hud-init-by-other 0 :to arg0))
+        (when (multi-log-enabled? 'hud-life) (format 0 "[HUD:life]   pre health~%"))
+        (set! (-> parts health)     (process-spawn hud-health    :init hud-init-by-other 0 :to arg0))
+        (when (multi-log-enabled? 'hud-life) (format 0 "[HUD:life]   pre buzzers~%"))
+        (set! (-> parts buzzers)    (process-spawn hud-buzzers   :init hud-init-by-other 0 :to arg0))
+        (when (multi-log-enabled? 'hud-life) (format 0 "[HUD:life]   pre power~%"))
+        (set! (-> parts power)      (process-spawn hud-power     :init hud-init-by-other 0 :to arg0))
+        (when (multi-log-enabled? 'hud-life)
+          (let ((used 0))
+            (dotimes (i 76) (if (nonzero? (-> *sprite-hvdf-control* alloc i)) (+! used 1)))
+            (format 0 "[HUD:life]   all spawned, hvdf-used=~D/76~%" used)))
+        (set! (-> parts bike-speed) (the-as (pointer hud-bike-speed) #f))
+        (set! (-> parts bike-heat)  (the-as (pointer hud-bike-heat) #f))
+        (set! (-> parts money-all)  (the-as (pointer hud-money-all) #f))
+        ;; Legacy mirror: slot 0 → *hud-parts* for non-HUD callers.
+        (when (zero? slot)
+          (dotimes (hi 9)
+            (set! (-> *hud-parts* parts hi) (-> parts parts hi)))))))
   0
   (none))
 
@@ -1506,6 +1649,28 @@
   (if (not (-> *hud-parts* money-all))
     (set! (-> *hud-parts* money-all) (process-spawn hud-money-all :init hud-init-by-other arg0 :to *target*)))
   0)
+
+;; Per-viewport HUD Phase 2: per-pass HUD draw. Called from draw-world-pass
+;; (multi-draw.gc) before sprite-draw. Reads the pass's player's HUD set from
+;; *hud-parts-list* slots[pass], skipping when that player is in first-person mode
+;; (fp-hud handles its own draw). draw-particles is invoked per-pass so each pass's
+;; sprite-draw gets the correct *math-camera* HVDF depth values.
+(defun hud-draw-for-pass ((pass int))
+  (when (and *multi-coop-active* (not (movie?)))
+    (let ((pass-tgt (get-target pass)))
+      (when pass-tgt
+        (let ((in-fps (logtest? (-> pass-tgt state-flags) (state-flags first-person-mode)))
+              (parts (-> *hud-parts-list* slots pass)))
+          (when (and (multi-log-enabled? 'hud-render)
+                     (zero? (logand (-> *display* integral-frame-counter) 127)))
+            (format 0 "[HUD:render] hud-draw-for-pass pass=~D tgt=~A fps=~A~%" pass pass-tgt in-fps))
+          (when (not in-fps)
+            (dotimes (hi 9)
+              (let ((hp (-> parts parts hi)))
+                (when hp
+                  (draw-particles (the-as hud (-> hp 0)))
+                  (draw-hud (the-as hud (-> hp 0)))))))))))
+  (none))
 
 (defbehavior convert-to-hud-object process-drawable ((arg0 process-drawable) (arg1 hud))
   (when arg1

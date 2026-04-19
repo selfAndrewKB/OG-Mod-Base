@@ -4,6 +4,14 @@
 ;; Forward declaration — target-alive? is defined in engine/mods/localmulti.gc
 ;; which compiles after this file. We only need its signature here.
 (define-extern target-alive? (function target basic))
+;; Forward declaration — fp-hud-spawn-for-pass is defined in engine/target/target2.gc
+;; which compiles after this file. Calls spawn-particles! on the fp-hud for pass PASS
+;; using the already-correct *math-camera* for that pass.
+(define-extern fp-hud-spawn-for-pass (function int none))
+;; Forward declaration — hud-draw-for-pass is defined in engine/ui/hud-classes.gc.
+;; Reads *hud-parts-list* slots[pass] and calls draw-particles + draw-hud per HUD.
+;; Each HUD's owner is the spawning target (parent process).
+(define-extern hud-draw-for-pass (function int none))
 
 ;; Forward declaration — multi-log-enabled? lives in engine/mods/multi-debug.gc
 ;; (GAME.CGO, compiles after this file). Used by the Session 20 draw diagnostic.
@@ -299,6 +307,17 @@
       (shadow-execute-all gp-9 *shadow-queue*))
     (with-profiler "eyes"
       (update-eyes)))
+
+  ;; Phase 1c/2d: per-pass fp-hud spawn + main HUD draw — co-op only.
+  ;; CRITICAL: gate the CALL on *multi-coop-active* (not just the function body) so
+  ;; the symbols are never dereferenced in single-player. Both functions are
+  ;; forward-decl'd in this file and DEFINED later (target2.gc, hud-classes.gc); if
+  ;; draw-world-pass fires before those .o files load (e.g., menu/loading frames
+  ;; during GAME.CGO progressive load), an unbound symbol call is an access-violation
+  ;; crash. Gating up-front avoids the lookup entirely in SP.
+  (when *multi-coop-active*
+    (fp-hud-spawn-for-pass (the int *active-render-cam*))
+    (hud-draw-for-pass (the int *active-render-cam*)))
 
   ;; sprite (swap-fake-shadow-buffers is a flip-flop, hoisted out of this pass)
   (when (logtest? (vu1-renderer-mask sprite) *vu1-enable-user*)

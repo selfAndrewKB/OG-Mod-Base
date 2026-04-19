@@ -1288,7 +1288,12 @@
   (set! (-> self sound) (new 'process 'ambient-sound 'none (-> self control trans)))
   (set! (-> self control unknown-soundid00) (new-sound-id))
   (if *debug-segment* (add-connection *debug-engine* self target-print-stats self *stdcon0* #f))
-  (activate-hud self)
+  ;; Per-viewport HUD: activate-hud was originally called here, but slot resolution
+  ;; requires *target-list* to point at SELF, which only happens AFTER process-spawn
+  ;; returns (start: line 1334 sets *target*; start-extra-target: writes *target-list*
+  ;; slot N). On re-init (level transition), runs-on-tgt-int doesn't update slot 0
+  ;; (already non-zero with stale handle), so activate-hud here would SKIP. Moved to
+  ;; start (P1) and start-extra-target (P2+) after process-spawn returns.
   (set! (-> self fp-hud) (the-as handle #f))
   ;; og:preserve-this PAL patch here
   (set! (-> self burn-proc) (the-as handle #f))
@@ -1332,4 +1337,12 @@
   (stop arg0)
   (let ((v1-3 (process-spawn target :init init-target arg1 :from *target-dead-pool* :to *target-pool* :stack *kernel-dram-stack*)))
     (if v1-3 (set! *target* (the-as target (-> v1-3 0 self))) (set! *target* #f)))
+  ;; Per-viewport HUD: spawn P1's HUD set NOW, after *target* is bound. activate-hud's
+  ;; slot resolution requires *target* to be set OR *target-list* slot 0 to point at
+  ;; arg0 — neither is true inside init-target (during process-spawn). Also refresh
+  ;; *target-list* slot 0 explicitly so the slot-0 detection in activate-hud succeeds
+  ;; even before localmulti-run-eachframe ticks.
+  (when *target*
+    (set! (-> *target-list* 0) (process->handle *target*))
+    (activate-hud (the-as process *target*)))
   *target*)
