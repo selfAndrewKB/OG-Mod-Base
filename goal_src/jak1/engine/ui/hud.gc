@@ -268,11 +268,12 @@
   :post
     (behavior ()
       (hud-update self)
-      ;; In co-op, hud-draw-for-pass calls draw-particles + draw-hud per pass with the
-      ;; correct *math-camera*. SP path keeps the in-state draw inline.
-      (when (not *multi-coop-active*)
-        (draw-particles self)
-        (draw-hud self))))
+      ;; spawn must happen during process tick so the sparticle system activates the
+      ;; particles before sprite-draw renders them. hud-draw-for-pass (render-pass)
+      ;; rewrites HVDF per-camera but cannot spawn — sparticles spawned during render
+      ;; pass aren't picked up until the next process tick. So do both here.
+      (draw-particles self)
+      (draw-hud self)))
 
 (defstate hud-in (hud)
   :event

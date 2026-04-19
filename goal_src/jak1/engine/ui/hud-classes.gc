@@ -166,7 +166,7 @@
 (defmethod init-particles! ((this hud-pickups) (arg0 int))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-0 (-> this nb-of-particles)))
-      (set! (-> this particles s5-0) (new 'static 'hud-particle))
+      (set! (-> this particles s5-0) (new 'global 'hud-particle))
       (set! (-> this particles s5-0 part) (create-launch-control group-part-hud-pickup this))
       (set! (-> this particles s5-0 init-pos x) 110.0)
       (set! (-> this particles s5-0 init-pos y) 55.0)
@@ -316,7 +316,7 @@
 (defmethod init-particles! ((this hud-health) (arg0 int))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-0 (-> this nb-of-particles)))
-      (set! (-> this particles s5-0) (new 'static 'hud-particle))
+      (set! (-> this particles s5-0) (new 'global 'hud-particle))
       (set! (-> this particles s5-0 part) (create-launch-control group-part-hud-health-1 this))
       (set! (-> this particles s5-0 init-pos x) 61.0)
       (set! (-> this particles s5-0 init-pos y) 55.0)
@@ -325,7 +325,7 @@
     (+! (-> this nb-of-particles) 1))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-1 (-> this nb-of-particles)))
-      (set! (-> this particles s5-1) (new 'static 'hud-particle))
+      (set! (-> this particles s5-1) (new 'global 'hud-particle))
       (set! (-> this particles s5-1 part) (create-launch-control group-part-hud-health-2 this))
       (set! (-> this particles s5-1 init-pos x) 98.0)
       (set! (-> this particles s5-1 init-pos y) 55.0)
@@ -334,7 +334,7 @@
     (+! (-> this nb-of-particles) 1))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-2 (-> this nb-of-particles)))
-      (set! (-> this particles s5-2) (new 'static 'hud-particle))
+      (set! (-> this particles s5-2) (new 'global 'hud-particle))
       (set! (-> this particles s5-2 part) (create-launch-control group-part-hud-health-3 this))
       (set! (-> this particles s5-2 init-pos x) 70.0)
       (set! (-> this particles s5-2 init-pos y) 76.0)
@@ -500,7 +500,7 @@
     (+! (-> this nb-of-icons) 1))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s4-1 (-> this nb-of-particles)))
-      (set! (-> this particles s4-1) (new 'static 'hud-particle))
+      (set! (-> this particles s4-1) (new 'global 'hud-particle))
       (set! (-> this particles s4-1 part) (create-launch-control group-part-hud-orb-all this))
       (set! (-> this particles s4-1 init-pos x) 172.0)
       (set! (-> this particles s4-1 init-pos y) 330.0)
@@ -655,7 +655,7 @@
     (+! (-> this nb-of-icons) 1))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-1 (-> this nb-of-particles)))
-      (set! (-> this particles s5-1) (new 'static 'hud-particle))
+      (set! (-> this particles s5-1) (new 'global 'hud-particle))
       (set! (-> this particles s5-1 part) (create-launch-control group-part-hud-orb this))
       (set! (-> this particles s5-1 init-pos x) 400.0)
       (set! (-> this particles s5-1 init-pos y) 58.0)
@@ -1013,7 +1013,7 @@
 (defmethod init-particles! ((this hud-fuel-cell) (arg0 int))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-0 (-> this nb-of-particles)))
-      (set! (-> this particles s5-0) (new 'static 'hud-particle))
+      (set! (-> this particles s5-0) (new 'global 'hud-particle))
       (set! (-> this particles s5-0 part) (create-launch-control group-part-hud-power-cell-whole this))
       (set! (-> this particles s5-0 init-pos x) 256.0)
       (set! (-> this particles s5-0 init-pos y) 224.0)
@@ -1189,7 +1189,7 @@
 (defmethod init-particles! ((this hud-buzzers) (arg0 int))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-0 (-> this nb-of-particles)))
-      (set! (-> this particles s5-0) (new 'static 'hud-particle))
+      (set! (-> this particles s5-0) (new 'global 'hud-particle))
       (set! (-> this particles s5-0 part) (create-launch-control group-part-hud-buzzer this))
       (set! (-> this particles s5-0 init-pos x) 60.0)
       (set! (-> this particles s5-0 init-pos y) 380.0)
@@ -1355,6 +1355,8 @@
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
          (owner (the-as target (if (and hud-self (-> hud-self parent)) (-> hud-self parent 0) #f))))
+    (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 15)))
+      (format 0 "[HUD:eco-cb] lc=~A hud-self=~A owner=~A~%" lc hud-self owner))
     (when owner
       (let ((f0-2 (/ (the float
                           (the-as uint
@@ -1443,6 +1445,20 @@
 
 (defmethod hud-update ((this hud-power))
   ;; Per-viewport HUD Phase 2: power-up eco (red/blue/yellow) is per-player, owner from parent.
+  (when (and *multi-coop-active* (-> this parent))
+    (let ((owner (the-as target (-> this parent 0))))
+      ;; every 128 frames: heartbeat showing state + eco fields
+      (when (zero? (logand (-> *display* integral-frame-counter) 127))
+        (format 0 "[HUD:power] state=~A eco-timeout=~D eco-type=~D val=~D tgt=~D~%"
+          (-> this next-state name)
+          (-> owner fact eco-timeout) (-> owner fact eco-type)
+          (-> this value) (-> this target-value)))
+      ;; every 4 frames while eco is active: catch the window we care about
+      (when (and (> (the-as int (-> owner fact eco-timeout)) 0)
+                 (zero? (logand (-> *display* integral-frame-counter) 3)))
+        (format 0 "[HUD:power-ECO] timeout=~D val=~D tgt=~D state=~A~%"
+          (-> owner fact eco-timeout) (-> this value) (-> this target-value)
+          (-> this next-state name)))))
   (when (-> this parent)
     (let ((owner (the-as target (-> this parent 0))))
       (tally-value this
@@ -1458,7 +1474,7 @@
 (defmethod init-particles! ((this hud-power) (arg0 int))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-0 (-> this nb-of-particles)))
-      (set! (-> this particles s5-0) (new 'static 'hud-particle))
+      (set! (-> this particles s5-0) (new 'global 'hud-particle))
       (set! (-> this particles s5-0 part) (create-launch-control group-part-hud-eco-timer-backing this))
       (set! (-> this particles s5-0 init-pos x) 435.0)
       (set! (-> this particles s5-0 init-pos y) 370.0)
@@ -1467,7 +1483,7 @@
     (+! (-> this nb-of-particles) 1))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-1 (-> this nb-of-particles)))
-      (set! (-> this particles s5-1) (new 'static 'hud-particle))
+      (set! (-> this particles s5-1) (new 'global 'hud-particle))
       (set! (-> this particles s5-1 part) (create-launch-control group-part-hud-timer-blue this))
       (set! (-> this particles s5-1 init-pos x) 432.0)
       (set! (-> this particles s5-1 init-pos y) 368.0)
@@ -1476,7 +1492,7 @@
     (+! (-> this nb-of-particles) 1))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-2 (-> this nb-of-particles)))
-      (set! (-> this particles s5-2) (new 'static 'hud-particle))
+      (set! (-> this particles s5-2) (new 'global 'hud-particle))
       (set! (-> this particles s5-2 part) (create-launch-control group-part-hud-eco-timer this))
       (set! (-> this particles s5-2 init-pos x) 435.0)
       (set! (-> this particles s5-2 init-pos y) 370.0)
@@ -1665,11 +1681,14 @@
                      (zero? (logand (-> *display* integral-frame-counter) 127)))
             (format 0 "[HUD:render] hud-draw-for-pass pass=~D tgt=~A fps=~A~%" pass pass-tgt in-fps))
           (when (not in-fps)
+            ;; Per-pass: ONLY rewrite HVDF with the current camera (draw-particles).
+            ;; The actual spawn happens in :post during process tick — see hud.gc.
+            ;; Calling spawn here would not reach this pass's sprite-draw because the
+            ;; sparticle system only activates queued spawns at the next process tick.
             (dotimes (hi 9)
               (let ((hp (-> parts parts hi)))
                 (when hp
-                  (draw-particles (the-as hud (-> hp 0)))
-                  (draw-hud (the-as hud (-> hp 0)))))))))))
+                  (draw-particles (the-as hud (-> hp 0)))))))))))
   (none))
 
 (defbehavior convert-to-hud-object process-drawable ((arg0 process-drawable) (arg1 hud))
