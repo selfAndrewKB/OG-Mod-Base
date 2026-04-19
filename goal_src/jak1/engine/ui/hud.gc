@@ -40,8 +40,26 @@
             (return (-> *hud-parts-list* slots i))))))
     *hud-parts*))
 
-(defmethod draw-hud ((this hud))
+;; Session 51 N1 fix: spawn-only helper. In MP, sparticle spawn must happen during
+;; process tick (sacred rule: spawning during render-pass leaves particles inactive
+;; until next tick — see Session 50 B2 fix). DMA writes happen per-pass via
+;; hud-draw-for-pass. So in MP we split: this fires from :post (spawn), draw-hud
+;; fires from hud-draw-for-pass (DMA only, base spawn gated off).
+(defun hud-spawn-particles! ((this hud))
   (when (and (not (hidden? this)) (not (paused?)))
+    (dotimes (s5-0 (-> this nb-of-particles))
+      (when (!= s5-0 (-> this skip-particle))
+        (if (or (!= (-> this particles 0 pos x) 0.0) (!= (-> this particles 0 pos y) 0.0))
+          (spawn (-> this particles s5-0 part) *null-vector*)))))
+  0
+  (none))
+
+(defmethod draw-hud ((this hud))
+  ;; Session 51 N1 fix: in MP, this method runs from hud-draw-for-pass per render
+  ;; pass; spawn is handled by hud-spawn-particles! in :post (process tick), so
+  ;; gate the spawn loop off in MP. In SP, hud-draw-for-pass never runs and :post
+  ;; calls draw-hud directly — spawn fires here as before.
+  (when (and (not (hidden? this)) (not (paused?)) (not *multi-coop-active*))
     (dotimes (s5-0 (-> this nb-of-particles))
       (when (!= s5-0 (-> this skip-particle))
         (if (or (!= (-> this particles 0 pos x) 0.0) (!= (-> this particles 0 pos y) 0.0))
@@ -91,6 +109,23 @@
         (when (multi-log-enabled? 'hud-state)
           (format 0 "[HUD:state] type=~A go hud-arriving val=~D->~D target=~D~%"
             (-> this type) (-> this value) arg0 (-> this target-value)))
+        ;; Session 51 Phase A — default-active per-event log on tally-value's GO ARRIVING.
+        ;; Fires once per actual state transition (NOT per frame), so unthrottled.
+        ;; Filtered to types relevant to B3/B4/N1/N2 to keep volume low.
+        (when (and *multi-coop-active*
+                   (or (= (-> this type) hud-money)
+                       (= (-> this type) hud-buzzers)
+                       (= (-> this type) hud-pickups)
+                       (= (-> this type) hud-power)
+                       (= (-> this type) hud-health)))
+          (let* ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1))
+                 (reason (cond ((-> this force-on-screen) "force")
+                               ((cpad-hold? 0 l2) "L2")
+                               ((and (not *cheat-mode*) (cpad-hold? 0 r2)) "R2")
+                               ((-> this first-init) "init")
+                               (else "value"))))
+            (format 0 "[HUD:tally-fire] type=~A owner-pid=~D val=~D->~D tgt=~D reason=~A~%"
+              (-> this type) parent-pid (-> this value) arg0 (-> this target-value) reason)))
         (go hud-arriving))
       (set-time! (-> this trigger-time))
       (set! (-> this first-init) #f)))
@@ -219,6 +254,19 @@
       (local-vars (v0-3 object))
       (when (multi-log-enabled? 'hud-event)
         (format 0 "[HUD:event] hud-arriving type=~A msg=~A from=~A~%" (-> self type) message proc))
+      ;; Session 51 Phase A — B3/B4 instrumentation. Default-active per-event log on
+      ;; every event the HUD receives in arriving state. Filtered to interesting types
+      ;; and skipping noisy 'show messages (which fire continuously while L2 held).
+      (when (and *multi-coop-active*
+                 (not (eq? message 'show))
+                 (or (= (-> self type) hud-money)
+                     (= (-> self type) hud-buzzers)
+                     (= (-> self type) hud-pickups)
+                     (= (-> self type) hud-power)
+                     (= (-> self type) hud-health)))
+        (format 0 "[HUD:event-arriving] type=~A self-pid=~D msg=~A from-pid=~D val=~D tgt=~D~%"
+          (-> self type) (-> self pid) message
+          (if proc (-> proc pid) -1) (-> self value) (-> self target-value)))
       (case message
         (('hide-quick)
          (set-time! (-> self last-hide-time))
@@ -239,6 +287,20 @@
       (when (multi-log-enabled? 'hud-state)
         (format 0 "[HUD:state] enter hud-arriving type=~A val=~D target=~D parts=~D~%"
           (-> self type) (-> self value) (-> self target-value) (-> self nb-of-particles)))
+      ;; Session 51 Phase A — N2/B3 instrumentation. Default-active per-event log on
+      ;; arriving entry. Tells us how often each instance re-enters arriving (B3 orb
+      ;; double slide-in = same instance enters arriving twice in close succession;
+      ;; N2 LT eco bar = power instance enters arriving while already in 'in' state).
+      (when (and *multi-coop-active*
+                 (or (= (-> self type) hud-money)
+                     (= (-> self type) hud-buzzers)
+                     (= (-> self type) hud-pickups)
+                     (= (-> self type) hud-power)
+                     (= (-> self type) hud-health)))
+        (let ((parent-pid (if (-> self parent) (-> (the-as process (-> self parent 0)) pid) -1)))
+          (format 0 "[HUD:enter-arriving] type=~A self-pid=~D owner-pid=~D val=~D tgt=~D parts=~D~%"
+            (-> self type) (-> self pid) parent-pid
+            (-> self value) (-> self target-value) (-> self nb-of-particles))))
       (let ((gp-0 (-> self child)))
         (while gp-0
           (send-event (ppointer->process gp-0) 'draw #t)
@@ -273,7 +335,13 @@
       ;; rewrites HVDF per-camera but cannot spawn — sparticles spawned during render
       ;; pass aren't picked up until the next process tick. So do both here.
       (draw-particles self)
-      (draw-hud self)))
+      ;; Session 51 N1 fix: split spawn from DMA writes for per-viewport routing.
+      ;; In MP, spawn fires here (process tick); DMA writes happen per-pass via
+      ;; hud-draw-for-pass (so each viewport gets its own bucket-half).
+      ;; In SP, draw-hud does spawn + DMA in one call — keep that path.
+      (cond
+        (*multi-coop-active* (hud-spawn-particles! self))
+        (else (draw-hud self)))))
 
 (defstate hud-in (hud)
   :event

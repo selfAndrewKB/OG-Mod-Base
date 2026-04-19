@@ -409,6 +409,13 @@
   (when (and *multi-coop-active* *target-list*)
     (let ((mirror-count 0)
           (picker-tgt (-> picker process)))
+      ;; Session 51 Phase A — B4 instrumentation. Per-event, gated to real pickups only.
+      ;; pickup-collectable! is also called as a no-op query (amount=0) from target-handler.gc:21,56;
+      ;; we skip those to avoid per-frame log spam. Reveals: mirror-fire vs mirrored-HUD update lag.
+      (when (and *multi-coop-active* (!= amount 0.0))
+        (format 0 "[HUD:mirror] frame=~D kind=~A amount=~F picker-pid=~D~%"
+          (-> *display* integral-frame-counter) kind amount
+          (if picker-tgt (-> (the-as process picker-tgt) pid) -1)))
       (dotimes (i (-> *target-list* length))
         (let ((other-tgt (get-target i)))
           (when (and other-tgt (!= (the-as process other-tgt) (the-as process picker-tgt)))

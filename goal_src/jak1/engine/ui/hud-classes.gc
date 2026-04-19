@@ -125,6 +125,12 @@
 
 
 (defmethod draw-hud ((this hud-pickups))
+  ;; Session 51 Phase A — N1 instrumentation. Confirm draw-hud fires once per :post per
+  ;; instance (so 2 P-tracked instances → 2 calls per frame). Heartbeat throttle.
+  (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
+    (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
+      (format 0 "[HUD:draw-hud] pickups self-pid=~D owner-pid=~D val=~D state=~A~%"
+        (-> this pid) parent-pid (-> this value) (-> this next-state name))))
   (let ((t9-0 (method-of-type hud draw-hud))) (t9-0 this))
   (let* ((s5-0 (-> *display* frames (-> *display* on-screen) frame global-buf))
          (gp-0 (-> s5-0 base)))
@@ -256,6 +262,16 @@
          (hud-self (the-as hud-health (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
          (owner (the-as target (if (and hud-self (-> hud-self parent)) (-> hud-self parent 0) #f)))
          (f0-0 (if hud-self (-> hud-self scale) 0.0)))
+    ;; Session 51 Phase A — N3 instrumentation. Per-callback log every 64 frames showing
+    ;; which hud-health instance OWNS this particle. If both viewports' health particles
+    ;; resolve to the SAME hud-self (or always to slot 0's owner), N3 is a per-instance
+    ;; ownership bug at allocation time.
+    (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 63)))
+      (format 0 "[HUD:health-self] cb=01 hud-self-pid=~D owner-pid=~D health=~F scale=~F~%"
+        (if hud-self (-> hud-self pid) -1)
+        (if owner (-> (the process owner) pid) -1)
+        (if owner (-> owner fact health) -1.0)
+        f0-0))
     (set! (-> arg2 vector 0 w) f0-0)
     (set! (-> arg2 vector 1 w) f0-0)
     (cond
@@ -573,6 +589,12 @@
 (define-extern *game-counts* game-count-info)
 
 (defmethod draw-hud ((this hud-money))
+  ;; Session 51 Phase A — N1 instrumentation. Hud-money writes to global-buf bucket-id debug.
+  ;; Want to confirm BOTH P1's and P2's instances fire here.
+  (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
+    (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
+      (format 0 "[HUD:draw-hud] money self-pid=~D owner-pid=~D val=~D state=~A~%"
+        (-> this pid) parent-pid (-> this value) (-> this next-state name))))
   (let ((t9-0 (method-of-type hud draw-hud))) (t9-0 this))
   (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug))
     (let* ((string-x (+ (-> this text-x) (* (-> this x-sgn) (-> this offset))))
@@ -900,6 +922,11 @@
 
 
 (defmethod draw-hud ((this hud-fuel-cell))
+  ;; Session 51 Phase A — N1 instrumentation.
+  (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
+    (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
+      (format 0 "[HUD:draw-hud] fuel-cell self-pid=~D owner-pid=~D val=~D state=~A~%"
+        (-> this pid) parent-pid (-> this value) (-> this next-state name))))
   (let ((t9-0 (method-of-type hud draw-hud))) (t9-0 this))
   (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug))
     (let* ((string-x (+ (-> this text-x) (* (-> this x-sgn) (-> this offset))))
@@ -1130,6 +1157,11 @@
   (none))
 
 (defmethod draw-hud ((this hud-buzzers))
+  ;; Session 51 Phase A — N1 instrumentation.
+  (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
+    (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
+      (format 0 "[HUD:draw-hud] buzzers self-pid=~D owner-pid=~D val=~D state=~A~%"
+        (-> this pid) parent-pid (-> this value) (-> this next-state name))))
   (let ((t9-0 (method-of-type hud draw-hud))) (t9-0 this))
   (set! (-> this text-y) (+ (if (nonzero? (-> this next-y-offset)) (-> this text-y-offset) 0) 362))
   (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug))
@@ -1575,6 +1607,22 @@
           (let ((used 0))
             (dotimes (i 76) (if (nonzero? (-> *sprite-hvdf-control* alloc i)) (+! used 1)))
             (format 0 "[HUD:life]   all spawned, hvdf-used=~D/76~%" used)))
+        ;; Session 51 Phase A — N3 instrumentation. Default-active per-event log; one
+        ;; line per activate-hud call shows the per-slot pids. Reveals whether each
+        ;; viewport gets its OWN hud-health instance (different pids).
+        ;; Split into two format calls (GOAL 8-arg function-call cap).
+        (when *multi-coop-active*
+          (format 0 "[HUD:slot-spawn] slot=~D owner-pid=~D pickups=~D money=~D fuel-cell=~D~%"
+            slot
+            (if arg0 (-> arg0 pid) -1)
+            (if (-> parts pickups)   (-> parts pickups 0 pid) -1)
+            (if (-> parts money)     (-> parts money 0 pid) -1)
+            (if (-> parts fuel-cell) (-> parts fuel-cell 0 pid) -1))
+          (format 0 "[HUD:slot-spawn]   slot=~D health=~D buzzers=~D power=~D~%"
+            slot
+            (if (-> parts health)    (-> parts health 0 pid) -1)
+            (if (-> parts buzzers)   (-> parts buzzers 0 pid) -1)
+            (if (-> parts power)     (-> parts power 0 pid) -1)))
         (set! (-> parts bike-speed) (the-as (pointer hud-bike-speed) #f))
         (set! (-> parts bike-heat)  (the-as (pointer hud-bike-heat) #f))
         (set! (-> parts money-all)  (the-as (pointer hud-money-all) #f))
@@ -1681,14 +1729,20 @@
                      (zero? (logand (-> *display* integral-frame-counter) 127)))
             (format 0 "[HUD:render] hud-draw-for-pass pass=~D tgt=~A fps=~A~%" pass pass-tgt in-fps))
           (when (not in-fps)
-            ;; Per-pass: ONLY rewrite HVDF with the current camera (draw-particles).
-            ;; The actual spawn happens in :post during process tick — see hud.gc.
-            ;; Calling spawn here would not reach this pass's sprite-draw because the
-            ;; sparticle system only activates queued spawns at the next process tick.
+            ;; Per-pass: rewrite HVDF with the current camera (draw-particles) AND
+            ;; emit static text/numerals to the per-pass debug bucket (draw-hud).
+            ;; Both run while *active-render-cam* = pass, so:
+            ;;   - draw-particles uses this pass's *math-camera* HVDF
+            ;;   - draw-hud's with-dma-buffer-add-bucket lands in bucket-id debug shifted
+            ;;     by pass*BUCKET_COUNT (see multi-draw.gc:35-39), routing P1's writes
+            ;;     to viewport 0 and P2's to viewport 1.
+            ;; Sparticle SPAWN (inside base draw-hud) is gated on (zero? *active-render-cam*)
+            ;; so we don't double-spawn — see hud.gc draw-hud.
             (dotimes (hi 9)
               (let ((hp (-> parts parts hi)))
                 (when hp
-                  (draw-particles (the-as hud (-> hp 0)))))))))))
+                  (draw-particles (the-as hud (-> hp 0)))
+                  (draw-hud (the-as hud (-> hp 0)))))))))))
   (none))
 
 (defbehavior convert-to-hud-object process-drawable ((arg0 process-drawable) (arg1 hud))
