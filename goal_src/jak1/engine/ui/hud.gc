@@ -40,6 +40,22 @@
             (return (-> *hud-parts-list* slots i))))))
     *hud-parts*))
 
+;; [B7] Per-viewport pickup routing: given a picker target process, return
+;; its *hud-parts-list* slot. Falls back to *hud-parts* (slot 0 = P1) when
+;; picker is not found in *target-list* — covers SP boot, pre-coop, and any
+;; caller that passes a non-target process by mistake.
+;; Arg is process-tree (not process) so ppointer->process callers don't need
+;; a cast; the (= tgt picker) comparison is a pointer equality regardless.
+(defun find-picker-hud-parts ((picker process-tree))
+  (when picker
+    (dotimes (i (-> *target-list* length))
+      (let ((tgt-hnd (-> *target-list* i)))
+        (when (not (zero? tgt-hnd))
+          (let ((tgt (handle->process tgt-hnd)))
+            (when (and tgt (= (the-as process-tree tgt) picker))
+              (return (-> *hud-parts-list* slots i))))))))
+  *hud-parts*)
+
 ;; Session 51 N1 fix: spawn-only helper. In MP, sparticle spawn must happen during
 ;; process tick (sacred rule: spawning during render-pass leaves particles inactive
 ;; until next tick — see Session 50 B2 fix). DMA writes happen per-pass via

@@ -23,6 +23,10 @@
 
 (define-extern *multi-coop-active* symbol)
 (define-extern *target-list* (array handle))
+;; [B7] find-picker-hud-parts is defined in engine/ui/hud.gc (loads after this file).
+;; Forward-declare so the pickup-flight call sites below can route to the picker's
+;; *hud-parts-list* slot instead of always slot 0.
+(define-extern find-picker-hud-parts (function process-tree hud-parts))
 
 (define-extern orb-placer-list-maintenace (function symbol none))
 
@@ -438,7 +442,25 @@
               (set! (-> self base quad) (-> self root trans quad))
               (if (and (logtest? (-> self fact options) (fact-options can-collect))
                        (not (logtest? (-> self flags) (collectable-flags ignore-blue))))
-                (go-virtual notice-blue (process->handle *target*)))
+                ;; [co-op] Find whichever player currently has blue eco so crystals
+                ;; spawned from broken crates attract to the correct player, not always P1.
+                ;; In SP (or if no player has blue eco), fall back to *target*.
+                (let ((blue-holder (the-as process #f)))
+                  (when *multi-coop-active*
+                    (dotimes (i (-> *target-list* length))
+                      (let ((tgt-hnd (-> *target-list* i)))
+                        (when (and (not blue-holder) (not (zero? tgt-hnd)))
+                          (let ((tgt (handle->process tgt-hnd))
+                                (a1-q (new 'stack-no-clear 'event-message-block)))
+                            (when tgt
+                              (set! (-> a1-q from) self)
+                              (set! (-> a1-q num-params) 2)
+                              (set! (-> a1-q message) 'query)
+                              (set! (-> a1-q param 0) (the-as uint 'powerup))
+                              (set! (-> a1-q param 1) (the-as uint 3))
+                              (when (send-event-function tgt a1-q)
+                                (set! blue-holder tgt))))))))
+                  (go-virtual notice-blue (process->handle (if blue-holder blue-holder *target*)))))
               (if (and (logtest? (-> self fact options) (fact-options instant-collect can-collect))
                        (!= (-> self next-state name) 'pickup)
                        ;; Same rationale as wait :enter — block instant-collect
@@ -534,8 +556,10 @@
         (set! (-> a1-0 message) 'query)
         (set! (-> a1-0 param 0) (the-as uint 'powerup))
         (set! (-> a1-0 param 1) (the-as uint 3))
-        (if (and (not (send-event-function *target* a1-0)) (not (logtest? (-> self flags) (collectable-flags suck))))
-          (go-virtual wait))))
+        ;; [co-op] query the player who triggered notice-blue (self.target), not always P1
+        (let ((tgt-proc (the-as process (if (not (zero? (-> self target))) (handle->process (-> self target)) *target*))))
+          (if (and (not (send-event-function tgt-proc a1-0)) (not (logtest? (-> self flags) (collectable-flags suck))))
+            (go-virtual wait)))))
   :code
     (behavior ((arg0 handle))
       (loop
@@ -634,24 +658,25 @@
                        (-> self root root-prim prim-core)
                        :to
                        self))
-      (if (and *multi-coop-active*
-               (or (= (-> self fact pickup-type) (pickup-type eco-blue))
-                   (= (-> self fact pickup-type) (pickup-type eco-red))
-                   (= (-> self fact pickup-type) (pickup-type eco-yellow))))
-        (begin
-          ;; Kill animation children so the crystal reappears at original position immediately.
-          (while (-> self child)
-            (deactivate (ppointer->process (-> self child))))
-          (set! (-> self base quad) (-> self old-base quad))
-          (set! (-> self root trans quad) (-> self base quad))
-          (restore-collide-with-as (-> self root))
-          (logior! (-> self flags) (collectable-flags can-collect))
-          (if (-> self actor-pause) (logior! (-> self mask) (process-mask actor-pause)))
-          (go-virtual wait))
-        (begin
-          (while (-> self child)
-            (suspend))
-          (go-virtual die)))))
+      (cond
+        ((and *multi-coop-active*
+              (or (= (-> self fact pickup-type) (pickup-type eco-blue))
+                  (= (-> self fact pickup-type) (pickup-type eco-red))
+                  (= (-> self fact pickup-type) (pickup-type eco-yellow))))
+         ;; [co-op B3] persistent eco crystals: kill animation children so the crystal
+         ;; reappears at original position immediately for the next player.
+         (while (-> self child)
+           (deactivate (ppointer->process (-> self child))))
+         (set! (-> self base quad) (-> self old-base quad))
+         (set! (-> self root trans quad) (-> self base quad))
+         (restore-collide-with-as (-> self root))
+         (logior! (-> self flags) (collectable-flags can-collect))
+         (if (-> self actor-pause) (logior! (-> self mask) (process-mask actor-pause)))
+         (go-virtual wait))
+        (else
+         (while (-> self child)
+           (suspend))
+         (go-virtual die)))))
 
 (defstate die (eco-collectable)
   :virtual #t
@@ -860,7 +885,11 @@
       (clear-collide-with-as (-> self root))
       (process-entity-status! self (entity-perm-status dead) #t)
       (runs-on-orb-pickup (ppointer->process (-> self parent))) ;; trigger hook for mod base
-      (convert-to-hud-object self (the-as hud (ppointer->process (-> *hud-parts* money)))))
+      ;; [B7] picker is arg1 handle (set at go-virtual pickup time), NOT (-> self parent)
+      ;; which is the entity pool spawner. Zero-guard before handle->process per learned rule.
+      (convert-to-hud-object self
+        (the-as hud (ppointer->process
+                      (-> (find-picker-hud-parts (if (zero? arg1) (the-as process #f) (handle->process arg1))) money)))))
   :exit
     (behavior ()
       ;; refresh orb-placer list in debug mode
@@ -1226,7 +1255,10 @@
         (((game-task jungle-eggtop) (game-task snow-eggtop) (game-task snow-ball) (game-task sunken-slide)))
         (else (send-event (ppointer->process (-> *hud-parts* fuel-cell)) 'show)))
       (runs-on-cell-pickup 'cutscene-end)
-      (convert-to-hud-object self (the-as hud (ppointer->process (-> *hud-parts* fuel-cell)))))
+      ;; [B7] picker is arg1 handle. Zero-guard before handle->process per learned rule.
+      (convert-to-hud-object self
+        (the-as hud (ppointer->process
+                      (-> (find-picker-hud-parts (if (zero? arg1) (the-as process #f) (handle->process arg1))) fuel-cell)))))
   :post
     (behavior ()
       (transform-post)
@@ -1420,8 +1452,13 @@
                     (-> self pid)
                     (if picker (-> (the-as process picker) pid) -1)
                     (-> *display* integral-frame-counter))))
-        (let ((v1-18 (manipy-spawn (-> self root trans) #f *buzzer-sg* #f :to *entity-pool*)))
-          (send-event (ppointer->process v1-18) 'become-hud-object (ppointer->process (-> *hud-parts* buzzers)))))
+        ;; [B7] route the flying scout-fly icon to the picker's hud-buzzers slot,
+        ;; not always slot 0 (P1) — picker derived from arg1 handle (set at pickup).
+        ;; Zero-guard arg1 BEFORE handle->process per learned rule (macro unsafe on zero handles).
+        (let* ((picker (if (zero? arg1) (the-as process #f) (handle->process arg1)))
+               (picker-parts (find-picker-hud-parts picker))
+               (v1-18 (manipy-spawn (-> self root trans) #f *buzzer-sg* #f :to *entity-pool*)))
+          (send-event (ppointer->process v1-18) 'become-hud-object (ppointer->process (-> picker-parts buzzers)))))
       (let* ((s5-2 (logand (the int (-> self fact pickup-amount)) #xffff))
              (s4-1 (get-task-control (the-as game-task s5-2))))
         (if (nonzero? s5-2) (close-specific-task! (the-as game-task s5-2) (task-status need-hint)))

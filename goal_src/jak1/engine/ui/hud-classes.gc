@@ -7,6 +7,15 @@
 (define-extern *multi-dbg-hud* symbol)
 ;; get-target is defined in engine/target/target-h.gc; forward-declared here for hud-draw-for-pass.
 (define-extern get-target (function int target))
+;; [B7] math-camera swap helpers — defined in engine/draw/multi-draw.gc (loads earlier).
+(define-extern *p2-math-camera* math-camera)
+(define-extern math-camera-copy! (function math-camera math-camera math-camera))
+
+;; [B7] Scratch math-camera used by convert-to-hud-object to save *math-camera*
+;; while it temporarily swaps in the picker's camera for world→screen projection.
+;; A dedicated global avoids racing with multi-draw.gc's *math-camera-backup*,
+;; which is in active use during the render pass.
+(define *convert-to-hud-saved-cam* (new 'global 'math-camera))
 
 ;; note: changed for high fps
 
@@ -1809,9 +1818,34 @@
 
 (defbehavior convert-to-hud-object process-drawable ((arg0 process-drawable) (arg1 hud))
   (when arg1
+    ;; [B7-diag] log which HUD slot was resolved (hud.parent[0] = owner target process).
+    (when *multi-coop-active*
+      (format 0 "[HUD:convert] hud-type=~A parent-pid=~D frame=~D~%"
+        (-> arg1 type symbol)
+        (if (-> arg1 parent) (-> (the-as process (-> arg1 parent 0)) pid) -1)
+        (-> *display* integral-frame-counter)))
     (logclear! (-> arg0 mask) (process-mask actor-pause))
     (let ((s4-0 (new 'stack-no-clear 'vector)))
-      (transform-point-vector-scale! s4-0 (-> arg0 root trans))
+      ;; [B7] When the picker is P2, swap *math-camera* to *p2-math-camera* for
+      ;; the world→screen projection. Otherwise the projection runs through
+      ;; whichever camera happens to be live in *math-camera* — which outside
+      ;; the P2 render pass is always P1's state, causing P2's pickup-flight
+      ;; effects to start from where P1 would see them. The owner is derived
+      ;; from arg1's parent (HUDs are spawned :to their target).
+      (let ((owner-is-p2?
+              (and *multi-coop-active*
+                   (-> arg1 parent)
+                   (not (zero? (-> *target-list* 1)))
+                   (let ((p2 (handle->process (-> *target-list* 1))))
+                     (and p2 (= p2 (the-as process (-> arg1 parent 0))))))))
+        (cond
+          (owner-is-p2?
+           (math-camera-copy! *convert-to-hud-saved-cam* *math-camera*)
+           (math-camera-copy! *math-camera* *p2-math-camera*)
+           (transform-point-vector-scale! s4-0 (-> arg0 root trans))
+           (math-camera-copy! *math-camera* *convert-to-hud-saved-cam*))
+          (else
+           (transform-point-vector-scale! s4-0 (-> arg0 root trans)))))
       (set! (-> arg0 root trans x) (+ -2048.0 (-> s4-0 x)))
       (set! (-> arg0 root trans y) (* 2.0 (+ -2048.0 (-> s4-0 y)))))
     (set! (-> arg0 root trans z) 9999999.0)

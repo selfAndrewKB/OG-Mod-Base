@@ -624,7 +624,11 @@
                                         s5-1)))
                (send-event (ppointer->process s4-3) 'target s5-1)
                (send-event (ppointer->process s4-3) 'event 'eco-blue)
-               (send-event (ppointer->process s4-3) 'exit (lambda () (send-event *target* 'query 'powerup (pickup-type eco-blue))))
+               ;; [co-op] query the owning player (self.target), not always P1 (*target*)
+               (send-event (ppointer->process s4-3) 'exit
+                           (lambda :behavior touch-tracker ()
+                             (let ((tgt-proc (the-as process (if (not (zero? (-> self target))) (handle->process (-> self target)) #f))))
+                               (if tgt-proc (send-event tgt-proc 'query 'powerup (pickup-type eco-blue)) #f))))
                (send-event (ppointer->process s4-3)
                            'eval
                            (lambda :behavior process-drawable ()

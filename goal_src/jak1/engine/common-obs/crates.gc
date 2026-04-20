@@ -560,13 +560,20 @@
 (defstate notice-blue (crate)
   :virtual #t
   :event crate-standard-event-handler
+  :enter
+    (behavior ((arg0 handle))
+      ;; [co-op] set target BEFORE :trans first fires; otherwise self.target=0 on
+      ;; first tick causes :trans to fall back to *target* (P1) and abort to wait.
+      (set! (-> self target) arg0))
   :trans
     (behavior ()
-      (cond
-        ((not (send-event *target* 'query 'powerup (pickup-type eco-blue)))
-         (logior! (-> self mask) (process-mask sleep-code))
-         (if (not (!= (-> self smush amp) 0.0)) (go-virtual wait)))
-        (else (logclear! (-> self mask) (process-mask sleep-code)))))
+      ;; [co-op] query the player who triggered notice-blue (self.target), not always P1
+      (let ((tgt-proc (if (not (zero? (-> self target))) (handle->process (-> self target)) *target*)))
+        (cond
+          ((not (send-event tgt-proc 'query 'powerup (pickup-type eco-blue)))
+           (logior! (-> self mask) (process-mask sleep-code))
+           (if (not (!= (-> self smush amp) 0.0)) (go-virtual wait)))
+          (else (logclear! (-> self mask) (process-mask sleep-code))))))
   :code
     (behavior ((arg0 handle))
       (set! (-> self target) arg0)
