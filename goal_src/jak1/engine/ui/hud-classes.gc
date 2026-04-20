@@ -127,10 +127,10 @@
 (defmethod draw-hud ((this hud-pickups))
   ;; Session 51 Phase A — N1 instrumentation. Confirm draw-hud fires once per :post per
   ;; instance (so 2 P-tracked instances → 2 calls per frame). Heartbeat throttle.
-  (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
-    (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
-      (format 0 "[HUD:draw-hud] pickups self-pid=~D owner-pid=~D val=~D state=~A~%"
-        (-> this pid) parent-pid (-> this value) (-> this next-state name))))
+  ;; (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
+  ;;   (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
+  ;;     (format 0 "[HUD:draw-hud] pickups self-pid=~D owner-pid=~D val=~D state=~A~%"
+  ;;       (-> this pid) parent-pid (-> this value) (-> this next-state name))))
   (let ((t9-0 (method-of-type hud draw-hud))) (t9-0 this))
   (let* ((s5-0 (-> *display* frames (-> *display* on-screen) frame global-buf))
          (gp-0 (-> s5-0 base)))
@@ -591,10 +591,10 @@
 (defmethod draw-hud ((this hud-money))
   ;; Session 51 Phase A — N1 instrumentation. Hud-money writes to global-buf bucket-id debug.
   ;; Want to confirm BOTH P1's and P2's instances fire here.
-  (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
-    (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
-      (format 0 "[HUD:draw-hud] money self-pid=~D owner-pid=~D val=~D state=~A~%"
-        (-> this pid) parent-pid (-> this value) (-> this next-state name))))
+  ;; (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
+  ;;   (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
+  ;;     (format 0 "[HUD:draw-hud] money self-pid=~D owner-pid=~D val=~D state=~A~%"
+  ;;       (-> this pid) parent-pid (-> this value) (-> this next-state name))))
   (let ((t9-0 (method-of-type hud draw-hud))) (t9-0 this))
   (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug))
     (let* ((string-x (+ (-> this text-x) (* (-> this x-sgn) (-> this offset))))
@@ -923,10 +923,10 @@
 
 (defmethod draw-hud ((this hud-fuel-cell))
   ;; Session 51 Phase A — N1 instrumentation.
-  (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
-    (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
-      (format 0 "[HUD:draw-hud] fuel-cell self-pid=~D owner-pid=~D val=~D state=~A~%"
-        (-> this pid) parent-pid (-> this value) (-> this next-state name))))
+  ;; (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
+  ;;   (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
+  ;;     (format 0 "[HUD:draw-hud] fuel-cell self-pid=~D owner-pid=~D val=~D state=~A~%"
+  ;;       (-> this pid) parent-pid (-> this value) (-> this next-state name))))
   (let ((t9-0 (method-of-type hud draw-hud))) (t9-0 this))
   (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug))
     (let* ((string-x (+ (-> this text-x) (* (-> this x-sgn) (-> this offset))))
@@ -1158,10 +1158,10 @@
 
 (defmethod draw-hud ((this hud-buzzers))
   ;; Session 51 Phase A — N1 instrumentation.
-  (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
-    (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
-      (format 0 "[HUD:draw-hud] buzzers self-pid=~D owner-pid=~D val=~D state=~A~%"
-        (-> this pid) parent-pid (-> this value) (-> this next-state name))))
+  ;; (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
+  ;;   (let ((parent-pid (if (-> this parent) (-> (the-as process (-> this parent 0)) pid) -1)))
+  ;;     (format 0 "[HUD:draw-hud] buzzers self-pid=~D owner-pid=~D val=~D state=~A~%"
+  ;;       (-> this pid) parent-pid (-> this value) (-> this next-state name))))
   (let ((t9-0 (method-of-type hud draw-hud))) (t9-0 this))
   (set! (-> this text-y) (+ (if (nonzero? (-> this next-y-offset)) (-> this text-y-offset) 0) 362))
   (with-dma-buffer-add-bucket ((buf (-> (current-frame) global-buf)) (bucket-id debug))
@@ -1477,20 +1477,7 @@
 
 (defmethod hud-update ((this hud-power))
   ;; Per-viewport HUD Phase 2: power-up eco (red/blue/yellow) is per-player, owner from parent.
-  (when (and *multi-coop-active* (-> this parent))
-    (let ((owner (the-as target (-> this parent 0))))
-      ;; every 128 frames: heartbeat showing state + eco fields
-      (when (zero? (logand (-> *display* integral-frame-counter) 127))
-        (format 0 "[HUD:power] state=~A eco-timeout=~D eco-type=~D val=~D tgt=~D~%"
-          (-> this next-state name)
-          (-> owner fact eco-timeout) (-> owner fact eco-type)
-          (-> this value) (-> this target-value)))
-      ;; every 4 frames while eco is active: catch the window we care about
-      (when (and (> (the-as int (-> owner fact eco-timeout)) 0)
-                 (zero? (logand (-> *display* integral-frame-counter) 3)))
-        (format 0 "[HUD:power-ECO] timeout=~D val=~D tgt=~D state=~A~%"
-          (-> owner fact eco-timeout) (-> this value) (-> this target-value)
-          (-> this next-state name)))))
+  ;; [HUD:power] and [HUD:power-ECO] logs disabled
   (when (-> this parent)
     (let ((owner (the-as target (-> this parent 0))))
       (tally-value this

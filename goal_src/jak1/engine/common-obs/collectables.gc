@@ -2,6 +2,7 @@
 (in-package goal)
 (bundles "ENGINE.CGO" "GAME.CGO")
 (require "engine/common-obs/generic-obs.gc")
+(require "engine/game/fact-h.gc")
 (require "engine/physics/trajectory.gc")
 (require "engine/collide/collide-cache.gc")
 (require "pc/pckernel.gc")
@@ -19,6 +20,9 @@
 (define-extern runs-on-cell-pickup (function symbol none))
 
 (define-extern runs-on-eco-pickup (function pickup-type process-tree none))
+
+(define-extern *multi-coop-active* symbol)
+(define-extern *target-list* (array handle))
 
 (define-extern orb-placer-list-maintenace (function symbol none))
 
@@ -104,7 +108,8 @@
    (suck-time           time-frame)
    (suck-y-offset       float)
    (speed               vector :inline)
-   (movie-pos-index     int32))
+   (movie-pos-index     int32)
+   (consumed-times      time-frame 4))
   (:state-methods
    wait
    (pickup object handle)
@@ -314,13 +319,37 @@
   :event
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
       (local-vars (v0-3 object))
-      (when (and (or (= message 'touch) (= message 'attack))
-                 (and (logtest? (-> self flags) (collectable-flags can-collect))
-                      (time-elapsed? (-> self birth-time) (-> self collect-timeout))
-                      (!= (-> self next-state name) 'pickup)
-                      (send-event proc 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount))))
-        (logclear! (-> self mask) (process-mask actor-pause))
-        (go-virtual pickup #f (process->handle proc)))
+      ;; Pickup gate: co-op intercept for colored eco, otherwise vanilla path.
+      (cond
+        ((and *multi-coop-active*
+              (or (= message 'touch) (= message 'attack))
+              (logtest? (-> self flags) (collectable-flags can-collect))
+              (time-elapsed? (-> self birth-time) (-> self collect-timeout))
+              (!= (-> self next-state name) 'pickup)
+              (or (= (-> self fact pickup-type) (pickup-type eco-blue))
+                  (= (-> self fact pickup-type) (pickup-type eco-red))
+                  (= (-> self fact pickup-type) (pickup-type eco-yellow))))
+         (let ((slot -1))
+           (dotimes (i (-> *target-list* length))
+             (when (and (not (zero? (-> *target-list* i)))
+                        (= (handle->process (-> *target-list* i)) proc))
+               (set! slot i)))
+           (when (>= slot 0)
+             ;; Gate: this crystal must not have already been consumed by this player.
+             (when (zero? (-> self consumed-times slot))
+               (when (send-event proc 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount))
+                 (format 0 "[ECO:gate] pid=~D slot=~D type=~D~%"
+                   (-> (the-as process proc) pid) slot (-> self fact pickup-type))
+                 (set! (-> self consumed-times slot) (the-as time-frame 1))
+                 (logclear! (-> self mask) (process-mask actor-pause))
+                 (go-virtual pickup #f (process->handle proc)))))))
+        ((and (or (= message 'touch) (= message 'attack))
+              (and (logtest? (-> self flags) (collectable-flags can-collect))
+                   (time-elapsed? (-> self birth-time) (-> self collect-timeout))
+                   (!= (-> self next-state name) 'pickup)
+                   (send-event proc 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount))))
+         (logclear! (-> self mask) (process-mask actor-pause))
+         (go-virtual pickup #f (process->handle proc))))
       (cond
         ((= message 'eco-blue)
          (when (and (not (logtest? (-> self flags) (collectable-flags fading ignore-blue)))
@@ -329,7 +358,15 @@
                       (check-blue-suck (the-as process-drawable proc))
                       #t)
                     (logtest? (-> self flags) (collectable-flags can-collect))
-                    (time-elapsed? (-> self birth-time) (-> self collect-timeout)))
+                    (time-elapsed? (-> self birth-time) (-> self collect-timeout))
+                    ;; [co-op] don't enter notice-blue if this player already consumed this crystal
+                    (or (not *multi-coop-active*)
+                        (let ((eco-slot -1))
+                          (dotimes (i (-> *target-list* length))
+                            (when (and (not (zero? (-> *target-list* i)))
+                                       (= (handle->process (-> *target-list* i)) proc))
+                              (set! eco-slot i)))
+                          (or (< eco-slot 0) (zero? (-> self consumed-times eco-slot))))))
            (logclear! (-> self mask) (process-mask actor-pause))
            (go-virtual notice-blue (process->handle proc))))
         ((= message 'trans)
@@ -410,19 +447,50 @@
                  (set! (-> gp-0 fade) (* 0.0033333334 (the float v1-10)))))))
           (spawn gp-0 (-> s5-0 world-sphere)))
         (if (nonzero? (-> self sound)) (update! (-> self sound)))
+        ;; [co-op] auto-clear per-player consumed flag when their eco gauge drains
+        (when *multi-coop-active*
+          (dotimes (s (-> *target-list* length))
+            (when (and (not (zero? (-> *target-list* s)))
+                       (nonzero? (-> self consumed-times s)))
+              (let ((tgt (handle->process (-> *target-list* s))))
+                (when (and tgt (= (-> (the-as target tgt) fact eco-level) 0.0))
+                  (set! (-> self consumed-times s) (the-as time-frame 0)))))))
         (suspend))))
 
 (defstate notice-blue (eco-collectable)
   :virtual #t
   :event
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
-      (when (and (or (= message 'touch) (= message 'attack))
-                 (and (logtest? (-> self flags) (collectable-flags can-collect))
-                      (time-elapsed? (-> self birth-time) (-> self collect-timeout))
-                      (!= (-> self next-state name) 'pickup)
-                      (send-event proc 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount))))
-        (logclear! (-> self mask) (process-mask actor-pause))
-        (go-virtual pickup #f (process->handle proc))))
+      (cond
+        ;; [co-op] per-player eco pickup gate (blue only here)
+        ((and *multi-coop-active*
+              (or (= message 'touch) (= message 'attack))
+              (logtest? (-> self flags) (collectable-flags can-collect))
+              (time-elapsed? (-> self birth-time) (-> self collect-timeout))
+              (!= (-> self next-state name) 'pickup)
+              (= (-> self fact pickup-type) (pickup-type eco-blue)))
+         (let ((slot -1))
+           (dotimes (i (-> *target-list* length))
+             (when (and (not (zero? (-> *target-list* i)))
+                        (= (handle->process (-> *target-list* i)) proc))
+               (set! slot i)))
+           (when (>= slot 0)
+             ;; Gate: this crystal must not have already been consumed by this player.
+             (when (zero? (-> self consumed-times slot))
+               (when (send-event proc 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount))
+                 (format 0 "[ECO:gate-nb] pid=~D slot=~D type=~D~%"
+                   (-> (the-as process proc) pid) slot (-> self fact pickup-type))
+                 (set! (-> self consumed-times slot) (the-as time-frame 1))
+                 (logclear! (-> self mask) (process-mask actor-pause))
+                 (go-virtual pickup #f (process->handle proc)))))))
+        ;; vanilla path
+        ((and (or (= message 'touch) (= message 'attack))
+              (and (logtest? (-> self flags) (collectable-flags can-collect))
+                   (time-elapsed? (-> self birth-time) (-> self collect-timeout))
+                   (!= (-> self next-state name) 'pickup)
+                   (send-event proc 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount))))
+         (logclear! (-> self mask) (process-mask actor-pause))
+         (go-virtual pickup #f (process->handle proc)))))
   :enter
     (behavior ((arg0 handle))
       (set! (-> self target) arg0)
@@ -541,9 +609,21 @@
                        (-> self root root-prim prim-core)
                        :to
                        self))
-      (while (-> self child)
-        (suspend))
-      (go-virtual die)))
+      (if *multi-coop-active*
+        (begin
+          ;; Kill animation children so the crystal reappears at original position immediately.
+          (while (-> self child)
+            (deactivate (ppointer->process (-> self child))))
+          (set! (-> self base quad) (-> self old-base quad))
+          (set! (-> self root trans quad) (-> self base quad))
+          (restore-collide-with-as (-> self root))
+          (logior! (-> self flags) (collectable-flags can-collect))
+          (if (-> self actor-pause) (logior! (-> self mask) (process-mask actor-pause)))
+          (go-virtual wait))
+        (begin
+          (while (-> self child)
+            (suspend))
+          (go-virtual die)))))
 
 (defstate die (eco-collectable)
   :virtual #t
