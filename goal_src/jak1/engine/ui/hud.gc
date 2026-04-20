@@ -456,7 +456,13 @@
                  (want-type (-> arg0 type)))
             (dotimes (hi 9)
               (let ((proc (ppointer->process (-> other-parts parts hi))))
+                ;; Safety: stale ppointers may exist in *hud-parts-list* during the
+                ;; death/respawn transition (old HUDs killed via parent death, but slot
+                ;; not yet overwritten by activate-hud). The type-type? check filters
+                ;; reused/zeroed slots — type field reads as non-hud or #f when memory
+                ;; was repurposed. Belt-and-suspenders with the exact-type check below.
                 (when (and proc
+                           (type-type? (-> proc type) hud)
                            (!= proc (the-as process-tree arg0))
                            (= (-> proc type) want-type))
                   (send-event proc 'increment))))))))))

@@ -1778,7 +1778,33 @@
               (let ((hp (-> parts parts hi)))
                 (when hp
                   (draw-particles (the-as hud (-> hp 0)))
-                  (draw-hud (the-as hud (-> hp 0)))))))))))
+                  (draw-hud (the-as hud (-> hp 0))))))
+            ;; Viewport isolation: with glViewport split-screen, HVDF is viewport-relative
+            ;; NDC. The same HVDF value renders at the same relative screen position in
+            ;; BOTH viewports — P1's health particles show in P2's viewport too, overlapping
+            ;; P2's own health particles and producing the "shared gauge" symptom.
+            ;; Fix: after drawing this slot's particles for the current pass, write
+            ;; HVDF = 0 for all other-slot particles. X=0 gives NDC = (0-2048)/256 = -8,
+            ;; which falls outside every scissor rect and is clipped.
+            (dotimes (other-slot (-> *target-list* length))
+              (when (and (!= other-slot pass) (not (zero? (-> *target-list* other-slot))))
+                (let ((other-parts (-> *hud-parts-list* slots other-slot)))
+                  (dotimes (hi 9)
+                    (let ((hp (-> other-parts parts hi)))
+                      (when hp
+                        (let ((h (the-as hud (-> hp 0))))
+                          ;; Safety: the ppointer slot may hold a stale reference to a
+                          ;; killed HUD process during the death/respawn transition window
+                          ;; (see Session 51 Daxter-death crash investigation). Old HUDs
+                          ;; were :to the dying target — kernel kills them via parent death,
+                          ;; but the *hud-parts-list* slot still holds the old ppointer
+                          ;; until activate-hud overwrites it. Verify type before accessing
+                          ;; particle data — touching freed/reused memory crashes.
+                          (when (and h (type-type? (-> h type) hud))
+                            (dotimes (pi (-> h nb-of-particles))
+                              (when (> (-> h particles pi part matrix) 0)
+                                (set-vector! (sprite-get-user-hvdf (-> h particles pi part matrix))
+                                             0.0 0.0 0.0 0.0))))))))))))))))
   (none))
 
 (defbehavior convert-to-hud-object process-drawable ((arg0 process-drawable) (arg1 hud))
