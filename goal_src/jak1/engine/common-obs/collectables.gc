@@ -347,6 +347,13 @@
               (and (logtest? (-> self flags) (collectable-flags can-collect))
                    (time-elapsed? (-> self birth-time) (-> self collect-timeout))
                    (!= (-> self next-state name) 'pickup)
+                   ;; In co-op, persistent eco crystals (blue/red/yellow) are exclusively
+                   ;; handled by Arm 1's consumed-times gate. Block vanilla path here so
+                   ;; re-contact after B3 respawn cannot bypass the per-player gate.
+                   (not (and *multi-coop-active*
+                             (or (= (-> self fact pickup-type) (pickup-type eco-blue))
+                                 (= (-> self fact pickup-type) (pickup-type eco-red))
+                                 (= (-> self fact pickup-type) (pickup-type eco-yellow)))))
                    (send-event proc 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount))))
          (logclear! (-> self mask) (process-mask actor-pause))
          (go-virtual pickup #f (process->handle proc))))
@@ -403,6 +410,14 @@
       (if (and (logtest? (-> self fact options) (fact-options instant-collect can-collect))
                (logtest? (-> self flags) (collectable-flags can-collect))
                (!= (-> self next-state name) 'pickup)
+               ;; In co-op, persistent eco crystals (blue/red/yellow) are exclusively
+               ;; collected via wait :event Arm 1 (consumed-times gate). The :enter
+               ;; instant-collect shortcut bypasses that gate using *target* (P1) and
+               ;; would create a synchronous re-pickup loop after B3 respawn.
+               (not (and *multi-coop-active*
+                         (or (= (-> self fact pickup-type) (pickup-type eco-blue))
+                             (= (-> self fact pickup-type) (pickup-type eco-red))
+                             (= (-> self fact pickup-type) (pickup-type eco-yellow)))))
                (send-event *target* 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount)))
         (go-virtual pickup #f (process->handle *target*))))
   :trans
@@ -426,6 +441,12 @@
                 (go-virtual notice-blue (process->handle *target*)))
               (if (and (logtest? (-> self fact options) (fact-options instant-collect can-collect))
                        (!= (-> self next-state name) 'pickup)
+                       ;; Same rationale as wait :enter — block instant-collect
+                       ;; shortcut for persistent eco types in co-op (use Arm 1 gate).
+                       (not (and *multi-coop-active*
+                                 (or (= (-> self fact pickup-type) (pickup-type eco-blue))
+                                     (= (-> self fact pickup-type) (pickup-type eco-red))
+                                     (= (-> self fact pickup-type) (pickup-type eco-yellow)))))
                        (send-event *target* 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount)))
                 (go-virtual pickup #f (process->handle *target*)))))))
         (else (set! (-> self trans-hook) #f)))
@@ -483,11 +504,15 @@
                  (set! (-> self consumed-times slot) (the-as time-frame 1))
                  (logclear! (-> self mask) (process-mask actor-pause))
                  (go-virtual pickup #f (process->handle proc)))))))
-        ;; vanilla path
+        ;; vanilla path — blocked for persistent eco types in co-op (see wait :event comment)
         ((and (or (= message 'touch) (= message 'attack))
               (and (logtest? (-> self flags) (collectable-flags can-collect))
                    (time-elapsed? (-> self birth-time) (-> self collect-timeout))
                    (!= (-> self next-state name) 'pickup)
+                   (not (and *multi-coop-active*
+                             (or (= (-> self fact pickup-type) (pickup-type eco-blue))
+                                 (= (-> self fact pickup-type) (pickup-type eco-red))
+                                 (= (-> self fact pickup-type) (pickup-type eco-yellow)))))
                    (send-event proc 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount))))
          (logclear! (-> self mask) (process-mask actor-pause))
          (go-virtual pickup #f (process->handle proc)))))
@@ -609,7 +634,10 @@
                        (-> self root root-prim prim-core)
                        :to
                        self))
-      (if *multi-coop-active*
+      (if (and *multi-coop-active*
+               (or (= (-> self fact pickup-type) (pickup-type eco-blue))
+                   (= (-> self fact pickup-type) (pickup-type eco-red))
+                   (= (-> self fact pickup-type) (pickup-type eco-yellow))))
         (begin
           ;; Kill animation children so the crystal reappears at original position immediately.
           (while (-> self child)
