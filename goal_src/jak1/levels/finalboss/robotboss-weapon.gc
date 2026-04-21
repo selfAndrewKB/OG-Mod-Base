@@ -3,6 +3,7 @@
 (bundles "FIN.DGO")
 (require "engine/common-obs/process-drawable.gc")
 (define-extern closest-target-to (function vector target))
+(define-extern get-target (function int target))
 
 ;; DECOMP BEGINS
 
@@ -208,8 +209,8 @@
         ((or arg0
              (let ((db-any-low #f))
                (dotimes (dbl (-> *target-list* length))
-                 (let ((dbltp (handle->process (-> *target-list* dbl))))
-                   (when (and dbltp (< (-> (the-as target dbltp) control trans y) (+ 40960.0 (-> self entity extra trans y))))
+                 (let ((dbltp (get-target dbl)))
+                   (when (and dbltp (< (-> dbltp control trans y) (+ 40960.0 (-> self entity extra trans y))))
                      (set! db-any-low #t))))
                db-any-low))
          (if *target* (logior! (-> *target* mask) (process-mask sleep)))
@@ -238,10 +239,10 @@
     (let ((db-has-players #f)
           (db-all-high #t))
       (dotimes (dbhi (-> *target-list* length))
-        (let ((dbhtp (handle->process (-> *target-list* dbhi))))
+        (let ((dbhtp (get-target dbhi)))
           (when dbhtp
             (set! db-has-players #t)
-            (when (not (< (+ 409600.0 (-> self entity extra trans y)) (-> (the-as target dbhtp) control trans y)))
+            (when (not (< (+ 409600.0 (-> self entity extra trans y)) (-> dbhtp control trans y)))
               (set! db-all-high #f)))))
       (when (and db-has-players db-all-high)
         (go darkecobomb-explode #f))))
@@ -502,10 +503,10 @@
     (behavior ()
       (set! (-> self ring radius-primary) (* 204.8 (the float (- (-> *display* game-frame-counter) (-> self state-time)))))
       (dotimes (ri (-> *target-list* length))
-        (let ((rtp (handle->process (-> *target-list* ri))))
+        (let ((rtp (get-target ri)))
           (when rtp
             (let ((gp-0 (new 'stack-no-clear 'vector)))
-              (when (torus-check-player (-> self ring) (the-as target rtp) gp-0)
+              (when (torus-check-player (-> self ring) rtp gp-0)
                 (vector-normalize! gp-0 16384.0)
                 (send-event rtp 'attack #f (static-attack-info ((vector gp-0))))
                 (send-event (ppointer->process (-> self parent)) 'hit-jak))))))
