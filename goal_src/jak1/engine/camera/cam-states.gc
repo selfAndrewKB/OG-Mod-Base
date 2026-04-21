@@ -585,13 +585,13 @@
          (s3-0 (new 'stack-no-clear 'matrix)))
     (when *camera-read-analog*
       (let ((f24-0 (analog-input-horizontal-third ;; og:preserve-this changed for pc port
-                     (the-as int (-> *cpad-list* cpads 0 rightx))
+                     (the-as int (-> *cpad-list* cpads (-> self pad-index) rightx))
                      (the-as float 128.0)
                      (the-as float 32.0)
                      (the-as float 110.0)
                      (* 8192.0 (seconds-per-frame))))
             (f1-2 (analog-input-vertical-third ;; og:preserve-this changed for pc port
-                    (the-as int (-> *cpad-list* cpads 0 righty))
+                    (the-as int (-> *cpad-list* cpads (-> self pad-index) righty))
                     (the-as float 128.0)
                     (the-as float 32.0)
                     (the-as float 110.0)
@@ -688,6 +688,15 @@
         (else (cam-standard-event-handler proc argc message block))))
   :enter
     (behavior ()
+      (when (and *multi-coop-active* (not (-> self enter-has-run)))
+        (format 0 "[CAM:circ] ENTER ~A pad=~D entity=~A~%"
+          (cond ((= (-> self my-master) *camera*) 'P1)
+                ((= (-> self my-master) *camera-p2*) 'P2)
+                (else 'UNK))
+          (-> self pad-index)
+          (if (-> self cam-entity)
+            (res-lump-struct (-> self cam-entity) 'name string :time (the-as float -1000000000.0))
+            "none")))
       (cond
         ((-> self enter-has-run))
         (else
@@ -739,6 +748,16 @@
           (send-event (-> self my-master) 'point-of-interest gp-3))))
   :trans
     (behavior ()
+      (when (and *multi-coop-active* (multi-log-enabled? 'cam-circ) (zero? (logand (-> *display* integral-frame-counter) 127)))
+        (format 0 "[CAM:circ] ~A pad=~D entity=~A master-opts=~D~%"
+          (cond ((= (-> self my-master) *camera*) 'P1)
+                ((= (-> self my-master) *camera-p2*) 'P2)
+                (else 'UNK))
+          (-> self pad-index)
+          (if (-> self cam-entity)
+            (res-lump-struct (-> self cam-entity) 'name string :time (the-as float -1000000000.0))
+            "none")
+          (-> self my-master master-options)))
       (if (not (logtest? (-> (-> self my-master) master-options) 2)) (cam-slave-go cam-free-floating)))
   :code
     (behavior ()

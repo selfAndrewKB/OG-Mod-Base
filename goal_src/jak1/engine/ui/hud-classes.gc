@@ -275,7 +275,7 @@
     ;; which hud-health instance OWNS this particle. If both viewports' health particles
     ;; resolve to the SAME hud-self (or always to slot 0's owner), N3 is a per-instance
     ;; ownership bug at allocation time.
-    (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 63)))
+    (when (and *multi-coop-active* (multi-log-enabled? 'hud-health) (zero? (logand (-> *display* integral-frame-counter) 63)))
       (format 0 "[HUD:health-self] cb=01 hud-self-pid=~D owner-pid=~D health=~F scale=~F~%"
         (if hud-self (-> hud-self pid) -1)
         (if owner (-> (the process owner) pid) -1)
@@ -1396,7 +1396,7 @@
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
          (owner (the-as target (if (and hud-self (-> hud-self parent)) (-> hud-self parent 0) #f))))
-    (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 15)))
+    (when (and *multi-coop-active* (multi-log-enabled? 'hud-eco) (zero? (logand (-> *display* integral-frame-counter) 15)))
       (format 0 "[HUD:eco-cb] lc=~A hud-self=~A owner=~A~%" lc hud-self owner))
     (when owner
       (let ((f0-2 (/ (the float
@@ -1819,7 +1819,7 @@
 (defbehavior convert-to-hud-object process-drawable ((arg0 process-drawable) (arg1 hud))
   (when arg1
     ;; [B7-diag] log which HUD slot was resolved (hud.parent[0] = owner target process).
-    (when *multi-coop-active*
+    (when (and *multi-coop-active* (multi-log-enabled? 'hud-convert))
       (format 0 "[HUD:convert] hud-type=~A parent-pid=~D frame=~D~%"
         (-> arg1 type symbol)
         (if (-> arg1 parent) (-> (the-as process (-> arg1 parent 0)) pid) -1)

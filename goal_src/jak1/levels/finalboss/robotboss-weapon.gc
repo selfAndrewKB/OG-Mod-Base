@@ -4,6 +4,7 @@
 (require "engine/common-obs/process-drawable.gc")
 (define-extern closest-target-to (function vector target))
 (define-extern get-target (function int target))
+(define-extern *camera-p2* camera-master)
 
 ;; DECOMP BEGINS
 
@@ -216,12 +217,17 @@
          (if *target* (logior! (-> *target* mask) (process-mask sleep)))
          (send-event (ppointer->process (-> self parent)) 'bomb-going)
          (send-event *camera* 'change-to-entity-by-name "camera-402")
+         (when *camera-p2* (send-event *camera-p2* 'change-to-entity-by-name "camera-402"))
          (set-time! (-> self state-time))
          (until (time-elapsed? (-> self state-time) (seconds 2))
            (suspend))
          (send-event *camera* 'force-blend 0)
          (send-event *camera* 'change-state *camera-base-mode*)
          (send-event *camera* 'clear-entity)
+         (when *camera-p2*
+           (send-event *camera-p2* 'force-blend 0)
+           (send-event *camera-p2* 'change-state *camera-base-mode*)
+           (send-event *camera-p2* 'clear-entity))
          (if *target* (logclear! (-> *target* mask) (process-mask sleep)))
          (let ((kill-tgt (closest-target-to (-> self root trans))))
            (when kill-tgt

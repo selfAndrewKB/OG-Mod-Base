@@ -4,6 +4,7 @@
 (require "levels/finalboss/robotboss-h.gc")
 (require "levels/citadel/citadel-sages.gc")
 (define-extern closest-target-to (function vector target))
+(define-extern *camera-p2* camera-master)
 (declare-type ecoclaw process-drawable)
 
 (define-extern *ecoclaw* (pointer ecoclaw))
@@ -34,13 +35,26 @@
         ((-> self enter-has-run))
         (else
          (set! *camera-base-mode* cam-robotboss)
-         (set! (-> self circular-follow quad) (-> *camera* tpos-curr-adj quad))
+         (set! (-> self circular-follow quad) (-> self my-master tpos-curr-adj quad))
          (set! (-> self pivot-rad) 73728.0)
          (set! (-> self blend-from-type) (the-as uint 2))
          (set! (-> self blend-to-type) (the-as uint 2)))))
   :trans
     (behavior ()
-      (when (not (logtest? (-> *camera* master-options) 2))
+      (when (and (multi-log-enabled? 'cam-rb) (zero? (logand (-> *display* integral-frame-counter) 127)))
+        (format 0 "[CAM:rb] ~A slave=~A p1cam-bit2=~A~%"
+                (cond
+                  ((= (-> self my-master) *camera*) 'P1)
+                  ((= (-> self my-master) *camera-p2*) 'P2)
+                  (else 'UNK))
+                self
+                (if (logtest? (-> *camera* master-options) 2) 'SET 'CLEAR)))
+      (when (not (logtest? (-> self my-master master-options) 2))
+        (format 0 "[CAM:rb] EXITING ~A — master-opts bit2 clear~%"
+                (cond
+                  ((= (-> self my-master) *camera*) 'P1)
+                  ((= (-> self my-master) *camera-p2*) 'P2)
+                  (else 'UNK)))
         (set! *camera-base-mode* cam-string)
         (cam-slave-go cam-free-floating)))
   :code
@@ -48,17 +62,17 @@
       (loop
         (when #t
           (let ((a2-0 (new-stack-vector0)))
-            (vector-! a2-0 (-> *camera* tpos-curr-adj) (-> self pivot-pt))
+            (vector-! a2-0 (-> self my-master tpos-curr-adj) (-> self pivot-pt))
             (vector-! (-> self circular-follow) (-> self circular-follow) (-> self pivot-pt))
             (v-slrp3! (-> self circular-follow)
                       (-> self circular-follow)
                       a2-0
-                      (-> *camera* local-down)
+                      (-> self my-master local-down)
                       (* 182.04445 (-> *display* time-adjust-ratio))))
           (vector+! (-> self circular-follow) (-> self circular-follow) (-> self pivot-pt))
           (let ((gp-0 (new 'stack-no-clear 'vector)))
             (vector-! gp-0 (-> self circular-follow) (-> self pivot-pt))
-            (vector-flatten! gp-0 gp-0 (-> *camera* local-down))
+            (vector-flatten! gp-0 gp-0 (-> self my-master local-down))
             (let ((f0-3 (- (vector-length gp-0) (-> self pivot-rad))))
               (if (>= 0.0 f0-3) (vector-reset! gp-0) (vector-normalize! gp-0 f0-3)))
             (vector+! (-> self trans) gp-0 (-> self pivot-pt))))

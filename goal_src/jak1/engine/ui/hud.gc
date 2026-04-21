@@ -125,10 +125,10 @@
         (when (multi-log-enabled? 'hud-state)
           (format 0 "[HUD:state] type=~A go hud-arriving val=~D->~D target=~D~%"
             (-> this type) (-> this value) arg0 (-> this target-value)))
-        ;; Session 51 Phase A — default-active per-event log on tally-value's GO ARRIVING.
-        ;; Fires once per actual state transition (NOT per frame), so unthrottled.
-        ;; Filtered to types relevant to B3/B4/N1/N2 to keep volume low.
+        ;; Session 51 Phase A — tally-value GO ARRIVING log. Gated; eco drain cycles this
+        ;; every frame (vanilla), which floods the console when enabled.
         (when (and *multi-coop-active*
+                   (multi-log-enabled? 'hud-tally)
                    (or (= (-> this type) hud-money)
                        (= (-> this type) hud-buzzers)
                        (= (-> this type) hud-pickups)
@@ -270,10 +270,9 @@
       (local-vars (v0-3 object))
       (when (multi-log-enabled? 'hud-event)
         (format 0 "[HUD:event] hud-arriving type=~A msg=~A from=~A~%" (-> self type) message proc))
-      ;; Session 51 Phase A — B3/B4 instrumentation. Default-active per-event log on
-      ;; every event the HUD receives in arriving state. Filtered to interesting types
-      ;; and skipping noisy 'show messages (which fire continuously while L2 held).
+      ;; Session 51 Phase A — B3/B4 event log (now gated; per-event in arriving = spammy).
       (when (and *multi-coop-active*
+                 (multi-log-enabled? 'hud-event)
                  (not (eq? message 'show))
                  (or (= (-> self type) hud-money)
                      (= (-> self type) hud-buzzers)
@@ -307,11 +306,9 @@
       (when (multi-log-enabled? 'hud-state)
         (format 0 "[HUD:state] enter hud-arriving type=~A val=~D target=~D parts=~D~%"
           (-> self type) (-> self value) (-> self target-value) (-> self nb-of-particles)))
-      ;; Session 51 Phase A — N2/B3 instrumentation. Default-active per-event log on
-      ;; arriving entry. Tells us how often each instance re-enters arriving (B3 orb
-      ;; double slide-in = same instance enters arriving twice in close succession;
-      ;; N2 LT eco bar = power instance enters arriving while already in 'in' state).
+      ;; Session 51 Phase A — N2/B3 arriving-entry log (now gated; eco cycles this every frame).
       (when (and *multi-coop-active*
+                 (multi-log-enabled? 'hud-state)
                  (or (= (-> self type) hud-money)
                      (= (-> self type) hud-buzzers)
                      (= (-> self type) hud-pickups)

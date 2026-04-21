@@ -1136,7 +1136,7 @@
         (set! (-> self blend-to-type) (the-as uint 1))))
   :trans
     (behavior ()
-      (if (not (logtest? (-> *camera* master-options) 2)) (cam-slave-go cam-free-floating)))
+      (if (not (logtest? (-> self my-master master-options) 2)) (cam-slave-go cam-free-floating)))
   :code
     (behavior ()
       (loop
