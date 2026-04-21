@@ -207,21 +207,19 @@
   (the-as first-person-hud ((method-of-type process relocate) this offset)))
 
 (defmethod spawn-particles! ((this first-person-hud))
-  ;; Phase 0 logging: confirm spawn-particles! always runs at game-logic time (render-cam=0).
-  (when (multi-log-enabled? 'hud)
-    (format 0 "[MULTI:hud] spawn-particles! frame=~D render-cam=~D owner=~D~%"
-            (current-time) *active-render-cam* (the int (-> this owner-pad))))
-  ;; Co-op: spawn-particles! is now called per-pass inside draw-world-pass (Phase 1c).
-  ;; *math-camera* is correct for the current pass at that point, so each player's
-  ;; reticle uses the right camera and renders only in their own viewport.
-  ;; In single-player this is called from :post (game-logic time) as before.
+  ;; Always called from :post (game-logic time) — particles are active for both render passes.
+  ;; Co-op: HVDF slots are written per-pass by fp-hud-spawn-for-pass, which writes the
+  ;; correct screen position for the matching viewport and off-screen for all others.
+  ;; SP: write HVDF here as before (fp-hud-spawn-for-pass is not called in SP).
   (dotimes (s5-0 (-> this nb-of-particles))
       (set! (-> this particles s5-0 pos x) (+ -256.0 (-> this particles s5-0 init-pos x)))
       (set! (-> this particles s5-0 pos y)
             (* 0.5
                (- (* (-> this particles s5-0 init-pos y) (-> *video-parms* relative-y-scale)) (the float (-> *video-parms* screen-sy)))))
       (set! (-> this particles s5-0 pos z) (-> this particles s5-0 init-pos z))
-      (if (> (-> this particles s5-0 part matrix) 0)
+      ;; In SP, write HVDF here since fp-hud-spawn-for-pass is not called.
+      ;; In co-op, skip — fp-hud-spawn-for-pass handles HVDF per-pass.
+      (when (and (not *multi-coop-active*) (> (-> this particles s5-0 part matrix) 0))
         (set-vector! (sprite-get-user-hvdf (-> this particles s5-0 part matrix))
                      (the float (+ (the int (-> this particles s5-0 pos x)) 2048))
                      (the float (+ (the int (-> this particles s5-0 pos y)) 2048))
@@ -266,11 +264,9 @@
         (suspend)))
   :post
     (behavior ()
-      ;; Co-op: spawn-particles! moved to draw-world-pass per-pass hook so each
-      ;; player's reticle only renders in their own viewport. In single-player the
-      ;; old game-logic spawn is still used (render-time hook is not wired up).
-      (when (not *multi-coop-active*)
-        (spawn-particles! self))))
+      ;; Always spawn at game-logic time. Co-op: fp-hud-spawn-for-pass writes HVDF per-pass
+      ;; (correct for owner viewport, off-screen for the other). SP: spawn-particles! writes HVDF here.
+      (spawn-particles! self)))
 
 (defstate hud-normal (first-person-hud)
   :event
@@ -284,7 +280,10 @@
                 (= (-> *progress-process* 0 next-state name) 'progress-gone))
           (seekl! (-> self in-out-position) 0 (the int (* 150.0 (-> *display* time-adjust-ratio))))
           (seekl! (-> self in-out-position) 4096 (the int (* 200.0 (-> *display* time-adjust-ratio)))))
-        (suspend))))
+        (suspend)))
+  :post
+    (behavior ()
+      (spawn-particles! self)))
 
 (defstate hud-going-out (first-person-hud)
   :code
@@ -295,8 +294,7 @@
         (suspend)))
   :post
     (behavior ()
-      (when (not *multi-coop-active*)
-        (spawn-particles! self))))
+      (spawn-particles! self)))
 
 (defun find-fp-hud-for-pass ((pass int))
   "Return the live FP HUD whose owner-pad matches pass (0=P1, 1=P2).
@@ -380,17 +378,42 @@
   (none))
 
 (defun fp-hud-spawn-for-pass ((pass int))
-  "Called from draw-world-pass to spawn fp-hud particles for render pass PASS.
-   *math-camera* must already be set to the current pass's camera when called.
-   Particles spawned here are rendered by that same pass's sprite-draw call.
-   Only runs in co-op (*multi-coop-active* true); single-player uses :post spawn."
+  "Write HVDF screen positions for all live fp-hud particles. Called per render pass.
+   *math-camera* holds the current pass's camera on entry.
+   The fp-hud whose owner-pad matches PASS gets correct screen coordinates.
+   Any other live fp-hud (wrong pass) has its HVDF slots moved far off-screen so
+   its already-active particles are invisible in this viewport.
+   Only runs in co-op; SP calls spawn-particles! from :post which writes HVDF directly."
   (when *multi-coop-active*
-    (let ((fphud (find-fp-hud-for-pass pass)))
-      (when (zero? (logand (-> *display* integral-frame-counter) 127))
+    (dotimes (fpi (-> *target-list* length))
+      (let* ((raw (-> *target-list* fpi)))
+        (when (nonzero? raw)
+          (let ((tgt (the-as target (handle->process raw))))
+            (when tgt
+              (let ((hraw (-> tgt fp-hud)))
+                (when (nonzero? hraw)
+                  (let ((fphud (the-as first-person-hud (handle->process hraw))))
+                    (when fphud
+                      (dotimes (p (-> fphud nb-of-particles))
+                        (let ((mat (-> fphud particles p part matrix)))
+                          (when (> mat 0)
+                            (if (= (the int (-> fphud owner-pad)) pass)
+                                ;; Matching viewport: write correct screen position
+                                (set-vector! (sprite-get-user-hvdf mat)
+                                             (the float (+ (the int (-> fphud particles p pos x)) 2048))
+                                             (the float (+ (the int (-> fphud particles p pos y)) 2048))
+                                             (- (-> *math-camera* hvdf-off z) (* 1024.0 (-> fphud particles p pos z)))
+                                             (-> *math-camera* hvdf-off w))
+                                ;; Wrong viewport: move off-screen
+                                (set-vector! (sprite-get-user-hvdf mat)
+                                             (the float 30000)
+                                             (the float 30000)
+                                             (-> *math-camera* hvdf-off z)
+                                             (-> *math-camera* hvdf-off w)))))))))))))))
+    (when (zero? (logand (-> *display* integral-frame-counter) 127))
+      (let ((fphud (find-fp-hud-for-pass pass)))
         (format 0 "[HUD:fp-pass] pass=~D fphud=~A state=~A~%"
-                pass fphud (if fphud (-> (the-as first-person-hud fphud) state name) 'none)))
-      (when fphud
-        (spawn-particles! (the-as first-person-hud fphud)))))
+                pass fphud (if fphud (-> (the-as first-person-hud fphud) state name) 'none)))))
   (none))
 
 ;; ERROR: function was not converted to expressions. Cannot decompile.
