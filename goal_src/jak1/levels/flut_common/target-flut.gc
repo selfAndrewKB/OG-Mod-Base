@@ -7,6 +7,7 @@
 (require "engine/common-obs/water.gc")
 (require "levels/flut_common/flutflut.gc")
 (require "engine/common-obs/nav-enemy-h.gc")
+(define-extern target-camera (function target camera-master))
 
 ;; DECOMP BEGINS
 
@@ -1091,7 +1092,7 @@
                     (suspend-for (seconds 1))
                     (move-to-point! (-> self control) s4-1))
                   (set! (-> (&-> (-> self control) unknown-qword00) 0) (-> self control trans quad))
-                  (send-event *camera* 'teleport)
+                  (send-event (target-camera self) 'teleport)
                   (go target-flut-stance))
                  (else
                   (pickup-collectable! (-> self fact) (pickup-type eco-green) (the-as float -1000.0) (the-as handle #f))
@@ -1323,7 +1324,7 @@
         (vector<-cspace! gp-0 (joint-node eichar-lod0-jg main))
         (+! (-> gp-0 y) -5896.192)
         (move-to-point! (-> self control) gp-0))
-      (send-event *camera* 'ease-in)
+      (send-event (target-camera self) 'ease-in)
       (ja-channel-set! 0)
       (go target-flut-get-off-hit-ground #f))
   :post
