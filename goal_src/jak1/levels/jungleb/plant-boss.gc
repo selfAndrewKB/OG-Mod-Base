@@ -3,6 +3,7 @@
 (bundles "JUB.DGO")
 (require "levels/jungleb/aphid.gc")
 (declare-type plant-boss-leaf process-drawable)
+(define-extern *camera-p2* camera-master)
 
 ;; DECOMP BEGINS
 
@@ -1026,6 +1027,7 @@
       (let ((f30-1 (the-as float (if (ja-group? plant-boss-main-attack-ja) (fmax 129.0 (ja-aframe-num 0)) 129.0)))
             (gp-0 0))
         (send-event *camera* 'change-state cam-lookat 0)
+        (when *camera-p2* (send-event *camera-p2* 'change-state cam-lookat 0))
         (logior! (-> self skel status) (janim-status inited))
         (ja-channel-push! 2 (seconds 0.1))
         (ja :group! plant-boss-main-plant-boss-kill-ja :num! (identity (ja-aframe f30-1 0)))
