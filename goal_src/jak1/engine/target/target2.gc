@@ -410,11 +410,7 @@
                                              (the float 30000)
                                              (-> *math-camera* hvdf-off z)
                                              (-> *math-camera* hvdf-off w)))))))))))))))
-    (when (zero? (logand (-> *display* integral-frame-counter) 127))
-      (let ((fphud (find-fp-hud-for-pass pass)))
-        (format 0 "[HUD:fp-pass] pass=~D fphud=~A state=~A~%"
-                pass fphud (if fphud (-> (the-as first-person-hud fphud) state name) 'none)))))
-  (none))
+  (none)))
 
 ;; ERROR: function was not converted to expressions. Cannot decompile.
 

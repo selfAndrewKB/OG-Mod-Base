@@ -128,8 +128,8 @@
       (set! (-> self racer boost-sound-id) (new 'static 'sound-id))
       (set! (-> self racer scrape-sound-id) (new-sound-id))
       (set! (-> self racer entity) #f)
-      (let ((v1-28 (handle->process arg0))) 
-        (if (and (not *allow-zoomer-anywhere*) v1-28) ;; OG-modbase dont track entity, prevents crash on level deload
+      (let ((v1-28 (handle->process arg0)))
+        (when (and (not *allow-zoomer-anywhere*) v1-28) ;; OG-modbase dont track entity, prevents crash on level deload
           (set! (-> self racer entity) (-> v1-28 entity))))
       (set! (-> self control surf) *race-track-surface*)
       (set! (-> self control reaction) racer-collision-reaction)
@@ -185,11 +185,30 @@
       (set! (-> self racer slide-down-time 1) 0)
       (set! (-> self racer slide-interp) 0.0)
       (set! (-> self racer surface-y) (-> self control trans y))
-      (let ((s5-0 (-> self entity)))
-        (set! (-> self entity) (-> self racer entity))
-        (set! (-> self manipy)
-              (manipy-spawn (-> self control trans) (-> self entity) *racer-sg* #f :from *8k-dead-pool* :to self))
-        (set! (-> self entity) s5-0))
+      (let* ((rider-proc (handle->process arg0))
+             (dup-rider? (and rider-proc
+                              (type-type? (-> rider-proc type) racer)
+                              (not (zero? (-> (the-as racer rider-proc) player-index))))))
+        (let ((s5-0 (-> self entity)))
+          (set! (-> self entity) (-> self racer entity))
+          ;; The duplicate rider path stays on the safer default dead-pool path.
+          ;; Its mounted visual remains entityless; borrowing the source entity actor
+          ;; caused an immediate crash after GET-ON during P2-first mounts.
+          (set! (-> self manipy)
+                (if dup-rider?
+                  (manipy-spawn (-> self control trans) (-> self entity) *racer-sg* #f :to self)
+                  (manipy-spawn (-> self control trans) (-> self entity) *racer-sg* #f :from *8k-dead-pool* :to self)))
+          (set! (-> self entity) s5-0))
+        (when *multi-coop-active*
+          (format 0 "[VEH:racer-target] START tgt=~A pad=~D racer-entity=~A dup-rider=~A~%"
+            self
+            (-> self control unknown-cpad-info00 number)
+            (-> self racer entity)
+            dup-rider?)
+          (format 0 "[VEH:racer-target] START-HT surf-mode=~A hover-y=~M surface-y=~M~%"
+            (-> self control unknown-surface00 mode)
+            (-> self control unknown-vector11 y)
+            (-> self racer surface-y))))
       (when (-> self manipy)
         (send-event (ppointer->process (-> self manipy))
                     'trans-hook
@@ -212,12 +231,17 @@
                         (set! (-> *racer-shadow-control* settings shadow-dir quad) v1-1))
                       (set! (-> self draw shadow-ctrl) *racer-shadow-control*)
                       (let ((gp-0 (-> self parent)))
-                        (set! (-> (the-as target (-> gp-0 0)) racer front-blade) (new 'process 'joint-mod (joint-mod-handler-mode rotate) self 4))
-                        (set! (-> (the-as target (-> gp-0 0)) racer bottom-blade)
-                              (new 'process 'joint-mod (joint-mod-handler-mode rotate) self 10))
-                        (let ((v0-2 (new 'process 'joint-mod (joint-mod-handler-mode rotate) self 7)))
-                          (set! (-> (the-as target (-> gp-0 0)) racer tail) v0-2)
-                          v0-2)))))
+                        (set! (-> self joint 0) (new 'process 'joint-mod (joint-mod-handler-mode rotate) self 4))
+                        (set! (-> self joint 1) (new 'process 'joint-mod (joint-mod-handler-mode rotate) self 10))
+                        (set! (-> self joint 2) (new 'process 'joint-mod (joint-mod-handler-mode rotate) self 7))
+                        (set! (-> (the-as target (-> gp-0 0)) racer front-blade) (-> self joint 0))
+                        (set! (-> (the-as target (-> gp-0 0)) racer bottom-blade) (-> self joint 1))
+                        (set! (-> (the-as target (-> gp-0 0)) racer tail) (-> self joint 2))))))
+      (when (-> self manipy)
+        (let ((v1-2 (ppointer->process (-> self manipy))))
+          (set! (-> self racer front-blade) (-> (the-as manipy v1-2) joint 0))
+          (set! (-> self racer bottom-blade) (-> (the-as manipy v1-2) joint 1))
+          (set! (-> self racer tail) (-> (the-as manipy v1-2) joint 2))))
       (set-twist! (-> self racer front-blade) (the-as float #f) (- (-> self racer front-rot)) (the-as float #f))
       (set-twist! (-> self racer bottom-blade) (the-as float #f) (the-as float #f) (- (-> self racer bottom-rot)))
       (remove-exit)
@@ -790,32 +814,121 @@
               (send-event s4-1 'trans (-> self racer bike-trans))
               (quaternion-copy! (the-as quaternion (-> self racer bike-quat)) (-> s4-1 root quat))
               (set! (-> self racer bike-scale quad) (-> s4-1 root scale quad))
-              (set! (-> self control unknown-int21) (the-as int (-> self racer bike-trans y)))))
+              (set! (-> self control unknown-int21) (the-as int (-> self racer bike-trans y))))
+            (when *multi-coop-active*
+              (format 0 "[VEH:racer-target] GET-ON tgt=~A pad=~D rider=~A rider-entity=~A~%"
+                self
+                (-> self control unknown-cpad-info00 number)
+                s4-1
+                (if s4-1 (-> s4-1 entity) #f))
+              (format 0 "[VEH:racer-target] GET-ON-HT racer-entity=~A hover-y=~M bike-y=~M~%"
+                (-> self racer entity)
+                (-> self control unknown-vector11 y)
+                (-> self racer bike-trans y))))
           (set! (-> self control unknown-vector102 quad) (-> gp-0 quad))
           (set! (-> self control unknown-vector103 quad) (-> s5-0 quad))))
       (let ((s5-1 #f)
-            (gp-1 #f))
+            (gp-1 #f)
+            (s4-2 -1))
         (ja-channel-push! 1 (seconds 0.05))
         (ja-no-eval :group! eichar-racer-get-on-ja :num! (seek! (ja-aframe 77.0 0)) :frame-num 0.0)
         (until (ja-done? 0)
           (when (and (not s5-1) (= (-> self skel root-channel 0) (-> self skel channel)))
+            (when *multi-coop-active*
+              (format 0 "[VEH:racer-target] GET-ON clone-anim tgt=~A pad=~D~%"
+                self
+                (-> self control unknown-cpad-info00 number)))
             (send-event (ppointer->process (-> self manipy)) 'anim-mode 'clone-anim)
             (set! s5-1 #t))
           (set! (-> self control transv quad) (the-as uint128 0))
           (when (< 50.0 (ja-aframe-num 0))
             (when (not gp-1)
+              (when *multi-coop-active*
+                (format 0 "[VEH:racer-target] GET-ON pre-start-sound tgt=~A pad=~D frame=~D~%"
+                  self
+                  (-> self control unknown-cpad-info00 number)
+                  s4-2))
               (sound-play "zoomer-start")
+              (when *multi-coop-active*
+                (format 0 "[VEH:racer-target] GET-ON post-start-sound tgt=~A pad=~D~%"
+                  self
+                  (-> self control unknown-cpad-info00 number)))
               (set! gp-1 #t))
+            (when *multi-coop-active*
+              (format 0 "[VEH:racer-target] GET-ON pre-front-rotv tgt=~A pad=~D~%"
+                self
+                (-> self control unknown-cpad-info00 number)))
             (set! (-> self racer front-rotv) 65536.0)
+            (when *multi-coop-active*
+              (format 0 "[VEH:racer-target] GET-ON pre-front-rot tgt=~A pad=~D front=~M~%"
+                self
+                (-> self control unknown-cpad-info00 number)
+                (-> self racer front-rot)))
             (set! (-> self racer front-rot)
                   (the float (sar (shl (the int (+ (-> self racer front-rot) (* (-> self racer front-rotv) (seconds-per-frame)))) 48) 48)))
+            (when *multi-coop-active*
+              (format 0 "[VEH:racer-target] GET-ON pre-bottom-rot tgt=~A pad=~D bottom=~M~%"
+                self
+                (-> self control unknown-cpad-info00 number)
+                (-> self racer bottom-rot)))
             (+! (-> self racer bottom-rot) (* 364088.88 (seconds-per-frame)))
+            (when (-> self manipy)
+              (let ((v1-31 (ppointer->process (-> self manipy))))
+                (set! (-> self racer front-blade) (-> (the-as manipy v1-31) joint 0))
+                (set! (-> self racer bottom-blade) (-> (the-as manipy v1-31) joint 1))))
+            (when *multi-coop-active*
+              (format 0 "[VEH:racer-target] GET-ON pre-front-twist tgt=~A pad=~D mod=~A~%"
+                self
+                (-> self control unknown-cpad-info00 number)
+                (-> self racer front-blade)))
             (set-twist! (-> self racer front-blade) (the-as float #f) (- (-> self racer front-rot)) (the-as float #f))
+            (when *multi-coop-active*
+              (format 0 "[VEH:racer-target] GET-ON pre-bottom-twist tgt=~A pad=~D mod=~A~%"
+                self
+                (-> self control unknown-cpad-info00 number)
+                (-> self racer bottom-blade)))
             (set-twist! (-> self racer bottom-blade) (the-as float #f) (the-as float #f) (- (-> self racer bottom-rot))))
+          (when *multi-coop-active*
+            (let* ((f30-2 (ja-aframe-num 0))
+                   (s3-2 (the int f30-2)))
+              ;; Log only when the mount animation advances to a new frame.
+              (when (!= s3-2 s4-2)
+                (set! s4-2 s3-2)
+                (format 0 "[VEH:racer-target] GET-ON ja-frame tgt=~A pad=~D frame=~D clone=~A~%"
+                  self
+                  (-> self control unknown-cpad-info00 number)
+                  s3-2
+                  s5-1))))
+          (when *multi-coop-active*
+            (format 0 "[VEH:racer-target] GET-ON pre-suspend tgt=~A pad=~D~%"
+              self
+              (-> self control unknown-cpad-info00 number)))
           (suspend)
-          (ja :num! (seek! (ja-aframe 77.0 0)))))
+          (when *multi-coop-active*
+            (format 0 "[VEH:racer-target] GET-ON post-suspend tgt=~A pad=~D~%"
+              self
+              (-> self control unknown-cpad-info00 number)))
+          (when *multi-coop-active*
+            (format 0 "[VEH:racer-target] GET-ON pre-ja-step tgt=~A pad=~D frame=~D~%"
+              self
+              (-> self control unknown-cpad-info00 number)
+              s4-2))
+          (ja :num! (seek! (ja-aframe 77.0 0)))
+          (when *multi-coop-active*
+            (format 0 "[VEH:racer-target] GET-ON post-ja-step tgt=~A pad=~D~%"
+              self
+              (-> self control unknown-cpad-info00 number)))))
+      (when *multi-coop-active*
+        (format 0 "[VEH:racer-target] GET-ON pre-cam tgt=~A pad=~D cam=~A~%"
+          self
+          (-> self control unknown-cpad-info00 number)
+          (target-camera self)))
       (logclear! (-> self state-flags) (state-flags use-alt-cam-pos))
       (send-event (target-camera self) 'set-slave-option #x6000)
+      (when *multi-coop-active*
+        (format 0 "[VEH:racer-target] GET-ON post-cam tgt=~A pad=~D~%"
+          self
+          (-> self control unknown-cpad-info00 number)))
       (set! (-> self control transv quad) (the-as uint128 0))
       (quaternion-copy! (-> self control quat) (-> self control unknown-quaternion00))
       (rot->dir-targ! (-> self control))
@@ -862,6 +975,15 @@
         exit)
   :code
     (behavior ((arg0 handle))
+      (when *multi-coop-active*
+        (format 0 "[VEH:racer-target] GET-OFF tgt=~A pad=~D rider-h=~A racer-entity=~A~%"
+          self
+          (-> self control unknown-cpad-info00 number)
+          arg0
+          (-> self racer entity))
+        (format 0 "[VEH:racer-target] GET-OFF-HT hover-y=~M bike-y=~M~%"
+          (-> self control unknown-vector11 y)
+          (-> self racer bike-trans y)))
       (set-time! (-> self state-time))
       (set! (-> self control unknown-surface00) *racer-mods*)
       (let ((a0-2 (-> *hud-parts* bike-speed))) (if a0-2 (set! (-> a0-2 0 deactivate-when-hidden) #t)))

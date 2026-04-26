@@ -317,6 +317,10 @@
     (set! (-> self control unknown-vector11 y)
           (+ (-> self racer cushion-base) (-> self racer cushion-offset) (-> self racer shock-offset))))
   (quaternion-copy! (-> self control quat) (-> self control unknown-quaternion00))
+  (when (-> self manipy)
+    (let ((v1-245 (ppointer->process (-> self manipy))))
+      (set! (-> self racer front-blade) (-> (the-as manipy v1-245) joint 0))
+      (set! (-> self racer bottom-blade) (-> (the-as manipy v1-245) joint 1))))
   (set-twist! (-> self racer front-blade) (the-as float #f) (- (-> self racer front-rot)) (the-as float #f))
   (set-twist! (-> self racer bottom-blade) (the-as float #f) (the-as float #f) (- (-> self racer bottom-rot)))
   (if (and (= *cheat-mode* 'debug) (and (cpad-hold? (-> self control unknown-cpad-info00 number) r2) (not *pause-lock*)))
@@ -646,6 +650,9 @@
             (-> self racer turn-anim-targ)
             (-> self racer tail-anim-vel)
             (-> self racer tail-anim-frame)))
+  (when (-> self manipy)
+    (let ((v1-246 (ppointer->process (-> self manipy))))
+      (set! (-> self racer tail) (-> (the-as manipy v1-246) joint 2))))
   (set-twist! (-> self racer tail) (the-as float #f) (the-as float #f) (* -273.06668 (-> self racer tail-anim-frame)))
   (let ((f30-2 (fmin 1.0 (* 2.0 (fabs (-> self racer slide-shift-x))))))
     (ja :num-func num-func-identity :frame-num (ja-aframe (-> self racer turn-anim-frame) 0))
@@ -863,17 +870,76 @@
       (post-flag-setup))
     (set-time-ratios *display* (the float gp-0)))
   (target-compute-slopes *up-vector*)
+  (when (and *multi-coop-active*
+             (or (= (-> self state name) 'target-racing-get-on)
+                 (= (-> self state name) 'target-racing)))
+    (format 0 "[VEH:racer-post] enter tgt=~A pad=~D state=~A~%"
+      self
+      (-> self control unknown-cpad-info00 number)
+      (-> self state name)))
+  (when (and *multi-coop-active*
+             (or (= (-> self state name) 'target-racing-get-on)
+                 (= (-> self state name) 'target-racing)))
+    (format 0 "[VEH:racer-post] pre-effects tgt=~A pad=~D manipy=~A~%"
+      self
+      (-> self control unknown-cpad-info00 number)
+      (ppointer->process (-> self manipy))))
   (racer-effects)
+  (when (and *multi-coop-active*
+             (or (= (-> self state name) 'target-racing-get-on)
+                 (= (-> self state name) 'target-racing)))
+    (format 0 "[VEH:racer-post] post-effects tgt=~A pad=~D~%"
+      self
+      (-> self control unknown-cpad-info00 number)))
   (racer-sounds)
   (rot->dir-targ! (-> self control))
   (racer-bend-gravity)
   (ja-post)
+  (when (and *multi-coop-active*
+             (or (= (-> self state name) 'target-racing-get-on)
+                 (= (-> self state name) 'target-racing)))
+    (format 0 "[VEH:racer-post] post-ja tgt=~A pad=~D~%"
+      self
+      (-> self control unknown-cpad-info00 number)))
   (joint-points)
+  (when (and *multi-coop-active*
+             (or (= (-> self state name) 'target-racing-get-on)
+                 (= (-> self state name) 'target-racing)))
+    (format 0 "[VEH:racer-post] post-joint tgt=~A pad=~D~%"
+      self
+      (-> self control unknown-cpad-info00 number)))
   (do-target-shadow)
+  (when (and *multi-coop-active*
+             (or (= (-> self state name) 'target-racing-get-on)
+                 (= (-> self state name) 'target-racing)))
+    (format 0 "[VEH:racer-post] post-shadow tgt=~A pad=~D~%"
+      self
+      (-> self control unknown-cpad-info00 number)))
   (target-powerup-process)
+  (when (and *multi-coop-active*
+             (or (= (-> self state name) 'target-racing-get-on)
+                 (= (-> self state name) 'target-racing)))
+    (format 0 "[VEH:racer-post] post-powerup tgt=~A pad=~D~%"
+      self
+      (-> self control unknown-cpad-info00 number)))
   (vector+! (-> self racer bike-trans) (-> self control trans) (-> self control unknown-vector12))
   (quaternion-copy! (the-as quaternion (-> self racer bike-quat)) (-> self control quat))
   (set! (-> self racer bike-scale quad) (-> self control scale quad))
+  (when (and *multi-coop-active*
+             (= (-> self state name) 'target-racing)
+             (= (-> self control ground-pat material) (pat-material waterbottom))
+             (zero? (logand (current-time) 31)))
+    (format 0 "[VEH:racer-target] WATER tgt=~A pad=~D mode=~A onsurf=~A racer-entity=~A~%"
+      self
+      (-> self control unknown-cpad-info00 number)
+      (-> self control unknown-surface00 mode)
+      (logtest? (-> self control status) (cshape-moving-flags onsurf))
+      (-> self racer entity))
+    (format 0 "[VEH:racer-target] WATER-HT hover-y=~M bike-y=~M water-y=~M speed=~M~%"
+      (-> self control unknown-vector11 y)
+      (-> self racer bike-trans y)
+      (-> self water height)
+      (-> self control unknown-float01)))
   (let ((v1-240 (-> *target-shadow-control* settings shadow-dir quad)))
     (set! (-> *racer-shadow-control* settings shadow-dir quad) v1-240))
   0

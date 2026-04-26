@@ -1152,14 +1152,38 @@
   (none))
 
 (defbehavior target-no-ja-move-post target ()
+  (when (and *multi-coop-active* (= (-> self state name) 'target-racing-get-on))
+    (format 0 "[VEH:tpost] enter tgt=~A pad=~D~%"
+      self
+      (-> self control unknown-cpad-info00 number)))
   (vector-! (-> self control unknown-vector12) (-> self control unknown-vector11) (-> self control unknown-vector14))
+  (when (and *multi-coop-active* (= (-> self state name) 'target-racing-get-on))
+    (format 0 "[VEH:tpost] post-vector tgt=~A pad=~D~%"
+      self
+      (-> self control unknown-cpad-info00 number)))
   (let ((a1-2 (new 'stack-no-clear 'overlaps-others-params)))
     (set! (-> a1-2 options) (the-as uint 1))
     (set! (-> a1-2 tlist) *touching-list*)
     (find-overlapping-shapes (-> self control) a1-2))
+  (when (and *multi-coop-active* (= (-> self state name) 'target-racing-get-on))
+    (format 0 "[VEH:tpost] post-overlap tgt=~A pad=~D~%"
+      self
+      (-> self control unknown-cpad-info00 number)))
   (target-calc-camera-pos)
+  (when (and *multi-coop-active* (= (-> self state name) 'target-racing-get-on))
+    (format 0 "[VEH:tpost] post-campos tgt=~A pad=~D~%"
+      self
+      (-> self control unknown-cpad-info00 number)))
   (do-target-shadow)
+  (when (and *multi-coop-active* (= (-> self state name) 'target-racing-get-on))
+    (format 0 "[VEH:tpost] post-shadow tgt=~A pad=~D~%"
+      self
+      (-> self control unknown-cpad-info00 number)))
   (target-powerup-process)
+  (when (and *multi-coop-active* (= (-> self state name) 'target-racing-get-on))
+    (format 0 "[VEH:tpost] post-powerup tgt=~A pad=~D~%"
+      self
+      (-> self control unknown-cpad-info00 number)))
   (none))
 
 (defbehavior reset-target-state target ((arg0 symbol))

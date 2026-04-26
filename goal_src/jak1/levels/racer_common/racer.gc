@@ -186,14 +186,16 @@
         (go-virtual wait-for-return)
         (go-virtual idle))))
 
-;; Find the nearest unclaimed target within max-dist. Extracted from idle :code to keep its
-;; stack frame small enough for entity-pool processes (fixed 256-byte stack).
-(defun racer-find-nearest-target ((trans vector) (max-dist float))
+;; Find the nearest unclaimed target for the racer owner's pad. We key off the
+;; target's control pad number instead of *target-list* ordering because co-op
+;; target slots are not stable enough to treat "index N" as "player N".
+(defun racer-find-nearest-target ((trans vector) (max-dist float) (pad-idx int))
   (let ((tgt (the-as target #f))
         (best-dist max-dist))
     (dotimes (idx (-> *target-list* length))
       (let ((candidate (get-target idx)))
         (when (and candidate
+                   (= (-> candidate control unknown-cpad-info00 number) pad-idx)
                    (not (logtest? (-> candidate control root-prim prim-core action) (collide-action racer))))
           (let ((d (vector-vector-distance trans (-> candidate control trans))))
             (when (< d best-dist)
@@ -226,7 +228,7 @@
       (loop
         (if (not (zero? (-> self rider)))
           (go-virtual wait-for-return))
-        (let ((tgt (racer-find-nearest-target (-> self root trans) f30-0)))
+        (let ((tgt (racer-find-nearest-target (-> self root trans) f30-0 (-> self player-index))))
           (when (and tgt (not (movie?)) (not (level-hint-displayed?)))
             (cond
               ((zero? (-> self player-index))
@@ -244,10 +246,11 @@
                    (let ((event-result (send-event tgt 'change-mode 'racing self)))
                      (when event-result
                        (when *multi-coop-active*
-                         (format 0 "[VEH:racer] MOUNT self=~A pidx=~D tgt=~A~%"
+                         (format 0 "[VEH:racer] MOUNT self=~A pidx=~D tgt=~A tgt-pad=~D~%"
                            self
                            (-> self player-index)
-                           tgt))
+                           tgt
+                           (-> tgt control unknown-cpad-info00 number)))
                        ;; Claim the target immediately so the duplicate racer can't
                        ;; also accept the same circle press before target-racing-start
                        ;; sets the racer action bit on the next step.
@@ -257,10 +260,11 @@
                  (when (= (-> self condition) 4)
                    (when (send-event tgt 'change-mode 'racing self)
                      (when *multi-coop-active*
-                       (format 0 "[VEH:racer] AUTO-MOUNT self=~A pidx=~D tgt=~A~%"
+                       (format 0 "[VEH:racer] AUTO-MOUNT self=~A pidx=~D tgt=~A tgt-pad=~D~%"
                          self
                          (-> self player-index)
-                         tgt))
+                         tgt
+                         (-> tgt control unknown-cpad-info00 number)))
                      (logior! (-> tgt control root-prim prim-core action) (collide-action racer))
                      (set! (-> self rider) (process->handle tgt))
                      (go-virtual pickup (the-as (state collectable) (method-of-object self wait-for-return)))))))
@@ -269,10 +273,11 @@
                (when (and (cpad-pressed? (-> tgt control unknown-cpad-info00 number) circle)
                           (send-event tgt 'change-mode 'racing self))
                  (when *multi-coop-active*
-                   (format 0 "[VEH:racer] MOUNT self=~A pidx=~D tgt=~A~%"
+                   (format 0 "[VEH:racer] MOUNT self=~A pidx=~D tgt=~A tgt-pad=~D~%"
                      self
                      (-> self player-index)
-                     tgt))
+                     tgt
+                     (-> tgt control unknown-cpad-info00 number)))
                  (logior! (-> tgt control root-prim prim-core action) (collide-action racer))
                  (set! (-> self rider) (process->handle tgt))
                  (go-virtual pickup (the-as (state collectable) (method-of-object self wait-for-return))))))))
