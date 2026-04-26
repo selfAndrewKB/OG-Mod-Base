@@ -289,6 +289,15 @@
     (behavior ()
       (blocking-plane-destroy)
       (if (and (not *allow-zoomer-anywhere*) (zero? (-> self player-index))) (blocking-plane-spawn (the-as curve-control (-> self path-racer)))) ;;mod-base-change
+      ;; Pin the entity alive so actors-update won't deactivate it while being ridden.
+      ;; Racer-1 has entity=#f (entity-pool spawn); guard prevents dereferencing garbage.
+      (when (-> self entity)
+        (logior! (-> self entity extra perm status) (entity-perm-status bit-3)))
+      (none))
+  :exit
+    (behavior ()
+      (when (-> self entity)
+        (logclear! (-> self entity extra perm status) (entity-perm-status bit-3)))
       (none))
   :code
     (behavior ()
@@ -335,6 +344,7 @@
   (set! (-> self path) (-> self path-target))
   (set-vector! (-> self extra-trans) 0.0 6144.0 0.0 1.0)
   (set! (-> self auto-get-off) #f)
+  (set! (-> self entity) (the-as entity-actor #f))
   (set! (-> self rider) (the-as handle 0))
   (set! (-> self player-index) 1)
   (+! (-> self root trans x) arg1)
