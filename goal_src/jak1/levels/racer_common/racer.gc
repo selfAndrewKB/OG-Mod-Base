@@ -77,6 +77,43 @@
   0
   (none))
 
+(defun racer-pin-entity! ((r racer))
+  ;; Only the original racer is entity-backed. The co-op duplicate is an entity-pool
+  ;; clone with entity=#f, so pinning is a no-op there.
+  (when (and (zero? (-> r player-index)) (-> r entity))
+    (when *multi-coop-active*
+      (format 0 "[VEH:racer] PIN self=~A pidx=~D entity=~A rider-set=~A state=~A~%"
+        r
+        (-> r player-index)
+        (-> r entity)
+        (not (zero? (-> r rider)))
+        (if (-> r state) (-> r state name) 'none)))
+    (logior! (-> r entity extra perm status) (entity-perm-status bit-3))))
+
+(defun racer-unpin-entity! ((r racer))
+  ;; Keep the pin/unpin predicate symmetric so lifetime bugs don't drift between
+  ;; the original racer and the co-op duplicate.
+  (when (and (zero? (-> r player-index)) (-> r entity))
+    (when *multi-coop-active*
+      (format 0 "[VEH:racer] UNPIN self=~A pidx=~D entity=~A rider-set=~A state=~A~%"
+        r
+        (-> r player-index)
+        (-> r entity)
+        (not (zero? (-> r rider)))
+        (if (-> r state) (-> r state name) 'none)))
+    (logclear! (-> r entity extra perm status) (entity-perm-status bit-3))))
+
+(defmethod deactivate ((this racer))
+  (when *multi-coop-active*
+    (format 0 "[VEH:racer] DEACTIVATE self=~A pidx=~D entity=~A rider-set=~A state=~A~%"
+      this
+      (-> this player-index)
+      (-> this entity)
+      (not (zero? (-> this rider)))
+      (if (-> this state) (-> this state name) 'none)))
+  ((method-of-type process-drawable deactivate) this)
+  (none))
+
 (defstate wait-for-start (racer)
   :virtual #t
   :event
@@ -173,6 +210,8 @@
     (behavior ()
       (blocking-plane-destroy)
       (if (and (not *allow-zoomer-anywhere*) (zero? (-> self player-index))) (blocking-plane-spawn (-> self path-target)))
+      ;; Close the mount-frame gap before pickup/wait-for-return runs.
+      (racer-pin-entity! self)
       (none)) ;; mod-base-change
   :exit (-> (method-of-type racer wait-for-start) exit)
   :code
@@ -204,16 +243,37 @@
                  (when (cpad-pressed? (-> tgt control unknown-cpad-info00 number) circle)
                    (let ((event-result (send-event tgt 'change-mode 'racing self)))
                      (when event-result
+                       (when *multi-coop-active*
+                         (format 0 "[VEH:racer] MOUNT self=~A pidx=~D tgt=~A~%"
+                           self
+                           (-> self player-index)
+                           tgt))
+                       ;; Claim the target immediately so the duplicate racer can't
+                       ;; also accept the same circle press before target-racing-start
+                       ;; sets the racer action bit on the next step.
+                       (logior! (-> tgt control root-prim prim-core action) (collide-action racer))
                        (set! (-> self rider) (process->handle tgt))
                        (go-virtual pickup (the-as (state collectable) (method-of-object self wait-for-return))))))
                  (when (= (-> self condition) 4)
                    (when (send-event tgt 'change-mode 'racing self)
+                     (when *multi-coop-active*
+                       (format 0 "[VEH:racer] AUTO-MOUNT self=~A pidx=~D tgt=~A~%"
+                         self
+                         (-> self player-index)
+                         tgt))
+                     (logior! (-> tgt control root-prim prim-core action) (collide-action racer))
                      (set! (-> self rider) (process->handle tgt))
                      (go-virtual pickup (the-as (state collectable) (method-of-object self wait-for-return)))))))
               (else
                ;; co-op duplicate racer: skip singleton display gate
                (when (and (cpad-pressed? (-> tgt control unknown-cpad-info00 number) circle)
                           (send-event tgt 'change-mode 'racing self))
+                 (when *multi-coop-active*
+                   (format 0 "[VEH:racer] MOUNT self=~A pidx=~D tgt=~A~%"
+                     self
+                     (-> self player-index)
+                     tgt))
+                 (logior! (-> tgt control root-prim prim-core action) (collide-action racer))
                  (set! (-> self rider) (process->handle tgt))
                  (go-virtual pickup (the-as (state collectable) (method-of-object self wait-for-return))))))))
         (racer-effect)
@@ -287,17 +347,20 @@
            (else (set! (-> self draw shadow) #f) #f)))))
   :enter
     (behavior ()
+      (when *multi-coop-active*
+        (format 0 "[VEH:racer] wait-for-return ENTER self=~A pidx=~D entity=~A rider-set=~A~%"
+          self
+          (-> self player-index)
+          (-> self entity)
+          (not (zero? (-> self rider)))))
       (blocking-plane-destroy)
       (if (and (not *allow-zoomer-anywhere*) (zero? (-> self player-index))) (blocking-plane-spawn (the-as curve-control (-> self path-racer)))) ;;mod-base-change
-      ;; Pin the entity alive so actors-update won't deactivate it while being ridden.
-      ;; Racer-1 has entity=#f (entity-pool spawn); guard prevents dereferencing garbage.
-      (when (-> self entity)
-        (logior! (-> self entity extra perm status) (entity-perm-status bit-3)))
+      ;; Re-assert the pin for the ridden state too; helper keeps the guard symmetric.
+      (racer-pin-entity! self)
       (none))
   :exit
     (behavior ()
-      (when (-> self entity)
-        (logclear! (-> self entity extra perm status) (entity-perm-status bit-3)))
+      (racer-unpin-entity! self)
       (none))
   :code
     (behavior ()
@@ -347,6 +410,13 @@
   (set! (-> self entity) (the-as entity-actor #f))
   (set! (-> self rider) (the-as handle 0))
   (set! (-> self player-index) 1)
+  (when *multi-coop-active*
+    (format 0 "[VEH:racer] init-by-other self=~A pidx=~D entity=~A src-entity=~A xoff=~M~%"
+      self
+      (-> self player-index)
+      (-> self entity)
+      arg0
+      arg1))
   (+! (-> self root trans x) arg1)
   (move-to-ground (-> self root) 40960.0 40960.0 #t (collide-kind background))
   (set! (-> self cell) (the-as handle #f))
@@ -388,6 +458,11 @@
   (set! (-> this auto-get-off) #f)
   (set! (-> this rider) (the-as handle 0))
   (set! (-> this player-index) 0)
+  (when *multi-coop-active*
+    (format 0 "[VEH:racer] init-from-entity self=~A pidx=~D entity=~A~%"
+      this
+      (-> this player-index)
+      (-> this entity)))
   (move-to-ground (-> this root) 40960.0 40960.0 #t (collide-kind background))
   (set! (-> this cell) (the-as handle #f))
   (if (not *allow-zoomer-anywhere*) ;;mod-base-change
@@ -398,6 +473,8 @@
                                     (-> this path-target)))))
   (set! (-> this sound) (new 'process 'ambient-sound (static-sound-spec "zoom-teleport" :fo-max 30) (-> this root trans)))
   (when *multi-coop-active*
-    (process-spawn racer :init racer-init-by-other arg0 (meters 2.5) :to *entity-pool*))
+    ;; Spawn the duplicate outside the 5m mount radius so "mount the original"
+    ;; and "mount the duplicate" are distinct interactions instead of a same-frame race.
+    (process-spawn racer :init racer-init-by-other arg0 (meters 6) :to *entity-pool*))
   (go (method-of-object this wait-for-start))
   (none))
