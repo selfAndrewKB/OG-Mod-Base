@@ -155,7 +155,8 @@
     (set! (-> s4-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s4-0 reaction) default-collision-reaction)
     (set! (-> s4-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s4-0 1)
+    ;; Co-op: allow both targets to ride the bridge/platform pieces together.
+    (alloc-riders s4-0 NUM_MAX_TARGET)
     (let ((s3-0 (new 'process 'collide-shape-prim-group s4-0 (the-as uint 1) 0)))
       (set! (-> s3-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s3-0 collide-with) (collide-kind target))
@@ -222,7 +223,8 @@
     (set! (-> s4-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s4-0 reaction) default-collision-reaction)
     (set! (-> s4-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s4-0 1)
+    ;; Co-op: allow both targets to ride the bridge/platform pieces together.
+    (alloc-riders s4-0 NUM_MAX_TARGET)
     (let ((s3-0 (new 'process 'collide-shape-prim-group s4-0 (the-as uint 3) 0)))
       (set! (-> s3-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s3-0 collide-with) (collide-kind target))
@@ -311,7 +313,8 @@
     (set! (-> s4-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s4-0 reaction) default-collision-reaction)
     (set! (-> s4-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s4-0 1)
+    ;; Co-op: allow both targets to ride the bridge/platform pieces together.
+    (alloc-riders s4-0 NUM_MAX_TARGET)
     (let ((s3-0 (new 'process 'collide-shape-prim-mesh s4-0 (the-as uint 0) (the-as uint 0))))
       (set! (-> s3-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s3-0 collide-with) (collide-kind target))
@@ -454,13 +457,15 @@
       (ja :group! precurbridge-idle-ja :num! min)
       (transform-post)
       (loop
-        (when (and *target*
-                   (< (vector-vector-xz-distance (-> self activation-point) (-> *target* control trans)) 49152.0)
-                   (< (-> self activation-point y) (-> *target* control trans y))
-                   (< (-> *target* control trans y) (+ 20480.0 (-> self activation-point y)))
-                   (not (-> self child)))
-          (cond
-            ((send-event *target* 'query 'powerup (pickup-type eco-blue))
+        (dotimes (idx (-> *target-list* length))
+          (let ((tgt (get-target idx)))
+            (when (and tgt
+                       (< (vector-vector-xz-distance (-> self activation-point) (-> tgt control trans)) 49152.0)
+                       (< (-> self activation-point y) (-> tgt control trans y))
+                       (< (-> tgt control trans y) (+ 20480.0 (-> self activation-point y)))
+                       (not (-> self child)))
+              (cond
+                ((target-has-powerup? tgt (pickup-type eco-blue))
              (logclear! (-> self mask) (process-mask actor-pause))
              (logclear! (-> self mask) (process-mask platform))
              (let ((gp-1 (entity-by-name "junglecam-1")))
@@ -477,9 +482,9 @@
                                  '()
                                  :to
                                  self))
-                 (else (format #t "ERROR<GMJ>: position for precursor bridge camera not found~%") (go precurbridge-activate)))))
-            (else
-             (level-hint-spawn (text-id sidekick-hint-precurbridge) "sksp0039" (the-as entity #f) *entity-pool* (game-task none)))))
+                     (else (format #t "ERROR<GMJ>: position for precursor bridge camera not found~%") (go precurbridge-activate)))))
+                (else
+                 (level-hint-spawn (text-id sidekick-hint-precurbridge) "sksp0039" (the-as entity #f) *entity-pool* (game-task none)))))))
         (suspend)))
   :post ja-post)
 
@@ -494,7 +499,9 @@
       (sound-play "blue-eco-on" :position (the-as symbol (-> self root trans)))
       (ja-no-eval :group! precurbridge-idle-ja :num! (seek! max 0.25) :frame-num 0.0)
       (until (ja-done? 0)
-        (if (rand-vu-percent? 0.1) (spawn-projectile-blue *target*))
+        (if (rand-vu-percent? 0.1)
+          (spawn-projectile-blue (let ((tgt (target-with-powerup-near (-> self activation-point) 49152.0 (pickup-type eco-blue))))
+                                   (if tgt tgt *target*))))
         (suspend)
         (ja :num! (seek! max 0.25)))
       (go precurbridge-active #f))
@@ -544,7 +551,8 @@
     (set! (-> s4-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s4-0 reaction) default-collision-reaction)
     (set! (-> s4-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s4-0 1)
+    ;; Co-op: allow both targets to ride the bridge/platform pieces together.
+    (alloc-riders s4-0 NUM_MAX_TARGET)
     (let ((s3-0 (new 'process 'collide-shape-prim-group s4-0 (the-as uint 16) 0)))
       (set! (-> s3-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s3-0 collide-with) (collide-kind target))
@@ -721,13 +729,13 @@
       (suspend)
       (update-transforms! (-> self root))
       (loop
+        (let ((tgt (target-near (-> self root trans) (-> self thresh w))))
         (when (or (and (-> self entity) (logtest? (-> self entity extra perm status) (entity-perm-status complete)))
-                  (and (and *target* (>= (-> self thresh w) (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-                       (send-event *target* 'query 'powerup (pickup-type eco-blue))))
+                  (and tgt (target-has-powerup? tgt (pickup-type eco-blue))))
           (sound-play "blue-eco-on" :position (the-as symbol (-> self root trans)))
           (go maindoor-open #f))
-        (if (and *target* (>= (-> self thresh w) (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-          (level-hint-spawn (text-id sidekick-hint-rounddoor) "sksp0038" (the-as entity #f) *entity-pool* (game-task none)))
+        (if tgt
+          (level-hint-spawn (text-id sidekick-hint-rounddoor) "sksp0038" (the-as entity #f) *entity-pool* (game-task none))))
         (when (ja-min? 0)
           (set! (-> self root root-prim prim-core action) (collide-action solid))
           (set! (-> self root root-prim prim-core offense) (collide-offense indestructible)))
@@ -746,7 +754,9 @@
       (set! (-> self root root-prim prim-core offense) (collide-offense no-offense))
       (while (not (ja-max? 0))
         (ja :num! (seek! max 2.0))
-        (if (and (not arg0) (rand-vu-percent? 0.2)) (spawn-projectile-blue *target*))
+        (if (and (not arg0) (rand-vu-percent? 0.2))
+          (spawn-projectile-blue (let ((tgt (target-with-powerup-near (-> self root trans) (-> self thresh w) (pickup-type eco-blue))))
+                                   (if tgt tgt *target*))))
         (suspend))
       (logior! (-> self draw status) (draw-status hidden))
       (loop
@@ -771,8 +781,7 @@
   (update-transforms! (-> this root))
   (set! (-> this thresh w) 61440.0)
   (if (or (and (-> this entity) (logtest? (-> this entity extra perm status) (entity-perm-status complete)))
-          (and (and *target* (>= (-> this thresh w) (vector-vector-distance (-> this root trans) (-> *target* control trans))))
-               (send-event *target* 'query 'powerup (pickup-type eco-blue))))
+          (target-with-powerup-near (-> this root trans) (-> this thresh w) (pickup-type eco-blue)))
     (go maindoor-open #t)
     (go maindoor-closed #t))
   (none))

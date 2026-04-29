@@ -1219,13 +1219,14 @@
         (('trans) (move-to-point! (-> self root) (the-as vector (-> block param 0))) (update-transforms! (-> self root)))))
   :trans
     (behavior ()
-      (when (and *target* (>= (-> self active-distance) (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-        (cond
-          ((send-event *target* 'query 'powerup (pickup-type eco-blue)) (go launcher-active))
-          (else (let ((gp-0 'target-launch)) (if (= (send-event *target* 'query 'mode) gp-0) (send-event *target* 'end-mode)))))
-        (if (and (and *target* (>= 32768.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-                 (not (send-event *target* 'query 'powerup (pickup-type eco-blue))))
-          (level-hint-spawn (text-id sidekick-hint-launcher) "sksp0035" (the-as entity #f) *entity-pool* (game-task none)))))
+      (let ((tgt (target-near (-> self root trans) (-> self active-distance))))
+        (when tgt
+          (cond
+            ((target-has-powerup? tgt (pickup-type eco-blue)) (go launcher-active))
+            (else (let ((gp-0 'target-launch)) (if (= (send-event tgt 'query 'mode) gp-0) (send-event tgt 'end-mode)))))
+          (if (and (>= 32768.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
+                   (not (target-has-powerup? tgt (pickup-type eco-blue))))
+            (level-hint-spawn (text-id sidekick-hint-launcher) "sksp0035" (the-as entity #f) *entity-pool* (game-task none))))))
   :code anim-loop)
 
 (defstate launcher-active (launcher)
@@ -1251,17 +1252,15 @@
         (-> v1-0 id)))
   :trans
     (behavior ()
-      (if (or (or (not *target*)
-                  (< (-> self active-distance) (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-              (not (send-event *target* 'query 'powerup (pickup-type eco-blue))))
-        (go launcher-idle))
-      (spawn (-> self part) (-> self root trans))
-      (sound-play "launch-idle" :id (-> self sound-id))
-      (if (and (and *target*
-                    (>= (+ 2867.2 (-> self root root-prim prim-core world-sphere w))
-                        (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-               (not (time-elapsed? (-> self state-time) (seconds 0.5))))
-        (send-event *target* 'launch (-> self spring-height) (-> self camera) (-> self dest) (-> self seek-time))))
+      (let ((tgt (target-with-powerup-near (-> self root trans) (-> self active-distance) (pickup-type eco-blue))))
+        (if (not tgt)
+          (go launcher-idle))
+        (spawn (-> self part) (-> self root trans))
+        (sound-play "launch-idle" :id (-> self sound-id))
+        (if (and (>= (+ 2867.2 (-> self root root-prim prim-core world-sphere w))
+                     (vector-vector-distance (-> self root trans) (-> tgt control trans)))
+                 (not (time-elapsed? (-> self state-time) (seconds 0.5))))
+          (send-event tgt 'launch (-> self spring-height) (-> self camera) (-> self dest) (-> self seek-time)))))
   :code
     (behavior ()
       (sound-play "launch-start")

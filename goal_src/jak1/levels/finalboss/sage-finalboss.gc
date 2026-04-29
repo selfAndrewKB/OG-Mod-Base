@@ -88,7 +88,9 @@
       (process-entity-status! self (entity-perm-status complete) #t)
       (cond
         (arg0)
-        (else (dotimes (gp-1 5) (spawn-projectile-blue *target*)))))
+        (else
+         (let ((tgt (target-with-powerup-near (-> self root trans) 81920.0 (pickup-type eco-yellow))))
+           (dotimes (gp-1 5) (spawn-projectile-blue (if tgt tgt *target*)))))))
   :trans
     (behavior ()
       (let ((s5-0 (eval-path-curve! (-> self path) (new 'stack-no-clear 'vector) 0.0 'interp))
@@ -98,7 +100,8 @@
               (cond
                 ((>= (-> self force-dest) 0.0) (-> self force-dest))
                 ((>= (-> self targ-dest) 0.0) (-> self targ-dest))
-                ((< (vector-vector-xz-distance (target-pos 0) s5-0) (vector-vector-xz-distance (target-pos 0) gp-0)) 0.0)
+                ((let ((tgt (target-near (-> self root trans) 81920.0)))
+                   (and tgt (< (vector-vector-xz-distance (target-pos-for tgt 0) s5-0) (vector-vector-xz-distance (target-pos-for tgt 0) gp-0)))) 0.0)
                 (else 0.99))))
       (if (= (-> self state-time) (current-time)) (set! (-> self path-pos) (-> self dest)))
       (seek! (-> self path-pos) (-> self dest) (* (-> self speed) (seconds-per-frame)))
@@ -106,7 +109,7 @@
       (if (< (vector-vector-distance (-> self root trans) (ear-trans)) 81920.0)
         (sound-play "eco-plat-hover" :id (-> self sound-id) :position (the-as symbol (-> self root trans))))
       (plat-trans)
-      (when (send-event *target* 'query 'powerup (pickup-type eco-yellow))
+      (when (target-with-powerup-near (-> self root trans) 81920.0 (pickup-type eco-yellow))
         (process-entity-status! self (entity-perm-status complete) #t)
         (set! (-> self force-dest) 0.0))))
 

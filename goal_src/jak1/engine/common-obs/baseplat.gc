@@ -156,14 +156,15 @@ eco-door-event-handler
       (update-transforms! (-> self root))
       (ja-post)
       (loop
-        (when (and *target* (>= (-> self open-distance) (vector-vector-distance (-> self root trans) (-> *target* control trans))))
+        (let ((tgt (target-near (-> self root trans) (-> self open-distance))))
+        (when tgt
           (eco-door-method-26 self)
           (if (and (not (-> self locked))
                    (or (and (-> self entity) (logtest? (-> self entity extra perm status) (entity-perm-status complete)))
-                       (send-event *target* 'query 'powerup (pickup-type eco-blue))
-                       (and (-> self one-way) (< (vector4-dot (-> self out-dir) (target-pos 0)) -8192.0))))
+                       (target-has-powerup? tgt (pickup-type eco-blue))
+                       (and (-> self one-way) (< (vector4-dot (-> self out-dir) (target-pos-for tgt 0)) -8192.0))))
             (go-virtual door-opening))
-          (level-hint-spawn (text-id zero) (the-as string #f) (-> self entity) *entity-pool* (game-task none)))
+          (level-hint-spawn (text-id zero) (the-as string #f) (-> self entity) *entity-pool* (game-task none))))
         (suspend))))
 
 (defstate door-opening (eco-door)
@@ -171,14 +172,15 @@ eco-door-event-handler
   :event eco-door-event-handler
   :code
     (behavior ()
-      (let ((gp-0 (and (not (and (-> self entity) (logtest? (-> self entity extra perm status) (entity-perm-status complete))))
-                       (send-event *target* 'query 'powerup (pickup-type eco-blue)))))
+      (let* ((tgt (target-with-powerup-near (-> self root trans) (-> self open-distance) (pickup-type eco-blue)))
+             (gp-0 (and (not (and (-> self entity) (logtest? (-> self entity extra perm status) (entity-perm-status complete))))
+                        tgt)))
         (if gp-0 (sound-play "blue-eco-on" :position (the-as symbol (-> self root trans))))
         (sound-play-by-name (-> self open-sound) (new-sound-id) 1024 0 0 (sound-group sfx) #t)
         (clear-collide-with-as (-> self root))
         (until (ja-done? 0)
           (ja :num! (seek! max (-> self speed)))
-          (if (and gp-0 (rand-vu-percent? 0.5)) (spawn-projectile-blue *target*))
+          (if (and gp-0 (rand-vu-percent? 0.5)) (spawn-projectile-blue tgt))
           (suspend)))
       (go-virtual door-open))
   :post transform-post)
@@ -197,11 +199,14 @@ eco-door-event-handler
       (update-transforms! (-> self root))
       (ja-post)
       (loop
-        (let ((f30-0 (vector4-dot (-> self out-dir) (target-pos 0)))
+        (let* ((tgt (target-near (-> self root trans) (-> self close-distance)))
+               (f30-0 (vector4-dot (-> self out-dir)
+                                    (if tgt
+                                      (target-pos-for tgt 0)
+                                      (if *target* (target-pos 0) (camera-pos)))))
               (f28-0 (vector4-dot (-> self out-dir) (camera-pos))))
           (when (and (-> self auto-close)
-                     (or (not *target*)
-                         (< (-> self close-distance) (vector-vector-distance (-> self root trans) (-> *target* control trans)))))
+                     (not tgt))
             (if (and (>= (* f30-0 f28-0) 0.0) (< 16384.0 (fabs f28-0))) (go-virtual door-closing))))
         (suspend))))
 

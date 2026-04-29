@@ -255,8 +255,7 @@
     (if a0-1 (send-event a0-1 'notify (if arg0 1 2) (-> this charger-id)))))
 
 (defmethod blue-eco-charger-method-20 ((this blue-eco-charger))
-  (and (and *target* (>= 16384.0 (vector-vector-distance (-> this root trans) (-> *target* control trans))))
-       (send-event *target* 'query 'powerup (pickup-type eco-blue))))
+  (target-with-powerup-near (-> this root trans) 16384.0 (pickup-type eco-blue)))
 
 (defstate blue-eco-charger-idle (blue-eco-charger)
   :code
@@ -266,9 +265,9 @@
       (ja :group! blue-eco-charger-open-ja :num! min)
       (loop
         (when (logtest? (-> self draw status) (draw-status was-drawn))
-          (if (and (and *target* (>= 16384.0 (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-                   (not (send-event *target* 'query 'powerup (pickup-type eco-blue))))
-            (level-hint-spawn (text-id sunken-blue-eco-charger-hint) "sksp0125" (the-as entity #f) *entity-pool* (game-task none))))
+          (let ((tgt (target-near (-> self root trans) 16384.0)))
+          (if (and tgt (not (target-has-powerup? tgt (pickup-type eco-blue))))
+            (level-hint-spawn (text-id sunken-blue-eco-charger-hint) "sksp0125" (the-as entity #f) *entity-pool* (game-task none)))))
         (when (blue-eco-charger-method-20 self)
           (increment-success-for-hint (text-id sunken-blue-eco-charger-hint))
           (go blue-eco-charger-open #t))
@@ -757,7 +756,8 @@
     (set! (-> s4-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s4-0 reaction) default-collision-reaction)
     (set! (-> s4-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s4-0 1)
+    ;; Co-op: the exit chamber is a rideable platform surface too.
+    (alloc-riders s4-0 NUM_MAX_TARGET)
     (let ((s3-0 (new 'process 'collide-shape-prim-mesh s4-0 (the-as uint 0) (the-as uint 0))))
       (set! (-> s3-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s3-0 collide-with) (collide-kind target))

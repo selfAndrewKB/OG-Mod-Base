@@ -74,7 +74,8 @@
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s5-0 reaction) default-collision-reaction)
     (set! (-> s5-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s5-0 1)
+    ;; Co-op: Citadel platforms can carry both players without rider-slot churn.
+    (alloc-riders s5-0 NUM_MAX_TARGET)
     (let ((s4-0 (new 'process 'collide-shape-prim-mesh s5-0 (the-as uint 0) (the-as uint 0))))
       (set! (-> s4-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s4-0 collide-with) (collide-kind target))
@@ -116,7 +117,8 @@
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s5-0 reaction) default-collision-reaction)
     (set! (-> s5-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s5-0 1)
+    ;; Co-op: Citadel platforms can carry both players without rider-slot churn.
+    (alloc-riders s5-0 NUM_MAX_TARGET)
     (let ((s4-0 (new 'process 'collide-shape-prim-mesh s5-0 (the-as uint 0) (the-as uint 0))))
       (set! (-> s4-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s4-0 collide-with) (collide-kind target))
@@ -168,7 +170,8 @@
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s5-0 reaction) default-collision-reaction)
     (set! (-> s5-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s5-0 1)
+    ;; Co-op: Citadel platforms can carry both players without rider-slot churn.
+    (alloc-riders s5-0 NUM_MAX_TARGET)
     (let ((s4-0 (new 'process 'collide-shape-prim-mesh s5-0 (the-as uint 0) (the-as uint 0))))
       (set! (-> s4-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s4-0 collide-with) (collide-kind target))
@@ -346,9 +349,7 @@
     (behavior ()
       (when (time-elapsed? (-> self state-time) (seconds 0.1))
         (set-time! (-> self state-time))
-        (if (and (and *target*
-                      (>= (-> self info idle-distance) (vector-vector-distance (-> self root-overlay trans) (-> *target* control trans))))
-                 (send-event *target* 'query 'powerup (pickup-type eco-blue)))
+        (if (target-with-powerup-near (-> self root-overlay trans) (-> self info idle-distance) (pickup-type eco-blue))
           (go-virtual rigid-body-platform-float))))
   :code
     (behavior ()
@@ -367,11 +368,10 @@
   :trans
     (behavior ()
       (cond
-        ((and (and *target*
-                   (>= (-> self info idle-distance) (vector-vector-distance (-> self root-overlay trans) (-> *target* control trans))))
-              (send-event *target* 'query 'powerup (pickup-type eco-blue)))
+        ((target-with-powerup-near (-> self root-overlay trans) (-> self info idle-distance) (pickup-type eco-blue))
          (when (not (time-elapsed? (-> self state-time) (seconds 1)))
-           (if (rand-vu-percent? 0.05) (spawn-projectile-blue *target*)))
+           (if (rand-vu-percent? 0.05)
+             (spawn-projectile-blue (target-with-powerup-near (-> self root-overlay trans) (-> self info idle-distance) (pickup-type eco-blue)))))
          (seek! (-> self float-height-offset) (-> self float-offset) (* 8192.0 (seconds-per-frame)))
          (draw-eco-beam (-> self root-overlay trans) (-> self beam-end))
          (update-trans! (-> self sound) (-> self root-overlay trans))
@@ -415,7 +415,8 @@
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s5-0 reaction) default-collision-reaction)
     (set! (-> s5-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s5-0 1)
+    ;; Co-op: Citadel platforms can carry both players without rider-slot churn.
+    (alloc-riders s5-0 NUM_MAX_TARGET)
     (let ((s4-0 (new 'process 'collide-shape-prim-mesh s5-0 (the-as uint 0) (the-as uint 0))))
       (set! (-> s4-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s4-0 collide-with) (collide-kind target))
@@ -482,7 +483,8 @@
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s5-0 reaction) default-collision-reaction)
     (set! (-> s5-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s5-0 1)
+    ;; Co-op: Citadel platforms can carry both players without rider-slot churn.
+    (alloc-riders s5-0 NUM_MAX_TARGET)
     (let ((s4-0 (new 'process 'collide-shape-prim-mesh s5-0 (the-as uint 0) (the-as uint 0))))
       (set! (-> s4-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s4-0 collide-with) (collide-kind target))
@@ -526,7 +528,8 @@
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s5-0 reaction) default-collision-reaction)
     (set! (-> s5-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s5-0 1)
+    ;; Co-op: Citadel platforms can carry both players without rider-slot churn.
+    (alloc-riders s5-0 NUM_MAX_TARGET)
     (let ((s4-0 (new 'process 'collide-shape-prim-mesh s5-0 (the-as uint 0) (the-as uint 0))))
       (set! (-> s4-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s4-0 collide-with) (collide-kind target))
@@ -577,7 +580,8 @@
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s5-0 reaction) default-collision-reaction)
     (set! (-> s5-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s5-0 1)
+    ;; Co-op: Citadel platforms can carry both players without rider-slot churn.
+    (alloc-riders s5-0 NUM_MAX_TARGET)
     (let ((s4-0 (new 'process 'collide-shape-prim-mesh s5-0 (the-as uint 0) (the-as uint 0))))
       (set! (-> s4-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s4-0 collide-with) (collide-kind target))
@@ -826,7 +830,8 @@
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s5-0 reaction) default-collision-reaction)
     (set! (-> s5-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s5-0 1)
+    ;; Co-op: Citadel platforms can carry both players without rider-slot churn.
+    (alloc-riders s5-0 NUM_MAX_TARGET)
     (let ((s4-0 (new 'process 'collide-shape-prim-group s5-0 (the-as uint 2) 0)))
       (set! (-> s4-0 prim-core collide-as) (collide-kind ground-object))
       (set! (-> s4-0 collide-with) (collide-kind target))

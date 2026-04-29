@@ -165,6 +165,35 @@
     )
   )
 
+;; Co-op singleton helpers: many vanilla doors/platforms asked only *target*
+;; whether P1 had eco. Keep the target-list scan centralized so level scripts
+;; can ask "which nearby player is eligible?" without open-coding handle guards.
+(defun target-has-powerup? ((tgt target) (kind pickup-type))
+  "Return true when this target currently owns the requested eco powerup."
+  (and (= (-> tgt fact eco-type) kind) (< 0.0 (-> tgt fact eco-level))))
+
+;; Returns the owning target so callers can also route owner-specific effects
+;; like blue projectiles or launches to the player that actually powered it.
+(defun target-with-powerup-near ((pos vector) (dist float) (kind pickup-type))
+  "Find any active target near pos that currently owns the requested eco powerup."
+  (dotimes (idx (-> *target-list* length))
+    (let ((tgt (get-target idx)))
+      (when (and tgt
+                 (>= dist (vector-vector-distance pos (-> tgt control trans)))
+                 (target-has-powerup? tgt kind))
+        (return tgt))))
+  (the-as target #f))
+
+;; Non-powerup proximity companion for hints/autoclose logic. Prefer this over
+;; *target* distance checks when any player should keep a mechanism awake/open.
+(defun target-near ((pos vector) (dist float))
+  "Find any active target near pos."
+  (dotimes (idx (-> *target-list* length))
+    (let ((tgt (get-target idx)))
+      (when (and tgt (>= dist (vector-vector-distance pos (-> tgt control trans))))
+        (return tgt))))
+  (the-as target #f))
+
 (deftype sidekick (process-drawable)
   ((parent-override  (pointer target) :overlay-at parent)
    (control          control-info :overlay-at root)

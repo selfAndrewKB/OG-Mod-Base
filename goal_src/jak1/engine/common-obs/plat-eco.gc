@@ -40,7 +40,7 @@
         (('wake) (go-virtual plat-path-active (the-as plat #f)))
         (('eco-blue) (go-virtual notice-blue (process->handle proc)))
         (('ridden 'edge-grabbed)
-         (when (send-event *target* 'query 'powerup (pickup-type eco-blue))
+         (when (and (= (-> proc type) target) (target-has-powerup? (the-as target proc) (pickup-type eco-blue)))
            (send-to-all (-> self link) 'wake)
            (go-virtual plat-path-active (the-as plat #f))))))
   :enter
@@ -48,11 +48,10 @@
       (lods-assign! (-> self draw) (-> self unlit-look)))
   :trans
     (behavior ()
-      (when (and (and *target* (>= (-> self notice-dist) (vector-vector-distance (-> self root trans) (-> *target* control trans))))
-                 (send-event *target* 'query 'powerup (pickup-type eco-blue)))
+      (when (target-with-powerup-near (-> self root trans) (-> self notice-dist) (pickup-type eco-blue))
         (send-to-all (-> self link) 'wake)
         (go-virtual plat-path-active (the-as plat #f)))
-      (if (and *target* (>= (-> self notice-dist) (vector-vector-distance (-> self root trans) (-> *target* control trans))))
+      (if (target-near (-> self root trans) (-> self notice-dist))
         (level-hint-spawn (text-id misty-eco-plat) "sksp0073" (the-as entity #f) *entity-pool* (game-task none))))
   :code
     (behavior ()
@@ -70,7 +69,7 @@
          (sound-play "blue-eco-on" :position (the-as symbol (-> self root trans)))
          (go-virtual plat-path-active (the-as plat #f)))
         (('ridden 'edge-grabbed)
-         (when (send-event *target* 'query 'powerup (pickup-type eco-blue))
+         (when (and (= (-> proc type) target) (target-has-powerup? (the-as target proc) (pickup-type eco-blue)))
            (send-to-all (-> self link) 'wake)
            (go-virtual plat-path-active (the-as plat #f))))))
   :trans
@@ -82,7 +81,7 @@
         (set! (-> a1-0 message) 'query)
         (set! (-> a1-0 param 0) (the-as uint 'powerup))
         (set! (-> a1-0 param 1) (the-as uint 3))
-        (if (and (not (send-event-function *target* a1-0))
+        (if (and (not (target-with-powerup-near (-> self root trans) (-> self notice-dist) (pickup-type eco-blue)))
                  (begin
                    (logior! (-> self mask) (process-mask sleep-code))
                    (not (-> self bouncing))))
@@ -140,8 +139,9 @@
          (let ((f0-5 (-> self sync-offset-dest))) (set! (-> self sync offset) f0-5) (set! (-> self sync-offset-faux) f0-5)))
         (else
          (process-entity-status! self (entity-perm-status complete) #t)
-         (dotimes (gp-1 5)
-           (spawn-projectile-blue *target*)))))
+         (let ((tgt (target-with-powerup-near (-> self root trans) (-> self notice-dist) (pickup-type eco-blue))))
+           (dotimes (gp-1 5)
+             (spawn-projectile-blue (if tgt tgt *target*)))))))
   :trans
     (behavior ()
       (when (!= (-> self sync-offset-faux) (-> self sync-offset-dest))
@@ -156,7 +156,9 @@
     (set! (-> s5-0 dynam) (copy *standard-dynamics* 'process))
     (set! (-> s5-0 reaction) default-collision-reaction)
     (set! (-> s5-0 no-reaction) (the-as (function collide-shape-moving collide-shape-intersect vector vector none) nothing))
-    (alloc-riders s5-0 1)
+    ;; Co-op: blue-eco platforms otherwise evict the first rider when another
+    ;; target lands on the same platform.
+    (alloc-riders s5-0 NUM_MAX_TARGET)
     (let ((s4-0 (new 'process 'collide-shape-prim-mesh s5-0 (the-as uint 0) (the-as uint 0))))
       (set! (-> s4-0 prim-core collide-as) (collide-kind ground-object blue-eco-suck))
       (set! (-> s4-0 collide-with) (collide-kind target))
