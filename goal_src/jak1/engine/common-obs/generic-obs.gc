@@ -308,24 +308,12 @@
                                    ""))
            (do-joint-math! self))
           (('clone-anim)
-           (when *multi-coop-active*
-             (format 0 "[VEH:manipy] clone-anim pre self=~A parent=~A target-h=~A origin=~D draw?=~A~%"
-               self
-               (ppointer->process (-> self parent))
-               (-> self cur-target-handle)
-               (the-as int (-> self draw origin-joint-index))
-               (-> self draw?)))
            (clone-anim-once (if (handle->process (-> self cur-target-handle))
                               (the-as handle (-> self cur-target-handle))
                               (ppointer->handle (-> self parent)))
                             (the-as int (-> self draw origin-joint-index))
                             (-> self clone-copy-trans)
-                            "")
-           (when *multi-coop-active*
-             (format 0 "[VEH:manipy] clone-anim post self=~A hidden=~A no-anim=~A~%"
-               self
-               (logtest? (-> self draw status) (draw-status hidden))
-               (logtest? (-> self draw status) (draw-status no-anim)))))
+                            ""))
           (('still))
           (('play1) (ja :num! (seek!)) (if (ja-done? 0) (deactivate self)))))))
 

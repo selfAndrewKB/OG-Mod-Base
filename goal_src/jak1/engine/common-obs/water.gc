@@ -935,8 +935,12 @@
   (let ((found #f))
     (dotimes (idx (-> *target-list* length))
       (let ((tgt (get-target idx)))
-        (when (and tgt (= (handle->process (-> tgt water volume)) this))
-          (set! found #t))))
+        (when tgt
+          (let ((vol-handle (-> tgt water volume)))
+            (when (nonzero? vol-handle)
+              (let ((vol-proc (handle->process vol-handle)))
+                (when (= vol-proc this)
+                  (set! found #t))))))))
     found))
 
 (defun water-vol-release-target ((this water-vol) (tgt target))
@@ -974,8 +978,12 @@
 (defmethod on-exit-water ((this water-vol))
   (dotimes (idx (-> *target-list* length))
     (let ((tgt (get-target idx)))
-      (when (and tgt (= (handle->process (-> tgt water volume)) this))
-        (water-vol-release-target this tgt))))
+      (when tgt
+        (let ((vol-handle (-> tgt water volume)))
+          (when (nonzero? vol-handle)
+            (let ((vol-proc (handle->process vol-handle)))
+              (when (= vol-proc this)
+                (water-vol-release-target this tgt))))))))
   (process-entity-status! this (entity-perm-status bit-3) #f)
   0
   (none))
@@ -984,16 +992,21 @@
   (dotimes (idx (-> *target-list* length))
     (let ((tgt (get-target idx)))
       (when tgt
-        (cond
-          ((= (handle->process (-> tgt water volume)) this)
-           (cond
-             ((not (point-in-vol? (-> this vol) (-> tgt control trans)))
-              (water-vol-release-target this tgt))
-             (else
-              (water-vol-apply-hazard this tgt))))
-          ((and (not (handle->process (-> tgt water volume)))
-                (point-in-vol? (-> this vol) (-> tgt control trans)))
-           (water-vol-claim-target this tgt))))))
+        (let ((vol-handle (-> tgt water volume)))
+          (if (nonzero? vol-handle)
+            (let ((vol-proc (handle->process vol-handle)))
+              (cond
+                ((= vol-proc this)
+                 (cond
+                   ((not (point-in-vol? (-> this vol) (-> tgt control trans)))
+                    (water-vol-release-target this tgt))
+                   (else
+                    (water-vol-apply-hazard this tgt))))
+                ((and (not vol-proc)
+                      (point-in-vol? (-> this vol) (-> tgt control trans)))
+                 (water-vol-claim-target this tgt))))
+            (when (point-in-vol? (-> this vol) (-> tgt control trans))
+              (water-vol-claim-target this tgt)))))))
   0
   (none))
 

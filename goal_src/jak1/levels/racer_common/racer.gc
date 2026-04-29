@@ -11,9 +11,13 @@
 
 (define-extern blocking-plane-spawn (function curve-control none :behavior process))
 
+(define-extern init-entity (function process entity-actor none))
+
 ;; DECOMP BEGINS
 
 (if (not (nmember "racerp" *kernel-packages*)) (set! *kernel-packages* (cons "racerp" *kernel-packages*)))
+
+(define *racer-spawning-entity-copy* #f)
 
 (deftype racer (process-drawable)
   ((root            collide-shape-moving :override)
@@ -78,8 +82,8 @@
   (none))
 
 (defun racer-pin-entity! ((r racer))
-  ;; Only the original racer is entity-backed. The co-op duplicate is an entity-pool
-  ;; clone with entity=#f, so pinning is a no-op there.
+  ;; Only the level-authored original participates in actor visibility GC. The
+  ;; P2 entity copy is manually owned, so its lifetime is routed by player-index.
   (when (and (zero? (-> r player-index)) (-> r entity))
     (when *multi-coop-active*
       (format 0 "[VEH:racer] PIN self=~A pidx=~D entity=~A rider-set=~A state=~A~%"
@@ -92,7 +96,7 @@
 
 (defun racer-unpin-entity! ((r racer))
   ;; Keep the pin/unpin predicate symmetric so lifetime bugs don't drift between
-  ;; the original racer and the co-op duplicate.
+  ;; the level-authored original and the co-op entity copy.
   (when (and (zero? (-> r player-index)) (-> r entity))
     (when *multi-coop-active*
       (format 0 "[VEH:racer] UNPIN self=~A pidx=~D entity=~A rider-set=~A state=~A~%"
@@ -102,6 +106,42 @@
         (not (zero? (-> r rider)))
         (if (-> r state) (-> r state name) 'none)))
     (logclear! (-> r entity extra perm status) (entity-perm-status bit-3))))
+
+(defun racer-copy-entity-for-p2! ((src entity-actor) (xoff float))
+  (let* ((ent (the-as entity-actor (copy src 'global)))
+         (link (new 'global 'entity-links)))
+    (+! (-> ent trans x) xoff)
+    (set! (-> ent aid) (+ (-> src aid) 10000))
+    (set! (-> ent extra) link)
+    ;; This is only a transition bridge until we have a second authored racer
+    ;; entity. Do not mutate res-lump data here: copy is shallow for tags like
+    ;; `name`, so add-data! would rename the original level racer too.
+    (set! (-> link prev-link) link)
+    (set! (-> link next-link) link)
+    (set! (-> link entity) ent)
+    (set! (-> link process) #f)
+    (set! (-> link level) (-> src extra level))
+    (set! (-> link trans quad) (-> ent trans quad))
+    (set! (-> link perm user-object 0) (-> src extra perm user-object 0))
+    (set! (-> link perm user-object 1) (-> src extra perm user-object 1))
+    (set! (-> link perm status) (logior (-> src extra perm status) (entity-perm-status bit-3)))
+    (set! (-> link perm task) (-> src extra perm task))
+    (set! (-> link perm aid) (the-as actor-id (-> ent aid)))
+    (set! (-> link vis-id) (-> src extra vis-id))
+    ent))
+
+(defun racer-spawn-entity-copy-for-p2! ((src entity-actor) (xoff float))
+  (let ((ent (racer-copy-entity-for-p2! src xoff))
+        (proc (get-process *default-dead-pool* racer #x4000)))
+    (when proc
+      (set! (-> proc type) racer)
+      (set! *racer-spawning-entity-copy* #t)
+      (init-entity proc ent)
+      (set! *racer-spawning-entity-copy* #f)
+      (let ((r (the-as racer (-> ent extra process))))
+        (when r
+          (set! (-> r player-index) 1))))
+    (none)))
 
 (defmethod deactivate ((this racer))
   (when *multi-coop-active*
@@ -462,7 +502,7 @@
   (set-vector! (-> this extra-trans) 0.0 6144.0 0.0 1.0)
   (set! (-> this auto-get-off) #f)
   (set! (-> this rider) (the-as handle 0))
-  (set! (-> this player-index) 0)
+  (set! (-> this player-index) (if *racer-spawning-entity-copy* 1 0))
   (when *multi-coop-active*
     (format 0 "[VEH:racer] init-from-entity self=~A pidx=~D entity=~A~%"
       this
@@ -477,9 +517,10 @@
                                     (-> this path-racer)
                                     (-> this path-target)))))
   (set! (-> this sound) (new 'process 'ambient-sound (static-sound-spec "zoom-teleport" :fo-max 30) (-> this root trans)))
-  (when *multi-coop-active*
-    ;; Spawn the duplicate outside the 5m mount radius so "mount the original"
-    ;; and "mount the duplicate" are distinct interactions instead of a same-frame race.
-    (process-spawn racer :init racer-init-by-other arg0 (meters 6) :to *entity-pool*))
+  (when (and *multi-coop-active* (not *racer-spawning-entity-copy*))
+    ;; Birth the co-op racer through the entity initializer so its target-side
+    ;; hover/collision path sees a real racer entity instead of an entityless
+    ;; process clone.
+    (racer-spawn-entity-copy-for-p2! arg0 (meters 6)))
   (go (method-of-object this wait-for-start))
   (none))
