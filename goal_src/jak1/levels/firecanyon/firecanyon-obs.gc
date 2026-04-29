@@ -2,8 +2,19 @@
 (in-package goal)
 (bundles "FIC.DGO" "OGR.DGO")
 (require "engine/common-obs/generic-obs.gc")
+(define-extern get-target (function int target))
 
 ;; DECOMP BEGINS
+
+(defun firecanyon-racer-near? ((pos vector) (dist float))
+  (let ((found #f))
+    (dotimes (idx (-> *target-list* length))
+      (let ((tgt (get-target idx)))
+        (when (and tgt
+                   (= (send-event tgt 'query 'mode) 'racer)
+                   (< (vector-vector-distance pos (target-pos-for tgt 0)) dist))
+          (set! found #t))))
+    found))
 
 (deftype balloon (process-drawable)
   ((root collide-shape :override))
@@ -189,9 +200,7 @@
 (defstate spike-idle (spike)
   :trans
     (behavior ()
-      (when (and *target*
-                 (= (send-event *target* 'query 'mode) 'racer)
-                 (< (vector-vector-distance (-> self root trans) (target-pos 0)) 225280.0))
+      (when (firecanyon-racer-near? (-> self root trans) 225280.0)
         (sound-play "magma-rock")
         (let ((v1-8 (entity-actor-count (-> self entity) 'alt-actor)))
           0

@@ -424,7 +424,7 @@
       (case message
         (('touch 'attack)
          (cond
-           ((= proc *target*)
+           ((= (-> proc type) target)
             (let ((s5-0 (-> block param 0)))
               (if (and s5-0
                        ((method-of-type touching-shapes-entry prims-touching?)

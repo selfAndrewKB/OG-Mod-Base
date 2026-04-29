@@ -232,7 +232,10 @@
     (set! (-> *level* border?) (-> gp-0 border-mode))
     ;; common pool texture page mask
     (set! (-> *texture-pool* common-page-mask) (-> gp-0 common-page))
-    (set! (-> *cpad-list* cpads 0 buzz) (-> gp-0 vibration))
+    ;; Co-op: buzz routing is per-owner now, so every controller slot must mirror
+    ;; the vibration setting. Leaving only pad 0 enabled silently suppresses P2+.
+    (dotimes (idx (-> *cpad-list* num-cpads))
+      (set! (-> *cpad-list* cpads idx buzz) (-> gp-0 vibration)))
     (case (-> gp-0 ocean-off)
       ((#t) (set! *ocean-off* #t))
       (('mid) (set! *ocean-mid-off* #t))

@@ -31,11 +31,15 @@
         (('bonk)
          (when (send-event proc 'jump (-> self spring-height) (-> self spring-height) #f)
            (sound-play "trampoline")
+           (when (= (-> proc type) target)
+             (cpad-set-buzz! (-> *cpad-list* cpads (-> (the-as target proc) control unknown-cpad-info00 number)) 1 178 (seconds 0.1)))
            (go bouncer-fire)))
         (('touch)
          (if (not (or (= (-> self next-state name) 'bouncer-smush) (= (-> self next-state name) 'bouncer-fire))) (go bouncer-smush)))
         (('attack)
          (when (and (= (-> block param 1) 'flop) (send-event proc 'jump (-> self spring-height) (-> self spring-height) #f))
+           (when (= (-> proc type) target)
+             (cpad-set-buzz! (-> *cpad-list* cpads (-> (the-as target proc) control unknown-cpad-info00 number)) 1 178 (seconds 0.1)))
            (go bouncer-fire)
            #f))))
   :code
@@ -59,13 +63,14 @@
       (loop
         (if (time-elapsed? (-> self state-time) (seconds 0.2))
           (ja :num! (seek! 0.0 0.1))
-          (ja :num!
-              (seek! (lerp-scale (ja-aframe 6.0 0)
-                                 (ja-aframe 2.0 0)
-                                 (vector-vector-xz-distance (target-pos 0) (-> self root trans))
-                                 0.0
-                                 4096.0)
-                     0.2)))
+          (let ((tgt (closest-target-to (-> self root trans))))
+            (ja :num!
+                (seek! (lerp-scale (ja-aframe 6.0 0)
+                                   (ja-aframe 2.0 0)
+                                   (if tgt (vector-vector-xz-distance (target-pos-for tgt 0) (-> self root trans)) 4096.0)
+                                   0.0
+                                   4096.0)
+                       0.2))))
         (suspend)
         (if (ja-min? 0) (go bouncer-wait))))
   :post transform-post)
@@ -73,7 +78,6 @@
 (defstate bouncer-fire (springbox)
   :code
     (behavior ()
-      (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 178 (seconds 0.1))
       (ja-no-eval :group! bounceytarp-idle-ja :num! (seek!) :frame-num (ja-aframe 6.0 0))
       (until (ja-done? 0)
         (suspend)

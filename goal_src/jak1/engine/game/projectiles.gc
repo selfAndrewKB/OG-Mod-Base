@@ -10,6 +10,18 @@
 
 ;; DECOMP BEGINS
 
+(defun projectile-owner-cpad ((proj projectile))
+  (let ((owner (the-as target #f)))
+    (when (not (zero? (-> proj last-target)))
+      (let ((target-proc (handle->process (-> proj last-target))))
+        (when (and target-proc (= (-> target-proc type) target))
+          (set! owner (the-as target target-proc)))))
+    (when (not owner)
+      (let ((parent-proc (-> proj parent 0)))
+        (when (and parent-proc (= (-> parent-proc type) target))
+          (set! owner (the-as target parent-proc)))))
+    (-> *cpad-list* cpads (if owner (-> owner control unknown-cpad-info00 number) 0))))
+
 (deftype search-info (structure)
   ((point        vector :inline)
    (best-point   vector :inline)
@@ -718,7 +730,7 @@
   (none))
 
 (defmethod projectile-method-27 ((this projectile-yellow))
-  (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 204 (seconds 0.1))
+  (cpad-set-buzz! (projectile-owner-cpad this) 1 204 (seconds 0.1))
   (set! (-> this attack-mode) 'eco-yellow)
   (set! (-> this mode) 1)
   (set! (-> this max-speed) (vector-length (-> this root transv)))
@@ -844,7 +856,7 @@
   (none))
 
 (defmethod projectile-method-27 ((this projectile-blue))
-  (cpad-set-buzz! (-> *cpad-list* cpads 0) 1 204 (seconds 0.1))
+  (cpad-set-buzz! (projectile-owner-cpad this) 1 204 (seconds 0.1))
   (sound-play "blue-eco-on")
   (set! (-> this mode) 2)
   (set! (-> this max-speed) (-> *TARGET-bank* yellow-projectile-speed))
