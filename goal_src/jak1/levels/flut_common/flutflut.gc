@@ -65,6 +65,16 @@
   0
   (none))
 
+(defun flutflut-pin-entity! ((f flutflut))
+  (when (-> f entity)
+    (logior! (-> f entity extra perm status) (entity-perm-status bit-3))))
+
+(defun flutflut-unpin-entity! ((f flutflut))
+  ;; Keep the guard symmetric with flutflut-pin-entity! so the entity lifetime
+  ;; rule stays centralized instead of drifting across state enter/exit bodies.
+  (when (-> f entity)
+    (logclear! (-> f entity extra perm status) (entity-perm-status bit-3))))
+
 (defstate wait-for-start (flutflut)
   :virtual #t
   :event
@@ -94,8 +104,11 @@
              (if (not (zero? (-> self rider))) (goto cfg-75)))
             ((= v1-0 3)
              (cond
-               ((and (task-complete? *game-info* (-> self entity extra perm task)) (not (handle->process (-> self cell))))
-                (let ((rider-proc (the-as target (handle->process (-> self rider)))))
+               ((and (task-complete? *game-info* (-> self entity extra perm task))
+                     (or (zero? (-> self cell)) (not (handle->process (-> self cell)))))
+                (let ((rider-proc (the-as target #f)))
+                  (when (not (zero? (-> self rider)))
+                    (set! rider-proc (the-as target (handle->process (-> self rider)))))
                   (when (and (-> self auto-get-off) rider-proc (send-event rider-proc 'end-mode))
                     (set! (-> self rider) (the-as handle 0))
                     (set! (-> self auto-get-off) #f)
@@ -105,7 +118,7 @@
                 (if (and (not (zero? (-> self rider)))
                          (not (time-elapsed? (-> self touch-time) (seconds 0.05))))
                   (go-virtual pickup (method-of-object self idle))))
-               ((not (handle->process (-> self cell)))
+               ((or (zero? (-> self cell)) (not (handle->process (-> self cell))))
                 (set! (-> self cell)
                       (ppointer->handle (birth-pickup-at-point (vector+! (new 'stack-no-clear 'vector) (-> self root trans) (new 'static 'vector :y 8192.0 :w 1.0))
                                                                (pickup-type fuel-cell)
@@ -130,6 +143,9 @@
     (behavior ()
       (blocking-plane-destroy)
       (if (not *allow-flutflut-anywhere*) (blocking-plane-spawn (the-as curve-control (-> self path-target))))
+      ;; Match racer: pin before pickup starts so actor visibility GC cannot
+      ;; kill the level-authored flutflut during the mount transition.
+      (flutflut-pin-entity! self)
       (none))
   :exit
     (-> (method-of-type flutflut wait-for-start)
@@ -165,6 +181,9 @@
                ;; P2+: skip singleton display gate, check button directly
                (when (and (cpad-pressed? (-> nearest-tgt control unknown-cpad-info00 number) circle)
                           (send-event nearest-tgt 'change-mode 'flut self))
+                 ;; Claim immediately so another nearby flutflut cannot accept
+                 ;; the same button press before target-flut-start sets the bit.
+                 (logior! (-> nearest-tgt control root-prim prim-core action) (collide-action flut))
                  (set! (-> self rider) (process->handle nearest-tgt))
                  (go-virtual pickup (method-of-object self wait-for-return))))
               (else
@@ -179,17 +198,9 @@
                    (set! (-> gp-0 flags) (font-flags shadow kerning large))
                    (print-game-text (lookup-text! *common-text* (text-id press-to-use) #f) gp-0 #f 128 22))
                  (when (and (cpad-pressed? (-> nearest-tgt control unknown-cpad-info00 number) circle) (send-event nearest-tgt 'change-mode 'flut self))
+                   (logior! (-> nearest-tgt control root-prim prim-core action) (collide-action flut))
                    (set! (-> self rider) (process->handle nearest-tgt))
                    (go-virtual pickup (method-of-object self wait-for-return))))))))
-        (when (and *multi-coop-active* (zero? (logand (-> *display* integral-frame-counter) 127)))
-          (format 0 "[VEH:flut] idle parent-override=~A~%" (-> self parent-override))
-          (dotimes (idx (-> *target-list* length))
-            (let ((tgt (get-target idx)))
-              (when tgt
-                (format 0 "[VEH:flut]   tgt~D dist=~M flag=~A~%"
-                  idx
-                  (vector-vector-distance (-> self root trans) (-> tgt control trans))
-                  (if (logtest? (-> tgt control root-prim prim-core action) (collide-action flut)) 'RIDING 'free))))))
         (flutflut-effect)
         (suspend)
         (ja :num! (loop!))))
@@ -216,11 +227,15 @@
       (ja-channel-set! 0)
       (ja-post)
       (while (zero? (ja-group-size))
-        (let ((rp (the-as target (handle->process (-> self rider)))))
+        (let ((rp (the-as target #f)))
+          (when (not (zero? (-> self rider)))
+            (set! rp (the-as target (handle->process (-> self rider)))))
           (if (or (not rp) (< 24576.0 (vector-vector-distance (-> self root trans) (-> rp control trans)))) (go arg0)))
         (flutflut-effect)
         (suspend))
-      (while (let ((rp (the-as target (handle->process (-> self rider)))))
+      (while (let ((rp (the-as target #f)))
+               (when (not (zero? (-> self rider)))
+                 (set! rp (the-as target (handle->process (-> self rider)))))
                (and rp (logtest? (-> rp control root-prim prim-core action) (collide-action flut))))
         (flutflut-effect)
         (suspend))
@@ -233,7 +248,7 @@
   :event
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
       ;; guard: a second touch event can fire before the state transitions away (rider already 0)
-      ;; for 'touch: only the rider themselves can trigger forced dismount — other targets
+      ;; for 'touch: only the rider themselves can trigger forced dismount - other targets
       ;; walking near the flutflut must not eject the rider.
       ;; for 'attack: any sender can eject (enemies hitting the flutflut).
       (when (not (zero? (-> self rider)))
@@ -249,20 +264,20 @@
     (behavior ()
       (blocking-plane-destroy)
       (if (not *allow-flutflut-anywhere*) (blocking-plane-spawn (the-as curve-control (-> self path-flut))))
-      (when (-> self entity)
-        (logior! (-> self entity extra perm status) (entity-perm-status bit-3)))
+      (flutflut-pin-entity! self)
       (none))
   :exit
     (behavior ()
-      (when (-> self entity)
-        (logclear! (-> self entity extra perm status) (entity-perm-status bit-3)))
+      (flutflut-unpin-entity! self)
       (none))
   :code
     (behavior ()
       (ja-channel-set! 0)
       (ja-post)
       (loop
-        (let ((rider-proc (the-as target (handle->process (-> self rider)))))
+        (let ((rider-proc (the-as target #f)))
+          (when (not (zero? (-> self rider)))
+            (set! rider-proc (the-as target (handle->process (-> self rider)))))
           (when (or (not rider-proc) (not (logtest? (-> rider-proc control root-prim prim-core action) (collide-action flut))))
             (set! (-> self rider) (the-as handle 0))
             (go-virtual idle)))
