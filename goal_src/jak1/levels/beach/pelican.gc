@@ -5,6 +5,9 @@
 (require "engine/anim/aligner.gc")
 (require "engine/geometry/path.gc")
 
+(define-extern *multi-coop-active* symbol)
+(define-extern *target-list* (array handle))
+
 ;; DECOMP BEGINS
 
 (deftype pelican-bank (basic)
@@ -129,6 +132,22 @@
         (ja-no-eval :num! (loop!)))))
   (none))
 
+(defun pelican-any-target-near-xz? ((arg0 vector) (arg1 float))
+  ;; This is only the proximity tripwire for the pelican stealing the cell.
+  ;; The following presentation remains the native P1-owned camera/grab path.
+  (cond
+    (*multi-coop-active*
+     (let ((near? #f))
+       (dotimes (idx (-> *target-list* length))
+         (let ((tgt-handle (-> *target-list* idx)))
+           (when (and (not near?) (not (zero? tgt-handle)))
+             (let ((tgt (handle->process tgt-handle)))
+               (when (and tgt (>= arg1 (vector-vector-xz-distance arg0 (-> (the-as target tgt) control trans))))
+                 (set! near? #t))))))
+       near?))
+    (else
+     (and *target* (>= arg1 (vector-vector-xz-distance arg0 (-> *target* control trans)))))))
+
 (defbehavior pelican-post pelican ()
   (ja-post)
   (none))
@@ -169,7 +188,7 @@
       (let ((f0-3 (+ (-> self path-pos) (* (-> self path-speed) (seconds-per-frame))))
             (f1-2 (-> self path-max)))
         (set! (-> self path-pos) (- f0-3 (* (the float (the int (/ f0-3 f1-2))) f1-2))))
-      (when (and (and *target* (>= 81920.0 (vector-vector-xz-distance (-> self path-vector) (-> *target* control trans))))
+      (when (and (pelican-any-target-near-xz? (-> self path-vector) 81920.0)
                  (not (handle->process (-> self cam-tracker))))
         (set! (-> self cam-tracker)
               (ppointer->handle (process-spawn camera-tracker
