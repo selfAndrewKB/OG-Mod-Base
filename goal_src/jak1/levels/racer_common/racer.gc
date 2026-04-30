@@ -243,6 +243,31 @@
               (set! tgt candidate))))))
     tgt))
 
+(defun racer-try-prompt-mount! ((r racer) (tgt target))
+  (let ((mounted #f))
+    ;; Keep racer idle under the entity-pool stack limit. Drawing the prompt,
+    ;; routing the rider-owned display gate, and sending change-mode are
+    ;; sequential work, so they live here instead of bloating the state body.
+    (hide-hud)
+    (level-hint-surpress!)
+    (kill-current-level-hint '() '(sidekick voicebox) 'exit)
+    (when (and (hud-hidden?) (can-grab-display-for-target? r tgt))
+      (print-press-to-use-for-target tgt)
+      (when (cpad-pressed? (-> tgt control unknown-cpad-info00 number) circle)
+        (when (send-event tgt 'change-mode 'racing r)
+          (when *multi-coop-active*
+            (format 0 "[VEH:racer] MOUNT self=~A pidx=~D tgt=~A tgt-pad=~D~%"
+              r
+              (-> r player-index)
+              tgt
+              (-> tgt control unknown-cpad-info00 number)))
+          ;; Claim immediately so the paired racer can't also accept the same
+          ;; circle press before target-racing-start sets the action bit.
+          (logior! (-> tgt control root-prim prim-core action) (collide-action racer))
+          (set! (-> r rider) (process->handle tgt))
+          (set! mounted #t))))
+    mounted))
+
 (defstate idle (racer)
   :virtual #t
   :event
@@ -272,34 +297,13 @@
           (when (and tgt (not (movie?)) (not (level-hint-displayed?)))
             (cond
               ((zero? (-> self player-index))
-               ;; original racer: vanilla display gating flow
-               (hide-hud)
-               (level-hint-surpress!)
-               (kill-current-level-hint '() '(sidekick voicebox) 'exit)
-               (when (and (hud-hidden?) (can-grab-display? self))
-                 (let ((gp-0 (new 'stack 'font-context *font-default-matrix* 32 160 0.0 (font-color default) (font-flags shadow kerning))))
-                   (set-width! gp-0 440)
-                   (set-height! gp-0 80)
-                   (set! (-> gp-0 flags) (font-flags shadow kerning large))
-                   (print-game-text (lookup-text! *common-text* (text-id press-to-use) #f) gp-0 #f 128 22))
-                 (when (cpad-pressed? (-> tgt control unknown-cpad-info00 number) circle)
-                   (let ((event-result (send-event tgt 'change-mode 'racing self)))
-                     (when event-result
-                       (when *multi-coop-active*
-                         (format 0 "[VEH:racer] MOUNT self=~A pidx=~D tgt=~A tgt-pad=~D~%"
-                           self
-                           (-> self player-index)
-                           tgt
-                           (-> tgt control unknown-cpad-info00 number)))
-                       ;; Claim the target immediately so the duplicate racer can't
-                       ;; also accept the same circle press before target-racing-start
-                       ;; sets the racer action bit on the next step.
-                       (logior! (-> tgt control root-prim prim-core action) (collide-action racer))
-                       (set! (-> self rider) (process->handle tgt))
-                       (go-virtual pickup (the-as (state collectable) (method-of-object self wait-for-return))))))
-                 (when (= (-> self condition) 4)
-                   (when (send-event tgt 'change-mode 'racing self)
-                     (when *multi-coop-active*
+               ;; Original racer uses the same helper as the co-op duplicate;
+               ;; the helper keeps the prompt path out of this tiny idle stack.
+               (when (racer-try-prompt-mount! self tgt)
+                 (go-virtual pickup (the-as (state collectable) (method-of-object self wait-for-return))))
+                (when (= (-> self condition) 4)
+                  (when (send-event tgt 'change-mode 'racing self)
+                    (when *multi-coop-active*
                        (format 0 "[VEH:racer] AUTO-MOUNT self=~A pidx=~D tgt=~A tgt-pad=~D~%"
                          self
                          (-> self player-index)
@@ -307,19 +311,11 @@
                          (-> tgt control unknown-cpad-info00 number)))
                      (logior! (-> tgt control root-prim prim-core action) (collide-action racer))
                      (set! (-> self rider) (process->handle tgt))
-                     (go-virtual pickup (the-as (state collectable) (method-of-object self wait-for-return)))))))
+                     (go-virtual pickup (the-as (state collectable) (method-of-object self wait-for-return))))))
               (else
-               ;; co-op duplicate racer: skip singleton display gate
-               (when (and (cpad-pressed? (-> tgt control unknown-cpad-info00 number) circle)
-                          (send-event tgt 'change-mode 'racing self))
-                 (when *multi-coop-active*
-                   (format 0 "[VEH:racer] MOUNT self=~A pidx=~D tgt=~A tgt-pad=~D~%"
-                     self
-                     (-> self player-index)
-                     tgt
-                     (-> tgt control unknown-cpad-info00 number)))
-                 (logior! (-> tgt control root-prim prim-core action) (collide-action racer))
-                 (set! (-> self rider) (process->handle tgt))
+               ;; Co-op duplicate racer: prompt against its actual rider target
+               ;; instead of relying on the singleton *target* display gate.
+               (when (racer-try-prompt-mount! self tgt)
                  (go-virtual pickup (the-as (state collectable) (method-of-object self wait-for-return))))))))
         (racer-effect)
         (suspend))))

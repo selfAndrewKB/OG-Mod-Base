@@ -75,6 +75,25 @@
   (when (-> f entity)
     (logclear! (-> f entity extra perm status) (entity-perm-status bit-3))))
 
+(defun flutflut-try-prompt-mount! ((f flutflut) (tgt target))
+  (let ((mounted #f))
+    ;; Match racer: keep the prompt/font path out of idle so entity-pool
+    ;; vehicles stay under their small stack while still using the native text
+    ;; display flow for whichever target owns this mount attempt.
+    (hide-hud)
+    (level-hint-surpress!)
+    (kill-current-level-hint '() '(sidekick voicebox) 'exit)
+    (when (and (hud-hidden?) (can-grab-display-for-target? f tgt))
+      (print-press-to-use-for-target tgt)
+      (when (and (cpad-pressed? (-> tgt control unknown-cpad-info00 number) circle)
+                 (send-event tgt 'change-mode 'flut f))
+        ;; Claim immediately so another nearby flutflut cannot accept the same
+        ;; button press before target-flut-start sets the action bit.
+        (logior! (-> tgt control root-prim prim-core action) (collide-action flut))
+        (set! (-> f rider) (process->handle tgt))
+        (set! mounted #t)))
+    mounted))
+
 (defstate wait-for-start (flutflut)
   :virtual #t
   :event
@@ -176,31 +195,8 @@
                      (not (movie?))
                      (not (level-hint-displayed?))
                      (!= (-> self condition) 4))
-            (cond
-              ((!= nearest-tgt *target*)
-               ;; P2+: skip singleton display gate, check button directly
-               (when (and (cpad-pressed? (-> nearest-tgt control unknown-cpad-info00 number) circle)
-                          (send-event nearest-tgt 'change-mode 'flut self))
-                 ;; Claim immediately so another nearby flutflut cannot accept
-                 ;; the same button press before target-flut-start sets the bit.
-                 (logior! (-> nearest-tgt control root-prim prim-core action) (collide-action flut))
-                 (set! (-> self rider) (process->handle nearest-tgt))
-                 (go-virtual pickup (method-of-object self wait-for-return))))
-              (else
-               ;; P1: vanilla display gating flow
-               (hide-hud)
-               (level-hint-surpress!)
-               (kill-current-level-hint '() '(sidekick voicebox) 'exit)
-               (when (and (hud-hidden?) (can-grab-display? self))
-                 (let ((gp-0 (new 'stack 'font-context *font-default-matrix* 32 160 0.0 (font-color default) (font-flags shadow kerning))))
-                   (set-width! gp-0 440)
-                   (set-height! gp-0 80)
-                   (set! (-> gp-0 flags) (font-flags shadow kerning large))
-                   (print-game-text (lookup-text! *common-text* (text-id press-to-use) #f) gp-0 #f 128 22))
-                 (when (and (cpad-pressed? (-> nearest-tgt control unknown-cpad-info00 number) circle) (send-event nearest-tgt 'change-mode 'flut self))
-                   (logior! (-> nearest-tgt control root-prim prim-core action) (collide-action flut))
-                   (set! (-> self rider) (process->handle nearest-tgt))
-                   (go-virtual pickup (method-of-object self wait-for-return))))))))
+            (when (flutflut-try-prompt-mount! self nearest-tgt)
+              (go-virtual pickup (method-of-object self wait-for-return)))))
         (flutflut-effect)
         (suspend)
         (ja :num! (loop!))))

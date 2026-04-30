@@ -106,16 +106,47 @@
   0
   (none))
 
+(define-extern *multi-coop-active* symbol)
+(define-extern *active-render-cam* int)
+
+(defun can-grab-display-target-ok? ((arg0 target))
+  (and arg0
+       (!= (-> arg0 next-state name) 'target-look-around)
+       (not (logtest? (-> arg0 state-flags) (state-flags being-attacked dying)))
+       (= *master-mode* 'game)))
+
 (defun can-grab-display? ((arg0 process))
-  (let ((v1-2 (handle->process (-> *game-info* display-text-handle))))
+  (let ((v1-2 (the-as process #f)))
+    (when (not (zero? (-> *game-info* display-text-handle)))
+      (set! v1-2 (handle->process (-> *game-info* display-text-handle))))
     (when (and (or (not v1-2) (= v1-2 arg0) (time-elapsed? (-> *game-info* display-text-time) (seconds 0.1)))
-               (and *target*
-                    (!= (-> *target* next-state name) 'target-look-around)
-                    (not (logtest? (-> *target* state-flags) (state-flags being-attacked dying)))
-                    (= *master-mode* 'game)))
+               (can-grab-display-target-ok? *target*))
       (set! (-> *game-info* display-text-handle) (process->handle arg0))
       (set-time! (-> *game-info* display-text-time))
       #t)))
+
+(defun can-grab-display-for-target? ((arg0 process) (arg1 target))
+  ;; Vehicle prompts already know which target owns the interaction. In co-op
+  ;; they must not claim the vanilla singleton display-text semaphore, or P1 and
+  ;; P2 suppress each other's prompts even though they render to separate views.
+  (if *multi-coop-active*
+    (can-grab-display-target-ok? arg1)
+    (can-grab-display? arg0)))
+
+(defun print-press-to-use-for-target ((arg0 target))
+  (let ((old-cam *active-render-cam*))
+    ;; Direct game-text DMA normally runs from process tick, where
+    ;; *active-render-cam* is pass 0. Temporarily route this one prompt to the
+    ;; rider's pass so P2 vehicle prompts land in P2's viewport.
+    (when *multi-coop-active*
+      (set! *active-render-cam* (-> arg0 control unknown-cpad-info00 number)))
+    (let ((gp-0 (new 'stack 'font-context *font-default-matrix* 32 160 0.0 (font-color default) (font-flags shadow kerning))))
+      (set-width! gp-0 440)
+      (set-height! gp-0 80)
+      (set! (-> gp-0 flags) (font-flags shadow kerning large))
+      (print-game-text (lookup-text! *common-text* (text-id press-to-use) #f) gp-0 #f 128 22))
+    (set! *active-render-cam* old-cam))
+  (none))
 
 (defun level-hint-displayed? ()
   (let ((a0-0 (ppointer->process *hint-semaphore*)))
