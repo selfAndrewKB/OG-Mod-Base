@@ -8,8 +8,27 @@
 
 ;; DECOMP BEGINS
 
+(defun racer-hud-owner ((arg0 hud))
+  ;; Racer meters are spawned only while riding, and parented to the riding target.
+  ;; Particle callbacks run later through launch-control, so recover the owner from
+  ;; the HUD process instead of reading singleton *target* like vanilla did.
+  (if (and arg0 (-> arg0 parent))
+    (the-as target (-> arg0 parent 0))
+    *target*))
+
+(defun racer-hud-heat-ratio ((arg0 hud))
+  (let ((owner (racer-hud-owner arg0)))
+    (if owner
+      ;; Heat can briefly seek/round around the max. The gauge art is authored for
+      ;; 0..1 rotation, so clamp only the HUD ratio; gameplay heat remains untouched.
+      (fmax 0.0 (fmin (/ (-> owner racer heat) (-> *RACER-bank* heat-max)) 1.0))
+      0.0)))
+
 (defun part-hud-racer-speed-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let* ((f0-0 (-> *target* control unknown-float01))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-bike-speed (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (owner (racer-hud-owner hud-self))
+         (f0-0 (if owner (-> owner control unknown-float01) 0.0))
          (f0-1 (cond
                  ((>= 122880.0 f0-0) (lerp-scale 42780.445 27488.71 f0-0 0.0 122880.0))
                  ((>= 131072.0 f0-0) (lerp-scale 27488.71 14927.645 f0-0 122880.0 131072.0))
@@ -19,7 +38,7 @@
                  ((>= 163840.0 f0-0) (lerp-scale -6371.5557 -10922.667 f0-0 155648.0 163840.0))
                  (else (lerp-scale -10922.667 -15473.777 f0-0 163840.0 172032.0)))))
     (cond
-      ((< (-> *hud-parts* bike-speed 0 offset) 10)
+      ((and hud-self (< (-> hud-self offset) 10))
        (if (< f0-1 (-> arg2 vector 1 z))
          (set! (-> arg2 vector 1 z) (deg-seek (-> arg2 vector 1 z) f0-1 (* 131072.0 (seconds-per-frame))))
          (set! (-> arg2 vector 1 z) (deg-seek (-> arg2 vector 1 z) f0-1 (* 32768.0 (seconds-per-frame))))))
@@ -89,7 +108,9 @@
    (:flags (bit2 bit9))))
 
 (defun part-hud-racer-heat-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-1 (/ (-> *target* racer heat) (-> *RACER-bank* heat-max))))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-bike-heat (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (f0-1 (racer-hud-heat-ratio hud-self)))
     (set! (-> arg2 vector 1 z) (* 182.04445 (+ -45.0 (* 215.0 f0-1))))
     (cond
       ((and (< 0.8 f0-1) (not (logtest? (the int (* DISPLAY_FPS_RATIO (-> *display* integral-frame-counter))) 8))) ;; og:preserve-this changed for high fps
@@ -117,20 +138,26 @@
   (none))
 
 (defun part-hud-zoomer-heat-slice-01-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-1 (/ (-> *target* racer heat) (-> *RACER-bank* heat-max))))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-bike-heat (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (f0-1 (racer-hud-heat-ratio hud-self)))
     (set! (-> arg2 vector 1 z) (* 182.04445 (+ -135.0 (* 215.0 f0-1))))
     (zoomer-heat-slice-color arg2 f0-1))
   (none))
 
 (defun part-hud-zoomer-heat-slice-02-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-1 (/ (-> *target* racer heat) (-> *RACER-bank* heat-max))))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-bike-heat (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (f0-1 (racer-hud-heat-ratio hud-self)))
     (set! (-> arg2 vector 1 z) (* 182.04445 (+ -225.0 (* 215.0 f0-1))))
     (if (< (-> arg2 vector 1 z) -24576.0) (set! (-> arg2 vector 1 z) -24576.0))
     (zoomer-heat-slice-color arg2 f0-1))
   (none))
 
 (defun part-hud-zoomer-heat-slice-03-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let ((f0-1 (/ (-> *target* racer heat) (-> *RACER-bank* heat-max))))
+  (let* ((lc (-> arg1 key))
+         (hud-self (the-as hud-bike-heat (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
+         (f0-1 (racer-hud-heat-ratio hud-self)))
     (set! (-> arg2 vector 1 z) (* 182.04445 (+ -315.0 (* 215.0 f0-1))))
     (if (< (-> arg2 vector 1 z) -24576.0) (set! (-> arg2 vector 1 z) -24576.0))
     (zoomer-heat-slice-color arg2 f0-1))
@@ -249,7 +276,8 @@
 
 
 (defmethod hud-update ((this hud-bike-heat))
-  (if *target* (tally-value this (the int (-> *target* racer heat)) 0))
+  (let ((owner (racer-hud-owner this)))
+    (if owner (tally-value this (the int (-> owner racer heat)) 0)))
   0
   (none))
 
@@ -257,7 +285,7 @@
   (add-setting! 'common-page 'set 0.0 2)
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-0 (-> this nb-of-particles)))
-      (set! (-> this particles s5-0) (new 'static 'hud-particle))
+      (set! (-> this particles s5-0) (new 'global 'hud-particle))
       (set! (-> this particles s5-0 part) (create-launch-control group-part-hud-racer-heat-backing this))
       (set! (-> this particles s5-0 init-pos x) 13.0)
       (set! (-> this particles s5-0 init-pos y) 370.0)
@@ -266,7 +294,7 @@
     (+! (-> this nb-of-particles) 1))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-1 (-> this nb-of-particles)))
-      (set! (-> this particles s5-1) (new 'static 'hud-particle))
+      (set! (-> this particles s5-1) (new 'global 'hud-particle))
       (set! (-> this particles s5-1 part) (create-launch-control group-part-hud-racer-heat-dial this))
       (set! (-> this particles s5-1 init-pos x) 70.0)
       (set! (-> this particles s5-1 init-pos y) 370.0)
@@ -275,7 +303,7 @@
     (+! (-> this nb-of-particles) 1))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-2 (-> this nb-of-particles)))
-      (set! (-> this particles s5-2) (new 'static 'hud-particle))
+      (set! (-> this particles s5-2) (new 'global 'hud-particle))
       (set! (-> this particles s5-2 part) (create-launch-control group-part-hud-racer-heat this))
       (set! (-> this particles s5-2 init-pos x) 20.0)
       (set! (-> this particles s5-2 init-pos y) 370.0)
@@ -284,7 +312,7 @@
     (+! (-> this nb-of-particles) 1))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-3 (-> this nb-of-particles)))
-      (set! (-> this particles s5-3) (new 'static 'hud-particle))
+      (set! (-> this particles s5-3) (new 'global 'hud-particle))
       (set! (-> this particles s5-3 part) (create-launch-control group-part-hud-racer-heat-slice this))
       (set! (-> this particles s5-3 init-pos x) 70.0)
       (set! (-> this particles s5-3 init-pos y) 370.0)
@@ -293,6 +321,9 @@
     (+! (-> this nb-of-particles) 1))
   (dotimes (s5-4 (-> this nb-of-particles))
     (if (= (-> this particles s5-4 part matrix) -1) (set! (-> this particles s5-4 part matrix) (sprite-allocate-user-hvdf))))
+  ;; Temporary bike HUDs are spawned outside activate-hud, so apply the same
+  ;; widescreen/PC position normalization here for every rider-owned instance.
+  (set-pos-and-scale this (= (get-aspect-ratio) 'aspect16x9) (= (get-video-mode) 'pal))
   (set! (-> this x-sgn) -1)
   (set! (-> this y-sgn) 1)
   (set! (-> this force-on-screen) #t)
@@ -303,7 +334,8 @@
 
 
 (defmethod hud-update ((this hud-bike-speed))
-  (if *target* (tally-value this (the int (-> *target* control unknown-float01)) 0))
+  (let ((owner (racer-hud-owner this)))
+    (if owner (tally-value this (the int (-> owner control unknown-float01)) 0)))
   0
   (none))
 
@@ -311,7 +343,7 @@
   (add-setting! 'common-page 'set 0.0 2)
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-0 (-> this nb-of-particles)))
-      (set! (-> this particles s5-0) (new 'static 'hud-particle))
+      (set! (-> this particles s5-0) (new 'global 'hud-particle))
       (set! (-> this particles s5-0 part) (create-launch-control group-part-hud-racer-speed-dial this))
       (set! (-> this particles s5-0 init-pos x) 433.0)
       (set! (-> this particles s5-0 init-pos y) 370.0)
@@ -320,7 +352,7 @@
     (+! (-> this nb-of-particles) 1))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-1 (-> this nb-of-particles)))
-      (set! (-> this particles s5-1) (new 'static 'hud-particle))
+      (set! (-> this particles s5-1) (new 'global 'hud-particle))
       (set! (-> this particles s5-1 part) (create-launch-control group-part-hud-racer-speed this))
       (set! (-> this particles s5-1 init-pos x) 378.0)
       (set! (-> this particles s5-1 init-pos y) 370.0)
@@ -329,7 +361,7 @@
     (+! (-> this nb-of-particles) 1))
   (when (< (-> this nb-of-particles) (-> this max-nb-of-particles))
     (let ((s5-2 (-> this nb-of-particles)))
-      (set! (-> this particles s5-2) (new 'static 'hud-particle))
+      (set! (-> this particles s5-2) (new 'global 'hud-particle))
       (set! (-> this particles s5-2 part) (create-launch-control group-part-hud-racer-speed-front this))
       (set! (-> this particles s5-2 init-pos x) 415.0)
       (set! (-> this particles s5-2 init-pos y) 370.0)
@@ -338,6 +370,9 @@
     (+! (-> this nb-of-particles) 1))
   (dotimes (s5-3 (-> this nb-of-particles))
     (if (= (-> this particles s5-3 part matrix) -1) (set! (-> this particles s5-3 part matrix) (sprite-allocate-user-hvdf))))
+  ;; See hud-bike-heat: bike meters bypass activate-hud, so each rider's temporary
+  ;; instance must normalize its own particle positions at spawn time.
+  (set-pos-and-scale this (= (get-aspect-ratio) 'aspect16x9) (= (get-video-mode) 'pal))
   (set! (-> this x-sgn) 1)
   (set! (-> this y-sgn) 1)
   (set! (-> this force-on-screen) #t)
