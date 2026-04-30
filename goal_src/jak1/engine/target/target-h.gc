@@ -194,6 +194,51 @@
         (return tgt))))
   (the-as target #f))
 
+;; Shared low-level rider helpers for co-op platforms. Detection/carrying still
+;; stays in the engine's native rider path; these only inspect that rider state.
+(defun platform-target-riding? ((riders collide-sticky-rider-group) (tgt target))
+  "Return true when tgt is one of the platform's currently detected riders."
+  (dotimes (idx (-> riders num-riders))
+    (let ((rider-h (-> riders rider idx rider-handle)))
+      ;; handle->process is unsafe on zero handles; keep the guard at the call.
+      (when (not (zero? rider-h))
+        (let ((rider-proc (handle->process rider-h)))
+          (when (and rider-proc (= rider-proc tgt))
+            (return #t))))))
+  #f)
+
+(defun target-active-for-platform-sync? ((tgt target))
+  "Return true when this target can be safely included in platform sync helpers."
+  ;; Dead/loading targets can still have a live process handle during respawn.
+  ;; Skip them for explicit platform assists; native respawn/continue should own
+  ;; their position until they are back in normal control.
+  (and (nonzero? (-> tgt state))
+       (!= (-> tgt next-state name) 'target-death)
+       (!= (-> tgt next-state name) 'target-load-wait)
+       (!= (-> tgt next-state name) 'target-continue)
+       (!= (-> tgt next-state name) 'target-warp-in)
+       (!= (-> tgt next-state name) 'target-warp-out)))
+
+(defun platform-teleport-active-targets! ((platform-pos vector) (y-offset float) (spacing float))
+  "Move every active player to platform-pos, spread along X for collision safety."
+  ;; This is intentionally an explicit, case-by-case assist rather than a hidden
+  ;; platform policy. Use it only for one-shot platforms where leaving a player
+  ;; behind is worse than snapping them onto the carrier.
+  (let ((slot 0))
+    (dotimes (idx (-> *target-list* length))
+      (let ((tgt (get-target idx)))
+        (when (and tgt (target-active-for-platform-sync? tgt))
+          (let ((dst (new 'stack-no-clear 'vector))
+                (delta (new 'stack-no-clear 'vector)))
+            (set! (-> dst quad) (-> platform-pos quad))
+            (set! (-> dst x) (+ (-> dst x) (* spacing (the float (- slot 1)))))
+            (set! (-> dst y) (+ (-> dst y) y-offset))
+            (vector-! delta dst (-> tgt control trans))
+            (move-by-vector! (-> tgt control) delta)
+            (set! (-> tgt control transv quad) (the-as uint128 0))
+            (send-event tgt 'reset-height)
+            (set! slot (+ slot 1))))))))
+
 (deftype sidekick (process-drawable)
   ((parent-override  (pointer target) :overlay-at parent)
    (control          control-info :overlay-at root)

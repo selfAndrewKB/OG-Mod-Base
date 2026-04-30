@@ -40,7 +40,8 @@
         (('wake) (go-virtual plat-path-active (the-as plat #f)))
         (('eco-blue) (go-virtual notice-blue (process->handle proc)))
         (('ridden 'edge-grabbed)
-         (when (and (= (-> proc type) target) (target-has-powerup? (the-as target proc) (pickup-type eco-blue)))
+         (when (and (= (-> proc type) target)
+                    (target-has-powerup? (the-as target proc) (pickup-type eco-blue)))
            (send-to-all (-> self link) 'wake)
            (go-virtual plat-path-active (the-as plat #f))))))
   :enter
@@ -69,7 +70,8 @@
          (sound-play "blue-eco-on" :position (the-as symbol (-> self root trans)))
          (go-virtual plat-path-active (the-as plat #f)))
         (('ridden 'edge-grabbed)
-         (when (and (= (-> proc type) target) (target-has-powerup? (the-as target proc) (pickup-type eco-blue)))
+         (when (and (= (-> proc type) target)
+                    (target-has-powerup? (the-as target proc) (pickup-type eco-blue)))
            (send-to-all (-> self link) 'wake)
            (go-virtual plat-path-active (the-as plat #f))))))
   :trans

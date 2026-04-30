@@ -45,7 +45,8 @@
    (targ-dest  float)
    (dest       float)
    (speed      float)
-   (touch-time time-frame)))
+   (touch-time time-frame)
+   (snap-time  time-frame)))
 
 
 (defmethod get-unlit-skel ((this plat-eco-finalboss))
@@ -59,9 +60,34 @@
   (set! (-> this targ-dest) -1.0)
   (set! (-> this dest) 0.0)
   (set! (-> this speed) 0.1)
+  (set-time! (-> this snap-time))
   (logclear! (-> this mask) (process-mask actor-pause))
   (process-entity-status! this (entity-perm-status bit-3) #t)
   (none))
+
+(defun finalboss-platform-target-near-start? ((start vector) (finish vector))
+  "Return true when any active player is closer to the ferry's start side."
+  ;; Vanilla uses global *target* without a range check here. Keep that property:
+  ;; after an endlessfall/checkpoint reset, the ferry may be far away at the boss
+  ;; side, but the respawned player at the start side must still pull it home.
+  (dotimes (idx (-> *target-list* length))
+    (let ((tgt (get-target idx)))
+      (when (and tgt (target-active-for-platform-sync? tgt))
+        (when (< (vector-vector-xz-distance (target-pos-for tgt 0) start)
+                 (vector-vector-xz-distance (target-pos-for tgt 0) finish))
+          (return #t)))))
+  #f)
+
+(defun finalboss-platform-yellow-eco-target ()
+  "Return a live player with yellow eco, independent of distance to the ferry."
+  ;; The native finalboss ferry checks *target*'s yellow eco globally. Do not use
+  ;; target-with-powerup-near here: on death/reset, the platform can be far from
+  ;; the respawn point and still needs the player's yellow eco to command return.
+  (dotimes (idx (-> *target-list* length))
+    (let ((tgt (get-target idx)))
+      (when (and tgt (target-has-powerup? tgt (pickup-type eco-yellow)))
+        (return tgt))))
+  (if (and *target* (send-event *target* 'query 'powerup (pickup-type eco-yellow))) *target* #f))
 
 (defstate plat-path-active (plat-eco-finalboss)
   :virtual #t
@@ -75,8 +101,25 @@
          (if (time-elapsed? (-> self touch-time) (seconds 2))
            (set! (-> self targ-dest)
                  (cond
-                   ((= (-> self path-pos) 0.0) (set! (-> self force-dest) -1.0) 0.99)
-                   ((= (-> self path-pos) 0.99) 0.0)
+                   ((= (-> self path-pos) 0.0)
+                    ;; Co-op: let the native ride event start the ferry, then
+                    ;; snap all active players aboard so the one-shot boss trip
+                    ;; cannot strand the partner at the checkpoint side.
+                    (platform-teleport-active-targets! (-> self root trans) 4096.0 4096.0)
+                    ;; Pause movement briefly after the snap. The teleport is a
+                    ;; position correction; collision still needs a tick to
+                    ;; classify the snapped players as native riders.
+                    (set! (-> self force-dest) -1.0)
+                    (set! (-> self speed) 0.0)
+                    (set-time! (-> self snap-time))
+                    0.99)
+                   ((= (-> self path-pos) 0.99)
+                    ;; Same assist for the return trip: keep the native event as
+                    ;; the trigger, but gather both players before motion begins.
+                    (platform-teleport-active-targets! (-> self root trans) 4096.0 4096.0)
+                    (set! (-> self speed) 0.0)
+                    (set-time! (-> self snap-time))
+                    0.0)
                    (else (-> self targ-dest)))))
          (set-time! (-> self touch-time))
          #f)
@@ -89,19 +132,25 @@
       (cond
         (arg0)
         (else
-         (let ((tgt (target-with-powerup-near (-> self root trans) 81920.0 (pickup-type eco-yellow))))
-           (dotimes (gp-1 5) (spawn-projectile-blue (if tgt tgt *target*)))))))
+         (let ((tgt (finalboss-platform-yellow-eco-target)))
+           (if tgt
+             (dotimes (gp-1 5) (spawn-projectile-blue (the-as target tgt)))
+             (dotimes (gp-1 5) (spawn-projectile-blue *target*)))))))
   :trans
     (behavior ()
       (let ((s5-0 (eval-path-curve! (-> self path) (new 'stack-no-clear 'vector) 0.0 'interp))
             (gp-0 (eval-path-curve! (-> self path) (new 'stack-no-clear 'vector) 1.0 'interp)))
         (if (time-elapsed? (-> self touch-time) (seconds 3)) (set! (-> self targ-dest) -1.0))
+        (when (and (= (-> self speed) 0.0)
+                   (or (= (-> self targ-dest) 0.99)
+                       (= (-> self targ-dest) 0.0))
+                   (time-elapsed? (-> self snap-time) (seconds 0.25)))
+          (set! (-> self speed) 0.1))
         (set! (-> self dest)
               (cond
                 ((>= (-> self force-dest) 0.0) (-> self force-dest))
                 ((>= (-> self targ-dest) 0.0) (-> self targ-dest))
-                ((let ((tgt (target-near (-> self root trans) 81920.0)))
-                   (and tgt (< (vector-vector-xz-distance (target-pos-for tgt 0) s5-0) (vector-vector-xz-distance (target-pos-for tgt 0) gp-0)))) 0.0)
+                ((finalboss-platform-target-near-start? s5-0 gp-0) 0.0)
                 (else 0.99))))
       (if (= (-> self state-time) (current-time)) (set! (-> self path-pos) (-> self dest)))
       (seek! (-> self path-pos) (-> self dest) (* (-> self speed) (seconds-per-frame)))
@@ -109,7 +158,7 @@
       (if (< (vector-vector-distance (-> self root trans) (ear-trans)) 81920.0)
         (sound-play "eco-plat-hover" :id (-> self sound-id) :position (the-as symbol (-> self root trans))))
       (plat-trans)
-      (when (target-with-powerup-near (-> self root trans) 81920.0 (pickup-type eco-yellow))
+      (when (finalboss-platform-yellow-eco-target)
         (process-entity-status! self (entity-perm-status complete) #t)
         (set! (-> self force-dest) 0.0))))
 

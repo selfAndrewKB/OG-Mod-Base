@@ -6,6 +6,8 @@
 
 ;; DECOMP BEGINS
 
+(define-extern *camera-p2* camera-master)
+
 (deftype plat-button (process-drawable)
   ((root                    collide-shape-moving :override)
    (go-back-if-lost-player? symbol)
@@ -105,12 +107,24 @@
 
 (defbehavior plat-button-camera-on plat-button ()
   (let ((v1-1 (res-lump-struct (-> self entity) 'camera-name structure)))
-    (if v1-1 (send-event *camera* 'change-to-entity-by-name v1-1)))
+    (when v1-1
+      (send-event *camera* 'change-to-entity-by-name v1-1)
+      ;; Co-op: plat-button cameras are authored as global sequence cameras
+      ;; (Citadel elevator overhead, moving platform shots). Mirror the same
+      ;; entity-camera selection to P2's camera master instead of inventing a
+      ;; separate follow offset, so both viewports use the native authored shot.
+      (when (and *camera-p2* (nonzero? (-> *camera-p2* tracked-target)))
+        (send-event *camera-p2* 'change-to-entity-by-name v1-1))))
   0
   (none))
 
 (defbehavior plat-button-camera-off plat-button ()
   (send-event *camera* 'clear-entity)
+  ;; Keep release symmetric with plat-button-camera-on; otherwise P2 can remain
+  ;; stuck to an authored platform camera after P1 has already returned to the
+  ;; normal camera state.
+  (when (and *camera-p2* (nonzero? (-> *camera-p2* tracked-target)))
+    (send-event *camera-p2* 'clear-entity))
   0
   (none))
 

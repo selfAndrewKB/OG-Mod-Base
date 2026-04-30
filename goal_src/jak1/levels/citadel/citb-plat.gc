@@ -745,6 +745,67 @@
    citb-exit-plat-idle
    citb-exit-plat-rise))
 
+(defun citb-exit-plat-target-in-footprint? ((plat citb-exit-plat) (tgt target))
+  ;; Pure position test for boarding decisions. Do not consult the sticky rider
+  ;; table here: after an earlier elevator cycle, a stale rider entry can make a
+  ;; player who is physically elsewhere look like they are already on the lift.
+  (and (< (vector-vector-xz-distance-squared (-> tgt control trans) (-> plat root trans)) 15099494000.0)
+       (< (fabs (- (-> tgt control trans y) (-> plat root trans y))) 65536.0)))
+
+(defun citb-exit-plat-target-on-lift? ((plat citb-exit-plat) (tgt target))
+  ;; The exit lift's vanilla carry correction covers P1 even across brief rider
+  ;; gaps while jumping. Mirror that rule for co-op: native rider membership is
+  ;; preferred, but a close footprint check keeps airborne players attached to
+  ;; the moving elevator instead of letting them fall through or take damage.
+  (or (and (-> plat root riders) (platform-target-riding? (-> plat root riders) tgt))
+      (citb-exit-plat-target-in-footprint? plat tgt)))
+
+(defun citb-exit-plat-any-active-target-near? ((plat citb-exit-plat))
+  ;; Vanilla waits for P1 to move away before the button can reengage. Do the
+  ;; same query across the active target list so either player standing on/near
+  ;; the switch can hold the elevator at its endpoint without causing loops.
+  (dotimes (idx (-> *target-list* length))
+    (let ((tgt (get-target idx)))
+      (when (and tgt
+                 (target-active-for-platform-sync? tgt)
+                 (< (vector-vector-xz-distance-squared (-> plat root trans) (-> tgt control trans)) 268435460.0))
+        (return #t))))
+  #f)
+
+(defun citb-exit-plat-any-active-target-on-lift? ((plat citb-exit-plat))
+  ;; Parent plat-button movement can reverse if it thinks P1 was lost. For this
+  ;; elevator, keep that native return safeguard armed only when every active
+  ;; player is actually off the lift; otherwise P2-only rides look "lost" to the
+  ;; singleton check even though a valid rider is present.
+  (dotimes (idx (-> *target-list* length))
+    (let ((tgt (get-target idx)))
+      (when (and tgt
+                 (target-active-for-platform-sync? tgt)
+                 (citb-exit-plat-target-on-lift? plat tgt))
+        (return #t))))
+  #f)
+
+(defun citb-exit-plat-snap-missing-targets! ((plat citb-exit-plat))
+  ;; Case-specific boarding assist for the final Citadel elevator. Players who
+  ;; are already standing on the lift are left alone; only active players who
+  ;; missed the platform get snapped in before native rider detection runs.
+  ;; Use the footprint-only predicate, not citb-exit-plat-target-on-lift?, so
+  ;; stale rider state from a previous trip cannot suppress a needed snap.
+  (let ((slot 0))
+    (dotimes (idx (-> *target-list* length))
+      (let ((tgt (get-target idx)))
+        (when (and tgt (target-active-for-platform-sync? tgt))
+          (when (not (citb-exit-plat-target-in-footprint? plat tgt))
+            (let ((dst (new 'stack-no-clear 'vector))
+                  (delta (new 'stack-no-clear 'vector)))
+              (set! (-> dst quad) (-> plat root trans quad))
+              (set! (-> dst x) (+ (-> dst x) (* 4096.0 (the float (- slot 1)))))
+              (set! (-> dst y) (+ (-> dst y) 4096.0))
+              (vector-! delta dst (-> tgt control trans))
+              (move-by-vector! (-> tgt control) delta)
+              (set! (-> tgt control transv quad) (the-as uint128 0))
+              (send-event tgt 'reset-height)))
+          (set! slot (+ slot 1)))))))
 
 (defstate citb-exit-plat-idle (citb-exit-plat)
   :event
@@ -775,21 +836,89 @@
             (set! (-> self root trans y) (-> self rise-height))
             (go-virtual plat-button-idle))
           (set! (-> self root trans y) (lerp (-> self rise-height) (-> self idle-height) (* f30-0 f30-0))))
-        (suspend)))
+          (suspend)))
   :post rider-post)
+
+(defstate plat-button-idle (citb-exit-plat)
+  :virtual #t
+  :event
+    (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
+      (case message
+        (('touch)
+         ;; Boundary/loading-sensitive elevator: keep activation P1-owned like
+         ;; the original game, but leave the co-op teleport/carry logic below so
+         ;; additional players still ride safely once P1 presses the switch.
+         (when (and (= proc *target*) (can-activate? self))
+           (if (and ((method-of-type touching-shapes-entry prims-touching?)
+                     (the-as touching-shapes-entry (-> block param 0))
+                    (-> self root)
+                    (the-as uint 1))
+                    (or (not (-> self should-grab-player?)) (set! (-> self grab-player?) (process-grab? *target*))))
+             (go-virtual plat-button-pressed))))))
+  :code
+    (behavior ()
+      (let ((gp-0 (can-activate? self)))
+        (if gp-0 (ja-no-eval :num! (seek! 0.0)) (ja-no-eval :num! (seek!)))
+        (loop
+          (if (should-teleport? self) (go-virtual plat-button-teleport-to-other-end))
+          (let ((s5-0 (can-activate? self)))
+            (when (!= s5-0 gp-0)
+              (set! gp-0 s5-0)
+              (if s5-0 (ja-no-eval :num! (seek! 0.0)) (ja-no-eval :num! (seek!))))
+            (when (not (ja-done? 0))
+              (rider-trans)
+              (if s5-0 (ja :num! (seek! 0.0)) (ja :num! (seek!)))
+              (rider-post)))
+          (suspend)))))
+
+(defstate plat-button-pressed (citb-exit-plat)
+  :virtual #t
+  :trans rider-trans
+  :enter
+    (behavior ()
+      (citb-exit-plat-snap-missing-targets! self))
+  :code
+    (behavior ()
+      (ja-no-eval :num! (seek!))
+      (until (ja-done? 0)
+        (suspend)
+        (ja :num! (seek!)))
+      (set! (-> self go-back-if-lost-player?) #t)
+      (process-entity-status! self (entity-perm-status complete) #t)
+      (if (= (-> self path-pos) 0.0) (go-virtual plat-button-move-downward) (go-virtual plat-button-move-upward)))
+  :post rider-post)
+
+(defstate plat-button-at-end (citb-exit-plat)
+  :virtual #t
+  :code
+    (behavior ()
+      (if (-> self allow-auto-kill) (process-entity-status! self (entity-perm-status bit-3) #f))
+      (sound-stop (-> self sound-id))
+      (sound-play "elev-land")
+      (loop
+        (when (not (citb-exit-plat-any-active-target-near? self))
+          (go-virtual plat-button-idle))
+        (suspend))))
 
 (defbehavior citb-exit-plat-move-player citb-exit-plat ((arg0 vector))
   (let ((gp-0 (new 'stack-no-clear 'vector)))
-    (let ((s5-0 (new 'stack-no-clear 'vector)))
-      (vector-! gp-0 (-> self root trans) arg0)
-      (vector-! s5-0 (-> *target* control trans) (-> self root trans))
-      (set! (-> s5-0 y) 0.0)
-      (let ((f30-0 (vector-length s5-0)))
-        (when (< 122880.0 f30-0)
-          (vector-normalize! s5-0 1.0)
-          (vector+*! gp-0 gp-0 s5-0 (- 122880.0 f30-0)))))
-    (move-by-vector! (-> *target* control) gp-0))
-  (send-event *target* 'reset-height)
+    (vector-! gp-0 (-> self root trans) arg0)
+    (dotimes (idx (-> *target-list* length))
+      (let ((tgt (get-target idx)))
+        (when (and tgt
+                   (target-active-for-platform-sync? tgt)
+                   (citb-exit-plat-target-on-lift? self tgt))
+          (let ((s5-0 (new 'stack-no-clear 'vector))
+                (gp-1 (new 'stack-no-clear 'vector)))
+            (set! (-> gp-1 quad) (-> gp-0 quad))
+            (vector-! s5-0 (-> tgt control trans) (-> self root trans))
+            (set! (-> s5-0 y) 0.0)
+            (let ((f30-0 (vector-length s5-0)))
+              (when (< 122880.0 f30-0)
+                (vector-normalize! s5-0 1.0)
+                (vector+*! gp-1 gp-1 s5-0 (- 122880.0 f30-0))))
+            (move-by-vector! (-> tgt control) gp-1)
+            (send-event tgt 'reset-height))))))
   0
   (none))
 
@@ -799,6 +928,7 @@
     (behavior ()
       (let ((gp-0 (new 'stack-no-clear 'vector)))
         (set! (-> gp-0 quad) (-> self root trans quad))
+        (set! (-> self go-back-if-lost-player?) (not (citb-exit-plat-any-active-target-on-lift? self)))
         (let ((t9-1 (-> (the-as (state plat-button) (find-parent-state)) trans))) (if t9-1 (t9-1)))
         (citb-exit-plat-move-player gp-0)))
   :post transform-post)
@@ -809,6 +939,7 @@
     (behavior ()
       (let ((gp-0 (new 'stack-no-clear 'vector)))
         (set! (-> gp-0 quad) (-> self root trans quad))
+        (set! (-> self go-back-if-lost-player?) (not (citb-exit-plat-any-active-target-on-lift? self)))
         (let ((t9-1 (-> (the-as (state plat-button) (find-parent-state)) trans))) (if t9-1 (t9-1)))
         (citb-exit-plat-move-player gp-0)))
   :post transform-post)
