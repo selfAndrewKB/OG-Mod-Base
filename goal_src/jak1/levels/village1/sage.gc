@@ -3,6 +3,8 @@
 (bundles "VI1.DGO")
 (require "levels/village1/assistant.gc")
 
+(define-extern split-screen-force-release-presentation-lock! (function none))
+
 ;; DECOMP BEGINS
 
 (deftype sage (process-taskable)
@@ -387,6 +389,10 @@
                    (or (not (= *cheat-mode* 'debug)) (not (cpad-hold? 0 r1)))
                    (= (current-task (-> self tasks)) (game-task intro)))
           (close-specific-task! (game-task intro) (task-status need-resolution))
+          ;; d1 exits by starting the training continue directly. Release P2
+          ;; through the draw-owned helper so the target lock and split-screen
+          ;; presentation latch cannot drift apart.
+          (split-screen-force-release-presentation-lock!)
           (start 'play (get-continue-by-name *game-info* "game-start"))
           (set-blackout-frames (seconds 0.1))
           (set! (-> *time-of-day-proc* 0 time-ratio) 300.0)
@@ -396,6 +402,9 @@
         (((task-status need-resolution))
          (remove-setting! 'music-volume-movie)
          (close-specific-task! (game-task intro) (task-status need-resolution))
+         ;; Normal d1 completion reaches the same singleton training handoff as
+         ;; the skip path above, so keep the lock/latch release adjacent to start.
+         (split-screen-force-release-presentation-lock!)
          (start 'play (get-continue-by-name *game-info* "game-start")))))
   :trans
     (behavior ()

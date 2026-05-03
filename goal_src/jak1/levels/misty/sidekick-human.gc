@@ -5,6 +5,8 @@
 (require "engine/common-obs/babak.gc")
 (require "levels/intro/evilbro.gc")
 
+(define-extern split-screen-force-release-presentation-lock! (function none))
+
 ;; DECOMP BEGINS
 
 (deftype sequenceA (process-hidden) ())
@@ -1515,11 +1517,18 @@
         ;; extra stuff when skipping cutscene
         (when (and (= (get-response (-> self query)) 'no) (or (not (= *cheat-mode* 'debug)) (not (cpad-hold? 0 r1))))
           (close-specific-task! (game-task intro) (task-status need-resolution))
+          ;; This sequence starts a continue/load handoff directly. If split-screen
+          ;; has P2 hidden for the movie, release through the draw-owned helper so
+          ;; the presentation latch stays in sync with the actual target lock.
+          (split-screen-force-release-presentation-lock!)
           (start 'play (get-continue-by-name *game-info* "game-start"))
           (set-blackout-frames (seconds 0.1))
           (set! (-> *time-of-day-proc* 0 time-ratio) 300.0)
           (set! (-> *time-of-day-proc* 0 hour) 7)
           (return #f)))
+      ;; Normal d1 entry handoff into Village1 uses the same direct start path as
+      ;; the skip branch. Keep P2 lock/latch release adjacent to that handoff.
+      (split-screen-force-release-presentation-lock!)
       (start 'play (get-continue-by-name *game-info* "village1-intro")))
   :trans
     (behavior ()

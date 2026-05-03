@@ -193,7 +193,11 @@
   ;; NPC/pov cutscenes collapse split-screen while a real movie or othercam owns
   ;; the frame. Extra players stay hidden/locked until that same presentation
   ;; ownership is gone, instead of guessing from the taskable or target state.
+  ;; Spool-anim NPC scenes (for example sage-intro-sequence-e) can briefly run
+  ;; without a real-movie?/othercam blocker, but still own singleton command and
+  ;; camera presentation; do not release P2 until spooling has fully cleared.
   (and (not (real-movie?))
+       (not (-> *setting-control* current spooling))
        (process-taskable-other-camera-clear?)))
 
 (defun process-taskable-release-primary-target! ((arg0 process-taskable))
@@ -224,6 +228,49 @@
         (set! (-> *process-taskable-coop-lock-targets* idx) (the-as handle 0)))))
   (set! *process-taskable-coop-lock-owner* (the-as handle 0))
   (set! *process-taskable-coop-release-frame* -1)
+  (none))
+
+(defun process-taskable-lock-coop-targets-for-presentation! ((arg0 handle))
+  ;; NPC/movie presentations are still singleton/P1-owned. Freeze secondary
+  ;; targets with their native grab mode and hide them for the duration. The
+  ;; owner handle may be a taskable, P1, or zero; it only marks the lock active.
+  (when *multi-coop-active*
+    ;; Clear any stale lock first; a stuck hidden/grabbed extra player is worse
+    ;; than redundantly releasing a target that is already free.
+    (process-taskable-force-release-coop-lock! (the-as process-taskable #f))
+    (set! *process-taskable-coop-lock-owner* arg0)
+    (set! *process-taskable-coop-release-frame* -1)
+    (dotimes (idx (-> *target-list* length))
+      (let ((raw (-> *target-list* idx)))
+        (when (not (zero? raw))
+          (let ((tgt (the-as target (handle->process raw))))
+            (when (and tgt (!= tgt *target*))
+              ;; State-change events are side-effect driven; many native handlers
+              ;; accept the mode switch without returning a reliable truth value.
+              ;; Do not gate the visibility/handle bookkeeping on send-event's
+              ;; result, or scripted cutscene locks silently fail to mark P2.
+              (send-event tgt 'change-mode 'grab)
+              (logior! (-> tgt draw status) (draw-status hidden))
+              (set! (-> *process-taskable-coop-lock-targets* idx) (process->handle tgt))))))))
+  (none))
+
+(defun process-taskable-lock-coop-targets! ((arg0 process-taskable))
+  ;; Compatibility wrapper for prompt-time NPC interactions. The draw gate owns
+  ;; full presentation lifetime; this only catches the immediate talk-start case
+  ;; before split-screen has had a frame to collapse.
+  (process-taskable-lock-coop-targets-for-presentation! (process->handle arg0)))
+
+(defun process-taskable-lock-coop-targets-from-split-screen! ()
+  ;; The draw system is the canonical owner of split-screen enable/disable.
+  ;; When it collapses for a presentation before an NPC-specific hook runs, use
+  ;; P1's handle purely as a non-zero lock owner and let the same release path
+  ;; restore secondaries when split-screen comes back.
+  (if *target*
+    (process-taskable-lock-coop-targets-for-presentation! (process->handle *target*)))
+  (none))
+
+(defun process-taskable-release-coop-targets-from-split-screen! ()
+  (process-taskable-force-release-coop-lock! (the-as process-taskable #f))
   (none))
 
 (defun process-taskable-release-coop-lock! ((arg0 process-taskable))
@@ -631,25 +678,6 @@
                     (set! best tgt))))))))
       best)
     (if (process-taskable-target-prompt-ready? arg0 *target*) *target* (the-as target #f))))
-
-(defun process-taskable-lock-coop-targets! ((arg0 process-taskable))
-  ;; NPC conversations remain P1-owned. When any player starts one, freeze the
-  ;; extra targets with the native grab mode so they cannot wander during the
-  ;; singleton cutscene/talk sequence.
-  (when *multi-coop-active*
-    ;; Clear any stale lock first; a stuck hidden/grabbed extra player is worse
-    ;; than redundantly releasing a target that is already free.
-    (process-taskable-force-release-coop-lock! arg0)
-    (set! *process-taskable-coop-lock-owner* (process->handle arg0))
-    (set! *process-taskable-coop-release-frame* -1)
-    (dotimes (idx (-> *target-list* length))
-      (let ((raw (-> *target-list* idx)))
-        (when (not (zero? raw))
-          (let ((tgt (the-as target (handle->process raw))))
-            (when (and tgt (!= tgt *target*) (send-event tgt 'change-mode 'grab))
-              (logior! (-> tgt draw status) (draw-status hidden))
-              (set! (-> *process-taskable-coop-lock-targets* idx) (process->handle tgt))))))))
-  (none))
 
 (defun process-taskable-try-start-talk! ((arg0 process-taskable) (arg1 target))
   (when (cpad-pressed? (-> arg1 control unknown-cpad-info00 number) circle)

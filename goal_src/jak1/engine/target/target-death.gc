@@ -10,6 +10,8 @@
 ;; Symbol is resolved by the time any target spawns in-game, so the
 ;; forward-declaration is safe here in ENGINE.CGO.
 (define-extern multi-log-enabled? (function symbol symbol))
+(define-extern *split-screen-presentation-lock-active* symbol)
+(define-extern *multi-coop-active* symbol)
 
 ;; DECOMP BEGINS
 (define-extern runs-on-jak-spawn (function none))
@@ -84,6 +86,28 @@
         (cond
           ((not (string= (-> arg0 name) "default")) (set! *external-cam-mode* #f) (cam-stop) (suspend) 0)
           (else (send-event *camera* 'clear-entity) (send-event *camera* 'change-state cam-fixed 0) (suspend) 0)))
+      ;; Co-op secondary targets are initialized from the current continue point,
+      ;; but the singleton load-state/blackout pipeline belongs to P1. Let P2
+      ;; finish target setup and enter gameplay without replaying continue load
+      ;; commands; otherwise a late P2 target-continue can erase a spooled movie's
+      ;; command list and leave intro blackout stuck on screen.
+      (when (not (= self *target*))
+        (ja-channel-set! 1)
+        (ja :group! eichar-stance-loop-ja)
+        (runs-on-jak-spawn)
+        (suspend)
+        (logior! (-> self control status) (cshape-moving-flags onsurf onground tsurf))
+        ;; If a presentation lock is already active when P2 finishes spawning,
+        ;; enter grab mode directly instead of stance. The draw-gate latch is the
+        ;; canonical source of truth here: the hidden-bit check is unreliable
+        ;; because target-exit (called on any prior :exit) clears it, and the lock
+        ;; helper may not have found this process yet (latch fired before P2 was
+        ;; alive). Checking the latch flag avoids that race entirely.
+        (if (and *split-screen-presentation-lock-active* *multi-coop-active*)
+          (begin
+            (logior! (-> self draw status) (draw-status hidden))
+            (go target-grab))
+          (go target-stance)))
       (set! (-> *load-state* vis-nick) (-> arg0 vis-nick))
       (set! (-> *load-state* want 0 name) (-> arg0 lev0))
       (set! (-> *load-state* want 0 display?) (-> arg0 disp0))

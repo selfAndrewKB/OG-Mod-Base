@@ -84,6 +84,95 @@
 ;; Tracks the previous frame's split-screen-should-render? result so the
 ;; transition log fires exactly once on re-activation (not every frame).
 (define *split-screen-prev-active* #f)
+(define *split-screen-presentation-lock-active* #f)
+
+(define-extern process-taskable-release-coop-targets-from-split-screen! (function none))
+
+(defun split-screen-presentation-blocked? ()
+  ;; Block split-screen only for camera-locking presentations:
+  ;;   real-movie? — POV cutscene cameras (checks *game-info* movie)
+  ;;   movie?      — spool-based cutscenes and tutorial hints (these also set movie?)
+  ;;   othercam    — NPC talk sequences, fuel-cell victory cameras
+  ;;
+  ;; NOTE: spooling is intentionally excluded. The spooling setting fires for ANY
+  ;; streaming audio event including ambient NPC idle dialogue, which has no
+  ;; camera lockout. Including it caused P2 to flicker invisible on every ambient
+  ;; voice line. real-movie? + movie? + othercam covers all actual lockout cases.
+  (let ((cam-handle (-> *game-info* other-camera-handle)))
+    (or (real-movie?)
+        (-> *setting-control* current movie)
+        (and (not (zero? cam-handle)) (handle->process cam-handle)))))
+
+(defun split-screen-render-ready? ()
+  (let ((cam-handle (-> *game-info* other-camera-handle)))
+    (if (and (target-alive? (get-target 1))
+             (not (real-movie?))
+             (not (paused?))
+             (or (zero? cam-handle) (not (handle->process cam-handle)))
+             *camera-p2*
+             (nonzero? (-> *camera-p2* tracked-target)))
+      #t
+      #f)))
+
+(defun split-screen-update-presentation-lock! ()
+  ;; Architecture: responsibility split between draw hook (this fn) and
+  ;; localmulti-run-eachframe.
+  ;;
+  ;; DRAW HOOK (here): set the hidden bit on P2 EVERY frame while blocked.
+  ;; This is a direct bit-write — safe in the draw hook context (post-dispatch).
+  ;; dma-add-process-drawable checks this bit during foreground-engine-execute,
+  ;; which runs AFTER this function in the same draw-hook invocation. Setting it
+  ;; here also re-hides P2 after any state-transition :exit that called target-exit
+  ;; (which clears hidden) during the preceding dispatch.
+  ;; IMPORTANT: do NOT call send-event from here — the draw hook runs outside any
+  ;; process tick; process state-change events (go target-grab) may longjmp
+  ;; in ways that skip subsequent code. Direct bit manipulation is safe; sends are not.
+  ;;
+  ;; LOCALMULTI (pre-dispatch): reads *split-screen-presentation-lock-active* to
+  ;; know when to enforce target-grab (input lock). send-event from that context is
+  ;; safe because it fires before execute-math-engine.
+  (let ((blocked (split-screen-presentation-blocked?)))
+    ;; Hide P2 every frame while a presentation is blocking (idempotent bit-set).
+    (when blocked
+      (let ((p2-tgt (get-target 1)))
+        (when (and p2-tgt (target-alive? p2-tgt))
+          (logior! (-> p2-tgt draw status) (draw-status hidden)))))
+    ;; Edge detection: signal latch for localmulti's grab/release sends.
+    (cond
+      ((and blocked (not *split-screen-presentation-lock-active*))
+       (when (multi-log-enabled? 'cutscene)
+         (let ((p2-tgt (get-target 1)))
+           (format 0 "[MULTI:cut]  lock latch SET — blocked=T state=~A~%"
+                   (if (and p2-tgt (target-alive? p2-tgt)) (-> p2-tgt state name) 'nil))))
+       (set! *split-screen-presentation-lock-active* #t))
+      ((and (not blocked) *split-screen-presentation-lock-active*)
+       (when (multi-log-enabled? 'cutscene)
+         (format 0 "[MULTI:cut]  lock latch CLEARED — blocked=F~%"))
+       ;; Do NOT call process-taskable-release-coop-targets-from-split-screen! here.
+       ;; That sends 'end-mode (a process state-change event) from the draw hook —
+       ;; same unsafe-send problem. localmulti-run-eachframe handles the actual
+       ;; 'end-mode when it sees the latch flip to #f next frame.
+       (set! *split-screen-presentation-lock-active* #f))))
+  (none))
+
+(defun split-screen-force-release-presentation-lock! ()
+  ;; Called from NPC `:exit` handlers (sage.gc, sidekick-human.gc) that fire a
+  ;; `(start 'play ...)` continue handoff directly — bypassing the normal frame
+  ;; where split-screen-presentation-blocked? would return #f organically.
+  ;;
+  ;; MUST call process-taskable-release here: the NPC cutscene lock path
+  ;; (process-taskable-lock-coop-targets-for-presentation!) populated
+  ;; *process-taskable-coop-lock-targets* and set *process-taskable-coop-lock-owner*
+  ;; to the NPC's handle. Without this release, both survive the level transition
+  ;; (owner stays non-zero into training), which was the root cause of the black
+  ;; screen on training entry.
+  ;;
+  ;; NOTE: process-taskable-lock-coop-targets-from-split-screen! (the draw-hook
+  ;; variant) is never called in the current architecture — the draw hook only
+  ;; bit-writes and latches. Only the NPC-initiated lock path needs releasing here.
+  (process-taskable-release-coop-targets-from-split-screen!)
+  (set! *split-screen-presentation-lock-active* #f)
+  (none))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Split-screen render predicate
@@ -112,12 +201,8 @@
       full-screen from the very first frame the othercam process exists.
    Called from: drawable.gc (__pc-set-split-screen-active, dispatch cond,
    display-frame-finish merc/TIE init guard)."
-  (let ((result (and (target-alive? (get-target 1))
-                     (not (real-movie?))
-                     (not (paused?))
-                     (not (handle->process (-> *game-info* other-camera-handle)))
-                     *camera-p2*
-                     (nonzero? (-> *camera-p2* tracked-target)))))
+  (let ((result (split-screen-render-ready?)))
+    (split-screen-update-presentation-lock!)
     ;; Log the exact frame split-screen re-activates so crash #3 can be
     ;; correlated against warp/camera logs if it persists after these fixes.
     (when (and result (not *split-screen-prev-active*))

@@ -23,6 +23,14 @@
 ;; split-screen-should-render? (multi-draw.gc) indirectly via *target-list*.
 (define *multi-coop-active* #f)
 
+;; Presentation-lock latch set by the draw hook (multi-draw.gc). Localmulti reads
+;; this flag (which reflects the PREVIOUS frame's draw-hook state) to know when to
+;; enforce target-grab / release on P2 via safe pre-dispatch send-events.
+(define-extern *split-screen-presentation-lock-active* symbol)
+;; Tracks whether localmulti has sent 'change-mode 'grab to P2 for a presentation.
+;; Used to detect the release edge (latch flips false) and send 'end-mode exactly once.
+(define *localmulti-presentation-lock-enforced* #f)
+
 ;; Phase 3G.2 Session B: *camera-p2* and *camera-combiner-p2* come from camera-h.gc
 ;; via the require above. Process pools live in gkernel.gc and need forward decls here.
 (define-extern *camera-dead-pool* dead-pool)
@@ -209,6 +217,40 @@
   "Main per-frame co-op update. Updates vehicle state, manages camera,
    handles racer/flutflut sections, and warps lagging players back."
 
+  ;; ── Presentation lock enforcement ──────────────────────────────────────────
+  ;; The draw hook (split-screen-update-presentation-lock! in multi-draw.gc) sets
+  ;; *split-screen-presentation-lock-active* and directly hides P2 via logior!.
+  ;; That handles VISIBILITY immediately (bit-write is safe in draw context).
+  ;; INPUT LOCKING requires send-event which must come from here (pre-dispatch),
+  ;; where process state-change events are safe.
+  ;;
+  ;; The latch we read here reflects the PREVIOUS frame's draw-hook result — a
+  ;; one-frame latency that is acceptable because P2 is already hidden from the
+  ;; draw hook on the same frame the cutscene starts.
+  (when *multi-coop-active*
+    (let ((p2-tgt (get-target 1)))
+      (cond
+        ;; Latch is on: enforce target-grab while cutscene is active.
+        (*split-screen-presentation-lock-active*
+         (when (and (target-alive? p2-tgt) (not (= (-> p2-tgt state name) 'target-grab)))
+           (when (multi-log-enabled? 'cutscene)
+             (format 0 "[MULTI:cut]  grab enforced (was ~A)~%" (-> p2-tgt state name)))
+           (send-event p2-tgt 'change-mode 'grab))
+         (set! *localmulti-presentation-lock-enforced* #t))
+        ;; Latch just cleared: release P2 from grab and un-hide.
+        (*localmulti-presentation-lock-enforced*
+         (set! *localmulti-presentation-lock-enforced* #f)
+         (when (and p2-tgt (target-alive? p2-tgt))
+           ;; Clear hidden regardless of current state — the draw hook set it
+           ;; every frame while blocked, and target-exit does NOT clear draw-status.
+           ;; Without this, P2 stays permanently invisible after the cutscene.
+           (logclear! (-> p2-tgt draw status) (draw-status hidden))
+           (when (= (-> p2-tgt state name) 'target-grab)
+             (when (multi-log-enabled? 'cutscene)
+               (format 0 "[MULTI:cut]  releasing grab (cutscene ended)~%"))
+             (send-event p2-tgt 'end-mode)))))))
+  ;; ── End presentation lock enforcement ──────────────────────────────────────
+
   ;; Session 26: defensive sync. runs-on-tgt-int only writes *target-list* 0
   ;; when the slot is zero, so once set it's never refreshed — but P1's target
   ;; process can be re-created during level transitions, leaving slot 0 with a
@@ -380,6 +422,10 @@
     ;; re-applies the offset pre-dispatch on the next frame, guaranteeing P2's
     ;; first draw tick sees the correct position.
     (set! *multi-pending-initial-offset* #t)
+    ;; Snap P2's camera on the very next pre-dispatch tick so it hard-cuts to the
+    ;; follow position rather than interpolating from whatever the camera held before
+    ;; (e.g. the intro cutscene camera position after sage.gc fires a continue).
+    (set! *multi-pending-snap* #t)
     (set! (-> *target-list* idx) (process->handle tgt))
     ;; Per-viewport HUD Phase 1: copy per-fact shared counters (buzzer/eco-pill) from
     ;; *target* so the new player's HUD reads correct values from frame zero. Game-info
