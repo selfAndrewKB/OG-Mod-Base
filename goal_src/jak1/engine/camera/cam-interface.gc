@@ -78,6 +78,26 @@
         (f1-0 (-> *math-camera* camera-rot data 2)))
     (atan f1-0 f0-0)))
 
+(defun camera-angle-p2 ()
+  "Return P2's camera yaw angle, or P1's when P2 is absent/cutscene."
+  (if (and *multi-coop-active*
+           (not (movie?))
+           (not *external-cam-mode*)
+           *camera-p2*
+           (nonzero? (-> *camera-p2* tracked-target)))
+    (atan (-> *p2-math-camera* camera-rot data 2) (-> *p2-math-camera* camera-rot data 0))
+    (camera-angle)))
+
+(defun camera-pos-p2 ()
+  "Return P2's camera position, or P1's when P2 is absent/cutscene."
+  (if (and *multi-coop-active*
+           (not (movie?))
+           (not *external-cam-mode*)
+           *camera-p2*
+           (nonzero? (-> *camera-p2* tracked-target)))
+    (-> *p2-math-camera* trans)
+    (camera-pos)))
+
 ;; definition for function camera-teleport-to-entity
 ;; INFO: Return type mismatch int vs none.
 ;; Used lq/sq

@@ -405,6 +405,7 @@
               (let ((v1-32 (-> *level* level s4-1)))
                 (when (= (-> v1-32 status) 'active)
                   (collect-ambients (-> v1-32 bsp) s5-1 0 (-> (scratchpad-object terrain-context) work ambient ambient-list)))))
+
             (countdown (s4-2 (-> (scratchpad-object terrain-context) work ambient ambient-list num-items))
               (execute-ambient (-> (scratchpad-object terrain-context) work ambient ambient-list items s4-2) s5-1)))))
       (add-ee-profile-frame 'draw :r #x40 :b #x40) ;; actor update
@@ -553,7 +554,7 @@
         (process-particles))
       ;; vif0 collide
       (with-profiler "sound-update"
-        (swap-sound-buffers (ear-trans) (camera-pos) (camera-angle))
+        (swap-sound-buffers (ear-trans) (ear-trans-p2) (camera-pos) (camera-angle) (camera-angle-p2) (camera-pos-p2))
         (str-play-kick))
       (with-profiler "level-update"
         (level-update *level*) ;; also updates settings.

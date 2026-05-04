@@ -183,12 +183,12 @@
 
 (define *sound-player-enable* #t)
 
-(defun swap-sound-buffers ((arg0 vector) (arg1 vector) (arg2 float))
+(defun swap-sound-buffers ((ear0 vector) (ear1 vector) (cam vector) (cam-ang float) (cam-ang1 float) (cam1 vector))
   (cond
     ((check-busy *sound-player-rpc*) (set! *sound-player-enable* #f))
     (else
      (let ((a0-2 (-> *sound-player-rpc* current)))
-       (if (< (-> a0-2 elt-used) (-> a0-2 elt-count)) (sound-set-ear-trans arg0 arg1 arg2)))
+       (if (< (-> a0-2 elt-used) (-> a0-2 elt-count)) (sound-set-ear-trans ear0 ear1 cam cam-ang cam-ang1 cam1)))
      (call *sound-player-rpc* (the-as uint 0) (the-as pointer 0) (the-as uint 0))
      (set! *sound-player-enable* #t)))
   (cond
@@ -252,12 +252,15 @@
     (set! (-> cmd right) (the-as uint (the int (* 32767.0 arg2)))))
   0)
 
-(defun sound-set-ear-trans ((ear-trans vector) (cam-trans vector) (cam-angle float))
+(defun sound-set-ear-trans ((ear-trans0 vector) (ear-trans1 vector) (cam-trans vector) (cam-angle float) (cam-angle1 float) (cam-trans1 vector))
   (let ((cmd (the sound-rpc-set-ear-trans (get-sound-buffer-entry))))
     (set! (-> cmd command) (sound-command set-ear-trans))
-    (sound-trans-convert (-> cmd ear-trans) ear-trans)
+    (sound-trans-convert (-> cmd ear-trans) ear-trans0)
+    (sound-trans-convert (-> cmd ear-trans1) ear-trans1)
     (sound-trans-convert (-> cmd cam-trans) cam-trans)
-    (set! (-> cmd cam-angle) (sound-angle-convert cam-angle)))
+    (set! (-> cmd cam-angle) (sound-angle-convert cam-angle))
+    (set! (-> cmd cam-angle1) (sound-angle-convert cam-angle1))
+    (sound-trans-convert (-> cmd cam-trans1) cam-trans1))
   0)
 
 (defmacro sound-trans-from-process (cmd sound-trans)
@@ -465,6 +468,7 @@
       (else (the ambient-sound 0)))))
 
 (define-extern *debug-effect-control* symbol)
+(define-extern *multi-coop-active* symbol)
 
 (defmethod update! ((this ambient-sound))
   "Called once per frame to update the sound playback"
@@ -486,7 +490,7 @@
            (set! (-> spec mask) (sound-mask))
            (if (-> this params) (effect-param->sound-spec spec (-> this params) (-> this param-count))))
          (if (and (nonzero? (-> spec fo-max))
-                  (< (* 4096.0 (the float (-> spec fo-max))) (vector-vector-distance (ear-trans) (-> this trans))))
+                  (< (* 4096.0 (the float (-> spec fo-max))) (min-ear-dist (-> this trans))))
            (return 0))
          (when (and *debug-effect-control* (>= (-> this time-base) 0))
            (with-pp
@@ -605,15 +609,31 @@
 (defun-extern math-camera-pos vector)
 
 (defun-extern target-pos int vector)
+(defun-extern target-pos-for target int vector)
 
 (defun-extern camera-pos vector)
 
 (defun ear-trans ()
   "Return the trans for the game ear"
-  (cond
-    ((or (movie?) *external-cam-mode*) (math-camera-pos))
-    (*target* (target-pos 0))
-    (else (camera-pos))))
+  (let ((result (cond
+                  ((or (movie?) *external-cam-mode*) (math-camera-pos))
+                  (*target* (target-pos 0))
+                  (else (camera-pos)))))
+    result))
+
+(defun ear-trans-p2 ()
+  "Return P2's audio listener position, or ear-trans when P2 is absent/cutscene."
+  (when (or (not *multi-coop-active*) (movie?) *external-cam-mode*)
+    (return (ear-trans)))
+  (let ((p2 (get-target 1)))
+    (if p2
+      (target-pos-for p2 0)
+      (ear-trans))))
+
+(defun min-ear-dist ((pos vector))
+  "Minimum distance from pos to either player's ear — used for sound culling."
+  (fmin (vector-vector-distance pos (ear-trans))
+        (vector-vector-distance pos (ear-trans-p2))))
 
 (defun-debug make-sqrt-table ()
   "Write the C code for the ??? square root table"

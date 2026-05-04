@@ -62,9 +62,12 @@ struct SoundRpcSetReverb {
 };
 
 struct SoundRpcSetEarTrans {
-  Vec3w ear_trans;
-  Vec3w cam_trans;
-  s32 cam_angle;
+  Vec3w ear_trans;   // P1 ear position (falloff reference)
+  Vec3w cam_trans;   // P1 camera position (pan reference)
+  s32 cam_angle;     // P1 camera angle
+  Vec3w ear_trans1;  // P2 ear position (falloff reference)
+  s32 cam_angle1;    // P2 camera angle (pan reference for P2-proximal sounds)
+  Vec3w cam_trans1;  // P2 camera position (pan reference for P2-proximal sounds)
 };
 
 struct SoundRpc2SetEarTrans {

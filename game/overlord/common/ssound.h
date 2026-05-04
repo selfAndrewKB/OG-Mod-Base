@@ -56,8 +56,10 @@ extern Sound gSounds[64];
 extern Vec3w gEarTrans[2];
 extern Curve gCurves[16];
 extern Vec3w gCamTrans;
+extern Vec3w gCamTrans1;   // P2 camera position, used by CalculateAngle for P2-proximal sounds
 extern u8 gMirrorMode;
 extern s32 gCamAngle;
+extern s32 gCamAngle1;     // P2 camera angle, used by CalculateAngle for P2-proximal sounds
 extern u32 sLastTick;
 
 void ssound_init_globals();

@@ -234,9 +234,12 @@
    (right  uint32)))
 
 (deftype sound-rpc-set-ear-trans (sound-rpc-cmd)
-  ((ear-trans vector3w :inline)
-   (cam-trans vector3w :inline)
-   (cam-angle int32)))
+  ((ear-trans  vector3w :inline)
+   (cam-trans  vector3w :inline)
+   (cam-angle  int32)
+   (ear-trans1 vector3w :inline)
+   (cam-angle1 int32)
+   (cam-trans1 vector3w :inline)))
 
 (deftype sound-rpc-set-flava (sound-rpc-cmd)
   ((flava uint8)))
@@ -372,6 +375,10 @@
 
 (defun-extern string->sound-name string sound-name)
 
-(defun-extern sound-set-ear-trans vector vector float int)
+(defun-extern sound-set-ear-trans vector vector vector float float vector int)
 
 (defun-extern ear-trans vector)
+(defun-extern ear-trans-p2 vector)
+(defun-extern min-ear-dist vector float)
+(defun-extern camera-angle-p2 float)
+(defun-extern camera-pos-p2 vector)

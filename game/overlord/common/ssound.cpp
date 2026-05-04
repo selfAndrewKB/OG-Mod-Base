@@ -11,9 +11,11 @@ constexpr int kNumSounds = 64;
 Sound gSounds[kNumSounds];
 Vec3w gEarTrans[2];
 Vec3w gCamTrans;
+Vec3w gCamTrans1;  // P2 camera position, read by CalculateAngle for P2-proximal sounds
 s32 gMusicFadeDir = 0;
 Curve gCurves[16];
 s32 gCamAngle;
+s32 gCamAngle1;  // P2 camera angle, read by CalculateAngle for P2-proximal sounds
 u8 gMirrorMode = 0;
 u32 sLastTick = 0;
 s64 gAddIndex = 0;
@@ -97,20 +99,29 @@ void CleanSounds() {
 }
 
 s32 CalculateAngle(Vec3w* trans) {
-  s32 diffX = gCamTrans.x - trans->x;
-  s32 diffZ = gCamTrans.z - trans->z;
+  // Use the camera of whichever player's ear is closer to the sound.
+  // Short-circuit when both ears are identical (single-player or collocated players).
+  Vec3w* camRef = &gCamTrans;
+  s32 camAngle = gCamAngle;
+
+  if (gEarTrans[0].x != gEarTrans[1].x || gEarTrans[0].y != gEarTrans[1].y ||
+      gEarTrans[0].z != gEarTrans[1].z) {
+    s64 d0x = (s64)gEarTrans[0].x - trans->x;
+    s64 d0z = (s64)gEarTrans[0].z - trans->z;
+    s64 d1x = (s64)gEarTrans[1].x - trans->x;
+    s64 d1z = (s64)gEarTrans[1].z - trans->z;
+    if (d1x * d1x + d1z * d1z < d0x * d0x + d0z * d0z) {
+      camRef = &gCamTrans1;
+      camAngle = gCamAngle1;
+    }
+  }
+
+  s32 diffX = camRef->x - trans->x;
+  s32 diffZ = camRef->z - trans->z;
   s32 angle;
 
-  s32 lookupX = diffX;
-  s32 lookupZ = diffZ;
-
-  if (diffX < 0) {
-    lookupX = trans->x - gCamTrans.x;
-  }
-
-  if (diffZ < 0) {
-    lookupZ = trans->z - gCamTrans.z;
-  }
+  s32 lookupX = diffX < 0 ? -diffX : diffX;
+  s32 lookupZ = diffZ < 0 ? -diffZ : diffZ;
 
   if (lookupX == 0 && lookupZ == 0) {
     return 0;
@@ -146,7 +157,7 @@ s32 CalculateAngle(Vec3w* trans) {
     }
   }
 
-  angle = (angle - gCamAngle + 720) % 360;
+  angle = (angle - camAngle + 720) % 360;
 
   if (gMirrorMode) {
     angle = ((180 - angle) + 180) % 360;
@@ -172,6 +183,21 @@ s32 CalculateFalloffVolume(Vec3w* pos, s32 volume, s32 fo_curve, s32 fo_min, s32
     xdiff = gEarTrans[0].x - pos->x;
     ydiff = gEarTrans[0].y - pos->y;
     zdiff = gEarTrans[0].z - pos->z;
+
+    // co-op: use the closer ear; short-circuit when both ears are identical (single-player)
+    if (gEarTrans[0].x != gEarTrans[1].x || gEarTrans[0].y != gEarTrans[1].y ||
+        gEarTrans[0].z != gEarTrans[1].z) {
+      s32 x1 = gEarTrans[1].x - pos->x;
+      s32 y1 = gEarTrans[1].y - pos->y;
+      s32 z1 = gEarTrans[1].z - pos->z;
+      s64 dist0_sq = (s64)xdiff * xdiff + (s64)ydiff * ydiff + (s64)zdiff * zdiff;
+      s64 dist1_sq = (s64)x1 * x1 + (s64)y1 * y1 + (s64)z1 * z1;
+      if (dist1_sq < dist0_sq) {
+        xdiff = x1;
+        ydiff = y1;
+        zdiff = z1;
+      }
+    }
   } else {
     if (fo_curve == 1) {
       return volume;

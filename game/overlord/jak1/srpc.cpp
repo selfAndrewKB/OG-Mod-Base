@@ -330,8 +330,9 @@ void* RPC_Player(unsigned int /*fno*/, void* data, int size) {
           gFlava = cmd->flava.flava;
         } break;
         case Jak1SoundCommand::SET_EAR_TRANS: {
-          SetEarTrans(&cmd->ear_trans.ear_trans, &cmd->ear_trans.ear_trans,
-                      &cmd->ear_trans.cam_trans, cmd->ear_trans.cam_angle);
+          SetEarTrans(&cmd->ear_trans.ear_trans, &cmd->ear_trans.ear_trans1,
+                      &cmd->ear_trans.cam_trans, cmd->ear_trans.cam_angle,
+                      cmd->ear_trans.cam_angle1, &cmd->ear_trans.cam_trans1);
         } break;
         case Jak1SoundCommand::SHUTDOWN: {
           gSoundEnable = 0;

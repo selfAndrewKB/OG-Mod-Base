@@ -139,7 +139,8 @@ void UpdateLocation(Sound* sound) {
   }
 }
 
-void SetEarTrans(Vec3w* ear_trans0, Vec3w* ear_trans1, Vec3w* cam_trans, s32 cam_angle) {
+void SetEarTrans(Vec3w* ear_trans0, Vec3w* ear_trans1, Vec3w* cam_trans, s32 cam_angle,
+                 s32 cam_angle1, Vec3w* cam_trans1) {
   s32 tick = snd_GetTick();
   u32 delta = tick - sLastTick;
   sLastTick = tick;
@@ -147,7 +148,9 @@ void SetEarTrans(Vec3w* ear_trans0, Vec3w* ear_trans1, Vec3w* cam_trans, s32 cam
   gEarTrans[0] = *ear_trans0;
   gEarTrans[1] = *ear_trans1;
   gCamTrans = *cam_trans;
+  gCamTrans1 = *cam_trans1;
   gCamAngle = cam_angle;
+  gCamAngle1 = cam_angle1;
 
   for (auto& s : gSounds) {
     if (s.id != 0 && s.is_music == 0) {

@@ -14,6 +14,7 @@ extern s32 gMusicVol;
 
 void InitSound_Overlord();
 void UpdateLocation(Sound* sound);
-void SetEarTrans(Vec3w* ear_trans1, Vec3w* ear_trans2, Vec3w* cam_trans, s32 cam_angle);
+void SetEarTrans(Vec3w* ear_trans1, Vec3w* ear_trans2, Vec3w* cam_trans, s32 cam_angle,
+                 s32 cam_angle1, Vec3w* cam_trans1);
 void SetMusicVol();
 }  // namespace jak1
