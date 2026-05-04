@@ -76,7 +76,7 @@
       (set! (-> self path-pos)
             (get-current-phase-linear-plat self))
       (eval-linear-path! (-> self path) (-> self basetrans) (-> self path-pos))
-      (if (< (vector-vector-distance (-> self root trans) (ear-trans)) 81920.0)
+      (if (< (min-ear-dist (-> self root trans)) 81920.0)
         (sound-play "eco-plat-hover" :id (-> self sound-id) :position (the-as symbol (-> self root trans))))
       (plat-trans))
   :code

@@ -168,7 +168,7 @@
               (get-current-phase (-> self sync))
               (get-current-phase-with-mirror (-> self sync))))
       (eval-path-curve! (-> self path) (-> self basetrans) (-> self path-pos) 'interp)
-      (if (< (vector-vector-distance (-> self root trans) (ear-trans)) 81920.0)
+      (if (< (min-ear-dist (-> self root trans)) 81920.0)
         (sound-play "eco-plat-hover" :id (-> self sound-id) :position (the-as symbol (-> self root trans))))
       (plat-trans))
   :code

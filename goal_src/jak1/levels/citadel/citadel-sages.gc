@@ -284,7 +284,7 @@
       ((-> (method-of-type process-taskable hidden) enter))))
 
 (defbehavior citb-sage-draw-beam citb-sage ()
-  (if (< (vector-vector-distance (ear-trans) (-> self spawn-pos)) 409600.0)
+  (if (< (min-ear-dist (-> self spawn-pos)) 409600.0)
     (sound-play-by-name (string->sound-name (-> self sound-name))
                         (-> self sound-id)
                         1024
