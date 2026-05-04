@@ -260,10 +260,14 @@
         (let ((rider-proc (the-as target (handle->process (-> self rider)))))
           (when (and rider-proc
                      (or (and (= message 'touch) (= proc rider-proc))
-                         (= message 'attack))
-                     (send-event rider-proc 'end-mode))
-            (set! (-> self rider) (the-as handle 0))
-            (go-virtual idle))))
+                         (= message 'attack)))
+            ;; Send 'end-mode to start the dismount animation, but do NOT go
+            ;; to idle here. The vehicle stays hidden until the get-off
+            ;; animation completes (target-flut-start :exit fires when leaving
+            ;; the get-off state group, clearing collide-action flut and
+            ;; deactivating the manipy). The code loop detects the cleared
+            ;; flag and transitions to idle at that point.
+            (send-event rider-proc 'end-mode))))
       (if (= message 'trans) (vector+! (the-as vector (-> block param 0)) (-> self root trans) (-> self extra-trans))))
   :enter
     (behavior ()

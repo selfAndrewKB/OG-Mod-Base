@@ -383,10 +383,15 @@
           (when (and rider-proc
                      (!= (-> self condition) 4)
                      (= proc rider-proc)
-                     (or (= message 'touch) (= message 'attack))
-                     (send-event rider-proc 'end-mode))
-            (set! (-> self rider) (the-as handle 0))
-            (go-virtual idle))))
+                     (or (= message 'touch) (= message 'attack)))
+            ;; Send 'end-mode to start the dismount animation, but do NOT go
+            ;; to idle here. The vehicle must stay hidden until the get-off
+            ;; animation completes (target-racing-start :exit fires when
+            ;; entering target-racing-get-off-hit-ground, clearing the racer
+            ;; collide-action and deactivating the manipy). The code loop below
+            ;; detects the cleared flag and transitions to idle at that point,
+            ;; preventing the ghost-at-transpad artifact.
+            (send-event rider-proc 'end-mode))))
       (cond
         ((= message 'trans) (vector+! (the-as vector (-> block param 0)) (-> self root trans) (-> self extra-trans)))
         ((= message 'shadow)
