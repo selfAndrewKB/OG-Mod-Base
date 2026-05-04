@@ -208,11 +208,15 @@
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
       (case message
         (('draw)
-         (ja-channel-set! 1)
-         (ja :group! flut-saddle-flut-idle-ja)
-         (set! (-> self root root-prim prim-core action) (collide-action solid attackable-unused))
-         (set! (-> self root root-prim prim-core offense) (collide-offense indestructible))
-         (transform-post))
+         ;; In co-op, P2's camera can bring the transpad into view while a player is
+         ;; actively riding, firing 'draw and ghosting the stationary vehicle model.
+         ;; Only restore visibility when no rider is present (return-to-pad path).
+         (when (zero? (-> self rider))
+           (ja-channel-set! 1)
+           (ja :group! flut-saddle-flut-idle-ja)
+           (set! (-> self root root-prim prim-core action) (collide-action solid attackable-unused))
+           (set! (-> self root root-prim prim-core offense) (collide-offense indestructible))
+           (transform-post)))
         (('trans) (vector+! (the-as vector (-> block param 0)) (-> self root trans) (-> self extra-trans)))
         (('touch 'attack) #f)))
   :enter
@@ -226,7 +230,12 @@
         (let ((rp (the-as target #f)))
           (when (not (zero? (-> self rider)))
             (set! rp (the-as target (handle->process (-> self rider)))))
-          (if (or (not rp) (< 24576.0 (vector-vector-distance (-> self root trans) (-> rp control trans)))) (go arg0)))
+          ;; Also exit if the rider has already dismounted (flag cleared) so we
+          ;; don't spin here forever when the player dismounts near the transpad.
+          (if (or (not rp)
+                  (not (logtest? (-> rp control root-prim prim-core action) (collide-action flut)))
+                  (< 24576.0 (vector-vector-distance (-> self root trans) (-> rp control trans))))
+            (go arg0)))
         (flutflut-effect)
         (suspend))
       (while (let ((rp (the-as target #f)))

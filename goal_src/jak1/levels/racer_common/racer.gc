@@ -327,11 +327,15 @@
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
       (case message
         (('draw)
-         (ja-channel-set! 1)
-         (ja :group! racer-racer-idle-ja)
-         (set! (-> self root root-prim prim-core action) (collide-action solid attackable-unused))
-         (set! (-> self root root-prim prim-core offense) (collide-offense indestructible))
-         (transform-post))
+         ;; In co-op, P2's camera can bring the transpad into view while a player
+         ;; is actively riding, firing 'draw and ghosting the stationary vehicle model
+         ;; at the transpad. Only restore visibility when no rider is present.
+         (when (zero? (-> self rider))
+           (ja-channel-set! 1)
+           (ja :group! racer-racer-idle-ja)
+           (set! (-> self root root-prim prim-core action) (collide-action solid attackable-unused))
+           (set! (-> self root root-prim prim-core offense) (collide-offense indestructible))
+           (transform-post)))
         (('trans) (vector+! (the-as vector (-> block param 0)) (-> self root trans) (-> self extra-trans)))
         (('touch 'attack) #f)
         (('shadow)
@@ -350,7 +354,11 @@
         (when (not (zero? (-> self rider)))
           (set! rider-proc (the-as target (handle->process (-> self rider)))))
         (while (zero? (ja-group-size))
-          (when (or (not rider-proc) (< 24576.0 (vector-vector-distance (-> self root trans) (-> rider-proc control trans))))
+          (when (or (not rider-proc)
+                    ;; Also exit if the rider has dismounted (flag cleared) so we
+                    ;; don't spin here forever when the player dismounts near the transpad.
+                    (not (logtest? (-> rider-proc control root-prim prim-core action) (collide-action racer)))
+                    (< 24576.0 (vector-vector-distance (-> self root trans) (-> rider-proc control trans))))
             (when (and rider-proc (logtest? (-> rider-proc control root-prim prim-core action) (collide-action racer)))
               (case (-> (level-get-target-inside *level*) name)
                 (('misty)
