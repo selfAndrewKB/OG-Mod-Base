@@ -975,6 +975,7 @@
   (none))
 
 (define *fuel-cell-tune-pos* (new 'static 'vector :w 1000000000.0))
+(define *fuel-cell-racer-victory-presentation-active* #f)
 
 (deftype fuel-cell (eco-collectable)
   ((victory-anim spool-anim)
@@ -1121,11 +1122,26 @@
           (logior! (-> self draw status) (draw-status skip-bones))
           (if (not (or (logtest? (res-lump-value (-> self entity) 'options fact-options :time (the-as float -1000000000.0))
                                  (fact-options powerup))
+                       (string= (-> self victory-anim name) "fuel-cell-racer-victory-1")
                        (and *target* (logtest? (-> *target* control root-prim prim-core action) (collide-action racer)))))
             (send-event *camera* 'teleport-to-other-start-string)))))
   :code
     (behavior ((arg0 object) (arg1 handle))
-      (local-vars (sv-96 res-tag))
+      (local-vars
+        (sv-96 res-tag)
+        (victory-target target))
+      (set! victory-target *target*)
+      (when (and (string= (-> self victory-anim name) "fuel-cell-racer-victory-1")
+                 (not (zero? arg1)))
+        (let ((picker (handle->process arg1)))
+          (when (and picker (type-type? (-> picker type) target))
+            ;; This Misty airborne cell is authored around the rider who grabs it:
+            ;; the racer victory animation expects its subject to already be in the
+            ;; jump/vehicle context. Most P2 fuel-cell pickups intentionally keep
+            ;; P1 as the singleton cutscene subject, but doing that here can make
+            ;; P1 play a racer-specific movie from an unrelated position or state.
+            ;; Keep the exception tightly scoped to the racer victory anim.
+            (set! victory-target (the-as target picker)))))
       (sound-play "pu-powercell")
       (clear-collide-with-as (-> self root))
       (logclear! (-> self mask) (process-mask actor-pause))
@@ -1140,7 +1156,7 @@
                 (-> *level* loading-level))
         (spool-push *art-control* (-> self victory-anim name) 0 self (the-as float -99.0))
         (suspend))
-      (while (not (send-event *target* 'clone-anim self))
+      (while (not (send-event victory-target 'clone-anim self))
         (spool-push *art-control* (-> self victory-anim name) 0 self (the-as float -99.0))
         (format #t "WARNING: fuel-cell stall on not cloning.~%")
         (suspend))
@@ -1156,28 +1172,35 @@
           ((= (-> self movie-pos-index) -1))
           (gp-1 (move-to-point! (-> self root) gp-1) (set-yaw-angle-clear-roll-pitch! (-> self root) (-> gp-1 w)))
           (else
-           (move-to-point! (-> self root) (-> *target* control trans))
-           (set-yaw-angle-clear-roll-pitch! (-> self root) (y-angle (-> *target* control)))
+           (move-to-point! (-> self root) (-> victory-target control trans))
+           (set-yaw-angle-clear-roll-pitch! (-> self root) (y-angle (-> victory-target control)))
            (move-to-ground (-> self root) (the-as float 40960.0) (the-as float 40960.0) #f (collide-kind background)))))
       (spool-push *art-control* (-> self victory-anim name) 0 self (the-as float -99.0))
-      (send-event *target* 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount))
+      (send-event victory-target 'get-pickup (-> self fact pickup-type) (-> self fact pickup-amount))
       (set! (-> self draw bounds w) 32768.0)
       (logior! (-> self skel status) (janim-status inited))
-      (send-event *target* 'blend-shape #t)
+      (send-event victory-target 'blend-shape #t)
       (add-setting! 'music-volume 'rel (-> *setting-control* current music-volume-movie) 0)
       (add-setting! 'sfx-volume 'rel (-> *setting-control* current sfx-volume-movie) 0)
       (add-setting! 'ambient-volume 'rel (-> *setting-control* current ambient-volume-movie) 0)
+      (when (string= (-> self victory-anim name) "fuel-cell-racer-victory-1")
+        ;; This is the one fuel-cell movie where the co-op picker can be the
+        ;; authored cutscene subject. While it runs, suppress the generic
+        ;; split-screen presentation lock so the picker is not hidden/grab-locked
+        ;; by the same othercam that is filming their racer victory.
+        (set! *fuel-cell-racer-victory-presentation-active* #t))
       (process-spawn othercam self 10 #f #t :to self)
       (auto-save-command 'auto-save 0 0 *default-pool*)
       (ja-play-spooled-anim (-> self victory-anim)
                             (the-as art-joint-anim fuel-cell-idle-ja)
                             (the-as art-joint-anim #f)
                             (the-as (function process-drawable symbol) false-func))
+      (set! *fuel-cell-racer-victory-presentation-active* #f)
       (remove-setting! 'music-volume)
       (remove-setting! 'sfx-volume)
       (remove-setting! 'ambient-volume)
-      (send-event *target* 'blend-shape #f)
-      (send-event *target* 'end-mode)
+      (send-event victory-target 'blend-shape #f)
+      (send-event victory-target 'end-mode)
       (send-event *camera* 'no-intro)
       (send-event *camera* 'clear-entity)
       (ja-channel-set! 0)

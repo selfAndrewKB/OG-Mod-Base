@@ -16,6 +16,7 @@
 ;; Forward declaration — multi-log-enabled? lives in engine/mods/multi-debug.gc
 ;; (GAME.CGO, compiles after this file). Used by the Session 20 draw diagnostic.
 (define-extern multi-log-enabled? (function symbol symbol))
+(define-extern *fuel-cell-racer-victory-presentation-active* symbol)
 
 ;; *camera-p2* is defined in ENGINE.CGO cam-start.gc. Forward-declared here so
 ;; split-screen-should-render? can read the tracked-target readiness field.
@@ -98,10 +99,18 @@
   ;; streaming audio event including ambient NPC idle dialogue, which has no
   ;; camera lockout. Including it caused P2 to flicker invisible on every ambient
   ;; voice line. real-movie? + movie? + othercam covers all actual lockout cases.
+  ;;
+  ;; Exception: Misty's airborne racer fuel cell (`fuel-cell-racer-victory-1`) is
+  ;; authored around the rider who actually grabs it. If P2 grabs it, the fuel-cell
+  ;; code routes the movie subject to P2; the generic "hide and grab-lock P2 while
+  ;; othercam is active" rule would hide the very actor the movie is trying to show.
+  ;; Keep this exception as a direct flag from that fuel-cell path, not a broad
+  ;; vehicle/cutscene rule.
   (let ((cam-handle (-> *game-info* other-camera-handle)))
-    (or (real-movie?)
-        (-> *setting-control* current movie)
-        (and (not (zero? cam-handle)) (handle->process cam-handle)))))
+    (and (not *fuel-cell-racer-victory-presentation-active*)
+         (or (real-movie?)
+             (-> *setting-control* current movie)
+             (and (not (zero? cam-handle)) (handle->process cam-handle))))))
 
 (defun split-screen-render-ready? ()
   (let ((cam-handle (-> *game-info* other-camera-handle)))
