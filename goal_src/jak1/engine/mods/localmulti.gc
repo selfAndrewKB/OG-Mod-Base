@@ -31,6 +31,17 @@
 ;; Used to detect the release edge (latch flips false) and send 'end-mode exactly once.
 (define *localmulti-presentation-lock-enforced* #f)
 
+(defun localmulti-presentation-grab-state? ((arg0 symbol))
+  ;; Presentation locking uses each target mode's native `'grab` transition.
+  ;; On foot this becomes `target-grab`, but vehicles keep their own wrapper
+  ;; states so they can restore racer/flut-specific physics and HUD state on
+  ;; `end-mode`. Treat all three as the same cutscene lock for enforcement and
+  ;; release, or P2 can remain stuck in `target-racing-grab` after a fuel-cell
+  ;; victory scene.
+  (or (= arg0 'target-grab)
+      (= arg0 'target-racing-grab)
+      (= arg0 'target-flut-grab)))
+
 ;; Phase 3G.2 Session B: *camera-p2* and *camera-combiner-p2* come from camera-h.gc
 ;; via the require above. Process pools live in gkernel.gc and need forward decls here.
 (define-extern *camera-dead-pool* dead-pool)
@@ -232,7 +243,7 @@
       (cond
         ;; Latch is on: enforce target-grab while cutscene is active.
         (*split-screen-presentation-lock-active*
-         (when (and (target-alive? p2-tgt) (not (= (-> p2-tgt state name) 'target-grab)))
+         (when (and (target-alive? p2-tgt) (not (localmulti-presentation-grab-state? (-> p2-tgt state name))))
            (when (multi-log-enabled? 'cutscene)
              (format 0 "[MULTI:cut]  grab enforced (was ~A)~%" (-> p2-tgt state name)))
            (send-event p2-tgt 'change-mode 'grab))
@@ -245,7 +256,7 @@
            ;; every frame while blocked, and target-exit does NOT clear draw-status.
            ;; Without this, P2 stays permanently invisible after the cutscene.
            (logclear! (-> p2-tgt draw status) (draw-status hidden))
-           (when (= (-> p2-tgt state name) 'target-grab)
+           (when (localmulti-presentation-grab-state? (-> p2-tgt state name))
              (when (multi-log-enabled? 'cutscene)
                (format 0 "[MULTI:cut]  releasing grab (cutscene ended)~%"))
              (send-event p2-tgt 'end-mode)))))))
