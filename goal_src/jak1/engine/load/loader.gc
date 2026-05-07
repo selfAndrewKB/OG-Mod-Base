@@ -11,6 +11,9 @@
 
 ;; note: changed for high fps
 
+(define-extern *multi-coop-active* symbol)
+(define-extern *target* target)
+
 ;; DECOMP BEGINS
 
 (defmethod inspect ((this load-dir))
@@ -734,7 +737,12 @@
 
 (defbehavior ja-abort-spooled-anim process-drawable ((arg0 spool-anim) (arg1 art-joint-anim) (arg2 int))
   "Abort a spooled animation."
-  (restore-load-state-and-cleanup *load-state*)
+  ;; Co-op fix: *backup-load-state* is only updated by P1's target-continue calls and
+  ;; pov-camera enter events. If P2 (or any non-P1 process) aborts a spooled anim it would
+  ;; overwrite *load-state* with a stale backup (e.g. village1+beach) even when P1 has
+  ;; since moved to a different level — instantly discarding it. Only P1 should restore.
+  (when (or (not *multi-coop-active*) (= (the-as process self) (the-as process *target*)))
+    (restore-load-state-and-cleanup *load-state*))
   (str-play-stop (-> arg0 name))
   (set! (-> *art-control* active-stream) #f)
   (logclear! (-> self skel status) (janim-status drawn done))

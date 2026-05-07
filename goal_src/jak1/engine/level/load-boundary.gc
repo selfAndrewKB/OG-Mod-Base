@@ -1088,7 +1088,11 @@
     (cond
       ((= (-> this want v1-0 name) arg0) (set! arg0 #f))
       ((= (-> this want v1-0 name) arg1) (set! arg1 #f))
-      (else (set! (-> this want v1-0 name) #f))))
+      (else
+       (when (and *multi-coop-active* (-> this want v1-0 name))
+         (format 0 "[WANTLEV:clear] slot ~D evict=~A call=(~A ~A)~%"
+                 v1-0 (-> this want v1-0 name) arg0 arg1))
+       (set! (-> this want v1-0 name) #f))))
   (when arg0
     (dotimes (v1-4 2)
       (when (not (-> this want v1-4 name))
@@ -1412,8 +1416,22 @@
       (cond
         ((= (-> s4-0 cmd) (load-boundary-cmd vis)) (load-state-want-vis (the-as symbol (-> s4-0 lev0))))
         ((= (-> s4-0 cmd) (load-boundary-cmd load))
+         (when *multi-coop-active*
+           (format 0 "[BOUNDARY:load] ~A->~A dir=~A~%"
+                   (-> s4-0 lev0) (-> s4-0 lev1)
+                   (if (= (the-as symbol s5-0) 1) "fwd" "bwd")))
          (load-state-want-levels (the-as symbol (-> s4-0 lev0)) (the-as symbol (-> s4-0 lev1))))
         ((= (-> s4-0 cmd) (load-boundary-cmd display))
+         (when *multi-coop-active*
+           (format 0 "[BOUNDARY:display] ~A->~A dir=~A~%"
+                   (-> s4-0 lev0) (-> s4-0 lev1)
+                   (if (= (the-as symbol s5-0) 1) "fwd" "bwd"))
+           (format 0 "[BOUNDARY:display] cam=(~M ~M) body=(~M ~M)~%"
+                   (-> *load-boundary-target* 0 x) (-> *load-boundary-target* 0 z)
+                   (-> *load-boundary-target* 1 x) (-> *load-boundary-target* 1 z))
+           (format 0 "[BOUNDARY:display] prev-cam=(~M ~M) prev-body=(~M ~M)~%"
+                   (-> *load-boundary-target* 2 x) (-> *load-boundary-target* 2 z)
+                   (-> *load-boundary-target* 3 x) (-> *load-boundary-target* 3 z)))
          (load-state-want-display-level (the-as symbol (-> s4-0 lev0)) (the-as symbol (-> s4-0 lev1))))
         ((= (-> s4-0 cmd) (load-boundary-cmd force-vis))
          (load-state-want-force-vis (the-as symbol (-> s4-0 lev0)) (the-as symbol (-> s4-0 lev1))))

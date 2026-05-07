@@ -212,7 +212,10 @@
         (let ((tgt (get-target idx)))
           (when (and (target-alive? tgt) (target-in-level? tgt lev))
             (when (multi-log-enabled? 'warp)
-              (format 0 "[MULTI:warp]    lev-unload ~A → warping tgt ~D~%" (-> lev name) idx))
+              (format 0 "[MULTI:warp] lev-unload ~A → warping tgt ~D from=(~M ~M) to-P1=(~M ~M)~%"
+                      (-> lev name) idx
+                      (-> tgt control trans x) (-> tgt control trans z)
+                      (-> *target* control trans x) (-> *target* control trans z)))
             (warp-jakA-to-jakB tgt *target*)
             ;; Can't snap directly — we're inside load-state::update!, which runs
             ;; post-dispatch this frame. Latch for next frame's run-eachframe.
