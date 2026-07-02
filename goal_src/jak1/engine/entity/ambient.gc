@@ -117,8 +117,9 @@
 
 (defun can-grab-display? ((arg0 process))
   (let ((v1-2 (the-as process #f)))
+    ;; coop: safe-handle
     (when (not (zero? (-> *game-info* display-text-handle)))
-      (set! v1-2 (handle->process (-> *game-info* display-text-handle))))
+      (set! v1-2 (safe-handle->process (-> *game-info* display-text-handle))))
     (when (and (or (not v1-2) (= v1-2 arg0) (time-elapsed? (-> *game-info* display-text-time) (seconds 0.1)))
                (can-grab-display-target-ok? *target*))
       (set! (-> *game-info* display-text-handle) (process->handle arg0))

@@ -280,8 +280,10 @@
   (set! (-> this tween) 0.02)
   (set! (-> this attack-mode) 'mother-spider-proj)
   (set! (-> this timeout) (seconds 4))
-  (let ((tgt (the-as target (handle->process (-> this last-target)))))
-    (set! (-> this target quad) (-> (target-pos-for tgt 0) quad)))
+  ;; coop: safe-handle
+  (let ((tgt (the-as target (safe-handle->process (-> this last-target)))))
+    (when tgt
+      (set! (-> this target quad) (-> (target-pos-for tgt 0) quad))))
   (+! (-> this target y) 4915.2)
   (set! (-> this target-base quad) (-> this target quad))
   (set! (-> this sound-id) (sound-play "mother-track"))
@@ -289,7 +291,8 @@
   (none))
 
 (defmethod projectile-method-28 ((this mother-spider-proj))
-  (let ((tgt (the-as target (handle->process (-> this last-target)))))
+  ;; coop: safe-handle
+  (let ((tgt (the-as target (safe-handle->process (-> this last-target)))))
     (when (and tgt
                (not (logtest? (-> tgt state-flags)
                               (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))

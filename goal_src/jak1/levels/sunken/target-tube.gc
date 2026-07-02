@@ -821,8 +821,9 @@
         (dotimes (idx (-> *target-list* length))
           (let ((tgt (get-target idx)))
             (when (and tgt
+                       ;; coop: safe-handle
                        (not (and (nonzero? (-> tgt tube))
-                                 (= (handle->process (-> tgt tube tube)) self)
+                                 (= (safe-handle->process (-> tgt tube tube)) self)
                                  (logtest? (-> tgt control root-prim prim-core action) (collide-action tube))))
                        (>= 81920.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
                        (< 0.0 (vector-dot (vector-! to-tgt (-> tgt control trans) (-> self root trans)) entrance-rot)))

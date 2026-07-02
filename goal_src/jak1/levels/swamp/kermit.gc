@@ -596,7 +596,8 @@
 ;; Falls back to P1 (target-pos 26) if handle is stale or hasn't been written
 ;; yet (defensive — :trans bodies should write before this is read).
 (defun kermit-player-target-pos ((krm kermit))
-  (let ((tgt (the-as target (handle->process (-> krm target-handle)))))
+  ;; coop: safe-handle
+  (let ((tgt (the-as target (safe-handle->process (-> krm target-handle)))))
     (if tgt
         (target-pos-for tgt 26)
         (target-pos 26))))
@@ -648,7 +649,8 @@
     tgt))
 
 (defbehavior kermit-set-nav-mesh-target kermit ((arg0 vector))
-  (let* ((tgt (the-as target (handle->process (-> self target-handle))))
+  ;; coop: safe-handle
+  (let* ((tgt (the-as target (safe-handle->process (-> self target-handle))))
          (gp-0 (if tgt (target-pos-for tgt 0) (target-pos 0)))
          (s5-1 (vector-! (new 'stack-no-clear 'vector) arg0 gp-0)))
     (vector-length s5-1)
@@ -695,7 +697,8 @@
     (else (let ((v0-1 (-> self rotate-dir))) (set! (-> v0-1 quad) (-> self nav travel quad)) v0-1))))
 
 (defbehavior kermit-set-rotate-dir-to-player kermit ()
-  (let ((tgt (the-as target (handle->process (-> self target-handle)))))
+  ;; coop: safe-handle
+  (let ((tgt (the-as target (safe-handle->process (-> self target-handle)))))
     (vector-! (-> self rotate-dir)
               (if tgt (target-pos-for tgt 0) (target-pos 0))
               (-> self nav target-pos))))
@@ -956,7 +959,8 @@ nav-enemy-default-event-handler
                  (s4-0 (if v1-13 (-> v1-13 0 self-override)))
                  (v1-15 (vector-lerp! (new 'stack-no-clear 'vector) gp-0 s5-0 (-> self tongue-pulse-pos))))
             (set! (-> s4-0 root trans quad) (-> v1-15 quad))))
-        (let ((tgt-for-event (the-as target (handle->process (-> self target-handle)))))
+        ;; coop: safe-handle
+        (let ((tgt-for-event (the-as target (safe-handle->process (-> self target-handle)))))
           (when tgt-for-event (send-event tgt-for-event 'tongue gp-0)))))
   :code
     (behavior ()
@@ -969,7 +973,8 @@ nav-enemy-default-event-handler
           (ja :num! (seek!)))))
   :post
     (behavior ()
-      (let ((tgt (the-as target (handle->process (-> self target-handle)))))
+      ;; coop: safe-handle
+      (let ((tgt (the-as target (safe-handle->process (-> self target-handle)))))
         (seek-to-point-toward-point! (-> self collide-info)
                                      (if tgt (target-pos-for tgt 0) (target-pos 0))
                                      (-> self rotate-speed)

@@ -827,7 +827,8 @@
           (quaternion-copy! (-> self control unknown-quaternion02) (-> self control quat))
           (quaternion-copy! (-> self control unknown-quaternion03) (-> self control unknown-quaternion00))
           (set! (-> self control unknown-uint20) (the-as uint (-> self control unknown-vector11 y)))
-          (let* ((s3-0 (if (nonzero? arg0) (handle->process arg0) #f))
+          ;; coop: safe-handle
+          (let* ((s3-0 (safe-handle->process arg0))
                  (s4-1 (if (and s3-0 (type-type? (-> s3-0 type) process-drawable)) (the-as racer s3-0))))
             (when s4-1
               (set! (-> s5-0 quad) (-> s4-1 root trans quad))

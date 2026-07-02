@@ -185,8 +185,9 @@
 (defun process-taskable-other-camera-clear? ()
   ;; handle->process is unsafe on zero-init handles, so keep the vanilla
   ;; "other camera must be clear" gate behind the same explicit guard everywhere.
+  ;; coop: safe-handle
   (let ((cam-handle (-> *game-info* other-camera-handle)))
-    (or (zero? cam-handle) (not (handle->process cam-handle)))))
+    (or (zero? cam-handle) (not (safe-handle->process cam-handle)))))
 
 (defun process-taskable-presentation-clear? ()
   ;; Mirror the presentation blockers used by split-screen-should-render?:
@@ -220,8 +221,9 @@
   ;; make every tracked extra target controllable and visible again.
   (dotimes (idx (-> *process-taskable-coop-lock-targets* length))
     (let ((lock-handle (-> *process-taskable-coop-lock-targets* idx)))
+      ;; coop: safe-handle
       (when (not (zero? lock-handle))
-        (let ((lock-target (handle->process lock-handle)))
+        (let ((lock-target (safe-handle->process lock-handle)))
           (when lock-target
             (send-event lock-target 'end-mode)
             (logclear! (-> (the-as target lock-target) draw status) (draw-status hidden))))
@@ -242,16 +244,16 @@
     (set! *process-taskable-coop-release-frame* -1)
     (dotimes (idx (-> *target-list* length))
       (let ((raw (-> *target-list* idx)))
-        (when (not (zero? raw))
-          (let ((tgt (the-as target (handle->process raw))))
-            (when (and tgt (!= tgt *target*))
-              ;; State-change events are side-effect driven; many native handlers
-              ;; accept the mode switch without returning a reliable truth value.
-              ;; Do not gate the visibility/handle bookkeeping on send-event's
-              ;; result, or scripted cutscene locks silently fail to mark P2.
-              (send-event tgt 'change-mode 'grab)
-              (logior! (-> tgt draw status) (draw-status hidden))
-              (set! (-> *process-taskable-coop-lock-targets* idx) (process->handle tgt))))))))
+        ;; coop: safe-handle
+        (let ((tgt (the-as target (safe-handle->process raw))))
+          (when (and tgt (!= tgt *target*))
+            ;; State-change events are side-effect driven; many native handlers
+            ;; accept the mode switch without returning a reliable truth value.
+            ;; Do not gate the visibility/handle bookkeeping on send-event's
+            ;; result, or scripted cutscene locks silently fail to mark P2.
+            (send-event tgt 'change-mode 'grab)
+            (logior! (-> tgt draw status) (draw-status hidden))
+            (set! (-> *process-taskable-coop-lock-targets* idx) (process->handle tgt)))))))
   (none))
 
 (defun process-taskable-lock-coop-targets! ((arg0 process-taskable))
@@ -668,14 +670,15 @@
           (best-dist 32768.0))
       (dotimes (idx (-> *target-list* length))
         (let ((raw (-> *target-list* idx)))
-          (when (not (zero? raw))
-            (let ((tgt (the-as target (handle->process raw))))
-              (when (and (process-taskable-target-prompt-ready? arg0 tgt)
-                         (process-taskable-prompt-subject-ready? arg0 tgt))
-                (let ((dist (vector-vector-distance (the-as vector (-> arg0 root root-prim prim-core)) (-> tgt control trans))))
-                  (when (< dist best-dist)
-                    (set! best-dist dist)
-                    (set! best tgt))))))))
+          ;; coop: safe-handle
+          (let ((tgt (the-as target (safe-handle->process raw))))
+            (when (and tgt
+                       (process-taskable-target-prompt-ready? arg0 tgt)
+                       (process-taskable-prompt-subject-ready? arg0 tgt))
+              (let ((dist (vector-vector-distance (the-as vector (-> arg0 root root-prim prim-core)) (-> tgt control trans))))
+                (when (< dist best-dist)
+                  (set! best-dist dist)
+                  (set! best tgt)))))))
       best)
     (if (process-taskable-target-prompt-ready? arg0 *target*) *target* (the-as target #f))))
 

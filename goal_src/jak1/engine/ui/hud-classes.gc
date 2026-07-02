@@ -1835,8 +1835,8 @@
       (let ((owner-is-p2?
               (and *multi-coop-active*
                    (-> arg1 parent)
-                   (not (zero? (-> *target-list* 1)))
-                   (let ((p2 (handle->process (-> *target-list* 1))))
+                   ;; coop: safe-handle
+                   (let ((p2 (safe-handle->process (-> *target-list* 1))))
                      (and p2 (= p2 (the-as process (-> arg1 parent 0))))))))
         (cond
           (owner-is-p2?

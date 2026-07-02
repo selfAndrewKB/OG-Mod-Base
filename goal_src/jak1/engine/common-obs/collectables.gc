@@ -335,8 +335,8 @@
                   (= (-> self fact pickup-type) (pickup-type eco-yellow))))
          (let ((slot -1))
            (dotimes (i (-> *target-list* length))
-             (when (and (not (zero? (-> *target-list* i)))
-                        (= (handle->process (-> *target-list* i)) proc))
+             ;; coop: safe-handle
+             (when (= (safe-handle->process (-> *target-list* i)) proc)
                (set! slot i)))
            (when (>= slot 0)
              ;; Gate: this crystal must not have already been consumed by this player.
@@ -374,8 +374,8 @@
                     (or (not *multi-coop-active*)
                         (let ((eco-slot -1))
                           (dotimes (i (-> *target-list* length))
-                            (when (and (not (zero? (-> *target-list* i)))
-                                       (= (handle->process (-> *target-list* i)) proc))
+                            ;; coop: safe-handle
+                            (when (= (safe-handle->process (-> *target-list* i)) proc)
                               (set! eco-slot i)))
                           (or (< eco-slot 0) (zero? (-> self consumed-times eco-slot))))))
            (logclear! (-> self mask) (process-mask actor-pause))
@@ -493,9 +493,9 @@
         ;; [co-op] auto-clear per-player consumed flag when their eco gauge drains
         (when *multi-coop-active*
           (dotimes (s (-> *target-list* length))
-            (when (and (not (zero? (-> *target-list* s)))
-                       (nonzero? (-> self consumed-times s)))
-              (let ((tgt (handle->process (-> *target-list* s))))
+            (when (nonzero? (-> self consumed-times s))
+              ;; coop: safe-handle
+              (let ((tgt (safe-handle->process (-> *target-list* s))))
                 (when (and tgt (= (-> (the-as target tgt) fact eco-level) 0.0))
                   (set! (-> self consumed-times s) (the-as time-frame 0)))))))
         (suspend))))
@@ -514,8 +514,8 @@
               (= (-> self fact pickup-type) (pickup-type eco-blue)))
          (let ((slot -1))
            (dotimes (i (-> *target-list* length))
-             (when (and (not (zero? (-> *target-list* i)))
-                        (= (handle->process (-> *target-list* i)) proc))
+             ;; coop: safe-handle
+             (if (= (safe-handle->process (-> *target-list* i)) proc)
                (set! slot i)))
            (when (>= slot 0)
              ;; Gate: this crystal must not have already been consumed by this player.
@@ -557,7 +557,8 @@
         (set! (-> a1-0 param 0) (the-as uint 'powerup))
         (set! (-> a1-0 param 1) (the-as uint 3))
         ;; [co-op] query the player who triggered notice-blue (self.target), not always P1
-        (let ((tgt-proc (the-as process (if (not (zero? (-> self target))) (handle->process (-> self target)) *target*))))
+        ;; coop: safe-handle
+        (let ((tgt-proc (the-as process (let ((tp (safe-handle->process (-> self target)))) (if tp tp *target*)))))
           (if (and (not (send-event-function tgt-proc a1-0)) (not (logtest? (-> self flags) (collectable-flags suck))))
             (go-virtual wait)))))
   :code
@@ -887,9 +888,10 @@
       (runs-on-orb-pickup (ppointer->process (-> self parent))) ;; trigger hook for mod base
       ;; [B7] picker is arg1 handle (set at go-virtual pickup time), NOT (-> self parent)
       ;; which is the entity pool spawner. Zero-guard before handle->process per learned rule.
+      ;; coop: safe-handle
       (convert-to-hud-object self
         (the-as hud (ppointer->process
-                      (-> (find-picker-hud-parts (if (zero? arg1) (the-as process #f) (handle->process arg1))) money)))))
+                      (-> (find-picker-hud-parts (the-as process (safe-handle->process arg1))) money)))))
   :exit
     (behavior ()
       ;; refresh orb-placer list in debug mode
@@ -1279,9 +1281,10 @@
         (else (send-event (ppointer->process (-> *hud-parts* fuel-cell)) 'show)))
       (runs-on-cell-pickup 'cutscene-end)
       ;; [B7] picker is arg1 handle. Zero-guard before handle->process per learned rule.
+      ;; coop: safe-handle
       (convert-to-hud-object self
         (the-as hud (ppointer->process
-                      (-> (find-picker-hud-parts (if (zero? arg1) (the-as process #f) (handle->process arg1))) fuel-cell)))))
+                      (-> (find-picker-hud-parts (the-as process (safe-handle->process arg1))) fuel-cell)))))
   :post
     (behavior ()
       (transform-post)
@@ -1470,15 +1473,16 @@
       (if (nonzero? (-> self sound)) (stop! (-> self sound)))
       (when (not arg0)
         (when *multi-coop-active*
-          (let ((picker (if (zero? arg1) #f (handle->process arg1))))
+          ;; coop: safe-handle
+          (let ((picker (safe-handle->process arg1)))
             (format 0 "[HUD:buzzer-spawn] buzzer-pid=~D picker-pid=~D frame=~D~%"
                     (-> self pid)
                     (if picker (-> (the-as process picker) pid) -1)
                     (-> *display* integral-frame-counter))))
         ;; [B7] route the flying scout-fly icon to the picker's hud-buzzers slot,
         ;; not always slot 0 (P1) — picker derived from arg1 handle (set at pickup).
-        ;; Zero-guard arg1 BEFORE handle->process per learned rule (macro unsafe on zero handles).
-        (let* ((picker (if (zero? arg1) (the-as process #f) (handle->process arg1)))
+        ;; coop: safe-handle
+        (let* ((picker (the-as process (safe-handle->process arg1)))
                (picker-parts (find-picker-hud-parts picker))
                (v1-18 (manipy-spawn (-> self root trans) #f *buzzer-sg* #f :to *entity-pool*)))
           (send-event (ppointer->process v1-18) 'become-hud-object (ppointer->process (-> picker-parts buzzers)))))

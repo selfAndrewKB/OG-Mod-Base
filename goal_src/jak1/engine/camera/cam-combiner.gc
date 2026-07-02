@@ -24,6 +24,7 @@
          ;; source-master nil guard: narrow race between cam-stop clearing
          ;; source-master and kill-by-name destroying the combiner. Without
          ;; it, a teleport fanned out during that window crashes cam-calc-follow!.
+         ;; coop: safe-handle
          (when (and (nonzero? (-> self tracking-status)) (-> self source-master))
            (cam-calc-follow! (-> self tracking) (-> self trans) #f (-> self source-master))
            (slave-set-rotation! (-> self tracking) (-> self trans) (the-as float (-> self tracking-options)) (-> self fov) #f (-> self source-master))))
@@ -269,6 +270,7 @@
   ;; reads source-master unconditionally on its first tick, before any master
   ;; has had a chance to write it. Initialize explicitly so the nil guards
   ;; below (line 24, line 104) are the sole authority on "is a master bound."
+  ;; coop: safe-handle
   (set! (-> self source-master) (the-as camera-master #f))
   (vector-reset! (-> self velocity))
   (go cam-combiner-active)

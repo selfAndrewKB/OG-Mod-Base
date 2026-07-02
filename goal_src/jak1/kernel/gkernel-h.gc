@@ -374,6 +374,15 @@
         (if (= (-> the-handle pid) (-> proc pid)) ;; make sure it's the same process
           proc)))))
 
+;; coop: api safe-handle
+(defmacro safe-handle->process (handle)
+  "Zero-guarded handle->process. handle->process derefs a null pointer when
+   given a zero-initialized handle; this returns #f instead. Lives here (not
+   coop-api.gc) so it is compile-time visible to every consumer."
+  `(let ((safe-h (the-as handle ,handle)))
+    (if (nonzero? safe-h)
+      (handle->process safe-h))))
+
 (defmacro ppointer->process (ppointer)
   "convert a (pointer process) to a process."
   ;; this uses the self field, which seems to always just get set to the object.

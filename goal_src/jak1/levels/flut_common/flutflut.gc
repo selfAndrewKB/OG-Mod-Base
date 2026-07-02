@@ -125,9 +125,8 @@
              (cond
                ((and (task-complete? *game-info* (-> self entity extra perm task))
                      (or (zero? (-> self cell)) (not (handle->process (-> self cell)))))
-                (let ((rider-proc (the-as target #f)))
-                  (when (not (zero? (-> self rider)))
-                    (set! rider-proc (the-as target (handle->process (-> self rider)))))
+                ;; coop: safe-handle
+                (let ((rider-proc (the-as target (safe-handle->process (-> self rider)))))
                   (when (and (-> self auto-get-off) rider-proc (send-event rider-proc 'end-mode))
                     (set! (-> self rider) (the-as handle 0))
                     (set! (-> self auto-get-off) #f)
@@ -227,9 +226,8 @@
       (ja-channel-set! 0)
       (ja-post)
       (while (zero? (ja-group-size))
-        (let ((rp (the-as target #f)))
-          (when (not (zero? (-> self rider)))
-            (set! rp (the-as target (handle->process (-> self rider)))))
+        ;; coop: safe-handle
+        (let ((rp (the-as target (safe-handle->process (-> self rider)))))
           ;; Also exit if the rider has already dismounted (flag cleared) so we
           ;; don't spin here forever when the player dismounts near the transpad.
           (if (or (not rp)
@@ -238,9 +236,8 @@
             (go arg0)))
         (flutflut-effect)
         (suspend))
-      (while (let ((rp (the-as target #f)))
-               (when (not (zero? (-> self rider)))
-                 (set! rp (the-as target (handle->process (-> self rider)))))
+      ;; coop: safe-handle
+      (while (let ((rp (the-as target (safe-handle->process (-> self rider)))))
                (and rp (logtest? (-> rp control root-prim prim-core action) (collide-action flut))))
         (flutflut-effect)
         (suspend))
@@ -256,18 +253,18 @@
       ;; for 'touch: only the rider themselves can trigger forced dismount - other targets
       ;; walking near the flutflut must not eject the rider.
       ;; for 'attack: any sender can eject (enemies hitting the flutflut).
-      (when (not (zero? (-> self rider)))
-        (let ((rider-proc (the-as target (handle->process (-> self rider)))))
-          (when (and rider-proc
-                     (or (and (= message 'touch) (= proc rider-proc))
-                         (= message 'attack)))
-            ;; Send 'end-mode to start the dismount animation, but do NOT go
-            ;; to idle here. The vehicle stays hidden until the get-off
-            ;; animation completes (target-flut-start :exit fires when leaving
-            ;; the get-off state group, clearing collide-action flut and
-            ;; deactivating the manipy). The code loop detects the cleared
-            ;; flag and transitions to idle at that point.
-            (send-event rider-proc 'end-mode))))
+      ;; coop: safe-handle
+      (let ((rider-proc (the-as target (safe-handle->process (-> self rider)))))
+        (when (and rider-proc
+                   (or (and (= message 'touch) (= proc rider-proc))
+                       (= message 'attack)))
+          ;; Send 'end-mode to start the dismount animation, but do NOT go
+          ;; to idle here. The vehicle stays hidden until the get-off
+          ;; animation completes (target-flut-start :exit fires when leaving
+          ;; the get-off state group, clearing collide-action flut and
+          ;; deactivating the manipy). The code loop detects the cleared
+          ;; flag and transitions to idle at that point.
+          (send-event rider-proc 'end-mode)))
       (if (= message 'trans) (vector+! (the-as vector (-> block param 0)) (-> self root trans) (-> self extra-trans))))
   :enter
     (behavior ()
@@ -284,9 +281,8 @@
       (ja-channel-set! 0)
       (ja-post)
       (loop
-        (let ((rider-proc (the-as target #f)))
-          (when (not (zero? (-> self rider)))
-            (set! rider-proc (the-as target (handle->process (-> self rider)))))
+        ;; coop: safe-handle
+        (let ((rider-proc (the-as target (safe-handle->process (-> self rider)))))
           (when (or (not rider-proc) (not (logtest? (-> rider-proc control root-prim prim-core action) (collide-action flut))))
             (set! (-> self rider) (the-as handle 0))
             (go-virtual idle)))

@@ -199,9 +199,10 @@
         ((3)
          (cond
            ((and (task-complete? *game-info* (-> self entity extra perm task)) (not (handle->process (-> self cell))))
+            ;; coop: safe-handle
             (when (and (-> self auto-get-off)
                        (not (zero? (-> self rider)))
-                       (let ((rp (handle->process (-> self rider))))
+                       (let ((rp (safe-handle->process (-> self rider))))
                          (and rp (send-event rp 'end-mode))))
               (set! (-> self auto-get-off) #f)
               (go-virtual pickup (the-as (state collectable) (method-of-object self idle))))
@@ -350,9 +351,8 @@
     (behavior ((arg0 (state collectable)))
       (ja-channel-set! 0)
       (ja-post)
-      (let ((rider-proc (the-as target #f)))
-        (when (not (zero? (-> self rider)))
-          (set! rider-proc (the-as target (handle->process (-> self rider)))))
+      ;; coop: safe-handle
+      (let ((rider-proc (the-as target (safe-handle->process (-> self rider)))))
         (while (zero? (ja-group-size))
           (when (or (not rider-proc)
                     ;; Also exit if the rider has dismounted (flag cleared) so we
@@ -378,12 +378,12 @@
   :virtual #t
   :event
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
-      (when (not (zero? (-> self rider)))
-        (let ((rider-proc (the-as target (handle->process (-> self rider)))))
-          (when (and rider-proc
-                     (!= (-> self condition) 4)
-                     (= proc rider-proc)
-                     (or (= message 'touch) (= message 'attack)))
+      ;; coop: safe-handle
+      (let ((rider-proc (the-as target (safe-handle->process (-> self rider)))))
+        (when (and rider-proc
+                   (!= (-> self condition) 4)
+                   (= proc rider-proc)
+                   (or (= message 'touch) (= message 'attack)))
             ;; Send 'end-mode to start the dismount animation, but do NOT go
             ;; to idle here. The vehicle must stay hidden until the get-off
             ;; animation completes (target-racing-start :exit fires when
@@ -391,7 +391,7 @@
             ;; collide-action and deactivating the manipy). The code loop below
             ;; detects the cleared flag and transitions to idle at that point,
             ;; preventing the ghost-at-transpad artifact.
-            (send-event rider-proc 'end-mode))))
+            (send-event rider-proc 'end-mode)))
       (cond
         ((= message 'trans) (vector+! (the-as vector (-> block param 0)) (-> self root trans) (-> self extra-trans)))
         ((= message 'shadow)
@@ -421,11 +421,11 @@
       (ja-channel-set! 0)
       (ja-post)
       (loop
-        (when (not (zero? (-> self rider)))
-          (let ((rider-proc (the-as target (handle->process (-> self rider)))))
-            (when (or (not rider-proc) (not (logtest? (-> rider-proc control root-prim prim-core action) (collide-action racer))))
-              (set! (-> self rider) (the-as handle 0))
-              (go-virtual idle))))
+        ;; coop: safe-handle
+        (let ((rider-proc (the-as target (safe-handle->process (-> self rider)))))
+          (when (or (not rider-proc) (not (logtest? (-> rider-proc control root-prim prim-core action) (collide-action racer))))
+            (set! (-> self rider) (the-as handle 0))
+            (go-virtual idle)))
         (racer-effect)
         (suspend))))
 

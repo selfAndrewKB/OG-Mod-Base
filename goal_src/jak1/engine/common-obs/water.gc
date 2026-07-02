@@ -980,10 +980,10 @@
     (let ((tgt (get-target idx)))
       (when tgt
         (let ((vol-handle (-> tgt water volume)))
-          (when (nonzero? vol-handle)
-            (let ((vol-proc (handle->process vol-handle)))
-              (when (= vol-proc this)
-                (water-vol-release-target this tgt))))))))
+          ;; coop: safe-handle
+          (let ((vol-proc (safe-handle->process vol-handle)))
+            (when (= vol-proc this)
+              (water-vol-release-target this tgt)))))))
   (process-entity-status! this (entity-perm-status bit-3) #f)
   0
   (none))
@@ -993,8 +993,9 @@
     (let ((tgt (get-target idx)))
       (when tgt
         (let ((vol-handle (-> tgt water volume)))
+          ;; coop: safe-handle
           (if (nonzero? vol-handle)
-            (let ((vol-proc (handle->process vol-handle)))
+            (let ((vol-proc (safe-handle->process vol-handle)))
               (cond
                 ((= vol-proc this)
                  (cond

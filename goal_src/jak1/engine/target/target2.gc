@@ -142,12 +142,12 @@
         (tlen (-> *target-list* length)))
     (dotimes (di tlen)
       (let ((raw (-> *target-list* di)))
-        (when (nonzero? raw)
-          (let ((tgt (the-as target (handle->process raw))))
-            (when (and tgt (= (-> tgt fp-hud) this-handle))
-              (when (multi-log-enabled? 'fps)
-                (format 0 "[MULTI:fps]   clearing fp-hud on slot ~D~%" di))
-              (set! (-> tgt fp-hud) (the-as handle #f))))))))
+        ;; coop: safe-handle
+        (let ((tgt (the-as target (safe-handle->process raw))))
+          (when (and tgt (= (-> tgt fp-hud) this-handle))
+            (when (multi-log-enabled? 'fps)
+              (format 0 "[MULTI:fps]   clearing fp-hud on slot ~D~%" di))
+            (set! (-> tgt fp-hud) (the-as handle #f)))))))
   (when (multi-log-enabled? 'fps)
     (format 0 "[MULTI:fps]   after target-list clear, calling parent~%"))
   (call-parent-method this)
@@ -305,14 +305,14 @@
     (dotimes (fpi (-> *target-list* length))
       (when (not res)
         (let ((raw (-> *target-list* fpi)))
-          (when (nonzero? raw)
-            (let ((fptgt (the-as target (handle->process raw))))
-              (when fptgt
-                (let ((hraw (-> fptgt fp-hud)))
-                  (when (nonzero? hraw)
-                    (let ((fphud (the-as first-person-hud (handle->process hraw))))
-                      (when (and fphud (= (the int (-> fphud owner-pad)) pass))
-                        (set! res fphud)))))))))))
+          ;; coop: safe-handle
+          (let ((fptgt (the-as target (safe-handle->process raw))))
+            (when fptgt
+              (let ((hraw (-> fptgt fp-hud)))
+                ;; coop: safe-handle
+                (let ((fphud (the-as first-person-hud (safe-handle->process hraw))))
+                  (when (and fphud (= (the int (-> fphud owner-pad)) pass))
+                    (set! res fphud)))))))))
     res))
 
 (defun part-first-person-hud-left-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
@@ -387,12 +387,12 @@
   (when *multi-coop-active*
     (dotimes (fpi (-> *target-list* length))
       (let* ((raw (-> *target-list* fpi)))
-        (when (nonzero? raw)
-          (let ((tgt (the-as target (handle->process raw))))
-            (when tgt
-              (let ((hraw (-> tgt fp-hud)))
-                (when (nonzero? hraw)
-                  (let ((fphud (the-as first-person-hud (handle->process hraw))))
+        ;; coop: safe-handle
+        (let ((tgt (the-as target (safe-handle->process raw))))
+          (when tgt
+            (let ((hraw (-> tgt fp-hud)))
+              ;; coop: safe-handle
+              (let ((fphud (the-as first-person-hud (safe-handle->process hraw))))
                     (when fphud
                       (dotimes (p (-> fphud nb-of-particles))
                         (let ((mat (-> fphud particles p part matrix)))
@@ -409,7 +409,7 @@
                                              (the float 30000)
                                              (the float 30000)
                                              (-> *math-camera* hvdf-off z)
-                                             (-> *math-camera* hvdf-off w)))))))))))))))
+                                             (-> *math-camera* hvdf-off w)))))))))))))
   (none)))
 
 ;; ERROR: function was not converted to expressions. Cannot decompile.
@@ -460,11 +460,11 @@
       (send-event (target-camera self) 'no-intro)
       (send-event (target-camera self) 'change-state cam-eye 60)
       (when *multi-coop-active*
-        (let ((old-hud (if (zero? (-> self fp-hud)) (the-as process #f)
-                            (handle->process (-> self fp-hud)))))
+        ;; coop: safe-handle
+        (let ((old-hud (the-as process (safe-handle->process (-> self fp-hud)))))
           (format 0 "[HUD:la-enter]   pre-deactivate old-fp-hud=~A~%" old-hud)))
-      (let ((a0-5 (if (zero? (-> self fp-hud)) (the-as process #f)
-                       (handle->process (-> self fp-hud)))))
+      ;; coop: safe-handle
+      (let ((a0-5 (the-as process (safe-handle->process (-> self fp-hud)))))
         (if a0-5 (deactivate a0-5)))
       ;; Co-op: each slot gets its own fp-hud; process-spawn uses its normal pool
       ;; allocation so stacks are non-overlapping without a custom region.
@@ -483,8 +483,8 @@
         (format 0 "[HUD:la-exit] target-look-around EXIT slot=~D self=~A fp-hud-raw=~D~%"
                 (-> self control unknown-cpad-info00 number) self
                 (the int (-> self fp-hud))))
-      (let ((a0-1 (if (zero? (-> self fp-hud)) (the-as process #f)
-                       (handle->process (-> self fp-hud)))))
+      ;; coop: safe-handle
+      (let ((a0-1 (the-as process (safe-handle->process (-> self fp-hud)))))
         (if a0-1 (send-event a0-1 'go-away)))
       (set! (-> self cam-user-mode) 'normal)
       (target-exit)
@@ -569,8 +569,8 @@
       (send-event (target-camera self) 'clear-entity)
       (send-event (target-camera self) 'no-intro)
       (send-event (target-camera self) 'change-state cam-billy 0)
-      (let ((a0-6 (if (zero? (-> self fp-hud)) (the-as process #f)
-                       (handle->process (-> self fp-hud)))))
+      ;; coop: safe-handle
+      (let ((a0-6 (the-as process (safe-handle->process (-> self fp-hud)))))
         (if a0-6 (deactivate a0-6)))
       (let* ((slot (the int (-> self control unknown-cpad-info00 number)))
              (pp (process-spawn first-person-hud :to self)))
@@ -585,8 +585,8 @@
         (format 0 "[HUD:bg-exit] target-billy-game EXIT slot=~D self=~A fp-hud-raw=~D~%"
                 (-> self control unknown-cpad-info00 number) self
                 (the int (-> self fp-hud))))
-      (let ((a0-1 (if (zero? (-> self fp-hud)) (the-as process #f)
-                       (handle->process (-> self fp-hud)))))
+      ;; coop: safe-handle
+      (let ((a0-1 (the-as process (safe-handle->process (-> self fp-hud)))))
         (if a0-1 (send-event a0-1 'go-away)))
       (when (send-event (target-camera self) 'query-state cam-billy)
         (send-event (target-camera self) 'no-intro)

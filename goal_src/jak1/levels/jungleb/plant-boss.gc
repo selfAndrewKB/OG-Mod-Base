@@ -1070,7 +1070,8 @@
         (ja-blend-eval)
         (suspend)
         (ja :num! (seek!)))
-      (let ((sp (handle->process (-> self swallowed-player))))
+      ;; coop: safe-handle
+      (let ((sp (safe-handle->process (-> self swallowed-player))))
         (if sp (send-event sp 'end-mode)))
       (logclear! (-> self skel status) (janim-status inited))
       (go plant-boss-idle))

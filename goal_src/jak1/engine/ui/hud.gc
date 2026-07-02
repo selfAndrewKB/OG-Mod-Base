@@ -36,10 +36,10 @@
     (when owner
       (dotimes (i (-> *target-list* length))
         (let ((tgt-hnd (-> *target-list* i)))
-          (when (not (zero? tgt-hnd))
-            (let ((tgt (handle->process tgt-hnd)))
-              (when (and tgt (= tgt owner))
-                (return (-> *hud-parts-list* slots i))))))))
+          ;; coop: safe-handle
+          (let ((tgt (safe-handle->process tgt-hnd)))
+            (when (and tgt (= tgt owner))
+              (return (-> *hud-parts-list* slots i)))))))
     *hud-parts*))
 
 ;; [B7] Per-viewport pickup routing: given a picker target process, return
@@ -52,10 +52,10 @@
   (when picker
     (dotimes (i (-> *target-list* length))
       (let ((tgt-hnd (-> *target-list* i)))
-        (when (not (zero? tgt-hnd))
-          (let ((tgt (handle->process tgt-hnd)))
-            (when (and tgt (= (the-as process-tree tgt) picker))
-              (return (-> *hud-parts-list* slots i))))))))
+        ;; coop: safe-handle
+        (let ((tgt (safe-handle->process tgt-hnd)))
+          (when (and tgt (= (the-as process-tree tgt) picker))
+            (return (-> *hud-parts-list* slots i)))))))
   *hud-parts*)
 
 ;; Session 51 N1 fix: spawn-only helper. In MP, sparticle spawn must happen during

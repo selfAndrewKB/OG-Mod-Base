@@ -528,7 +528,8 @@
   (the-as ram-boss-proj ((method-of-type projectile relocate) this offset)))
 
 (defmethod projectile-method-28 ((this ram-boss-proj))
-  (let ((tgt (the-as target (handle->process (-> this last-target)))))
+  ;; coop: safe-handle
+  (let ((tgt (the-as target (safe-handle->process (-> this last-target)))))
     (when (and tgt
                (not (logtest? (-> tgt state-flags)
                               (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))))
@@ -589,8 +590,10 @@
       (logior! (-> self root root-prim prim-core action) (collide-action solid))
       (set-time! (-> self launch-time))
       (vector-float*! (-> self root transv) (-> self parent-override 0 proj-launch-vec) 40960.0)
-      (let ((tgt (the-as target (handle->process (-> self last-target)))))
-        (set! (-> self target quad) (-> (target-pos-for tgt 0) quad)))
+      ;; coop: safe-handle
+      (let ((tgt (the-as target (safe-handle->process (-> self last-target)))))
+        (when tgt
+          (set! (-> self target quad) (-> (target-pos-for tgt 0) quad))))
       (+! (-> self target y) 4915.2)
       (set! (-> self target-base quad) (-> self target quad))
       (go-virtual projectile-moving)))

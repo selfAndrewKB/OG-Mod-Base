@@ -17,12 +17,16 @@
   ;; source-master back-refs survive the kill and point into recycled memory on the
   ;; very next frame; the combiner's :code loop then dereferences a stale pointer
   ;; that can land inside the JIT code heap (type-confusion crash on portal warp).
+  ;; coop: safe-handle
   (when *camera-combiner*
     (set! (-> *camera-combiner* source-master) (the-as camera-master #f)))
+  ;; coop: safe-handle
   (when *camera-combiner-p2*
     (set! (-> *camera-combiner-p2* source-master) (the-as camera-master #f)))
+  ;; coop: safe-handle
   (when *camera*
     (set! (-> *camera* my-combiner) (the-as camera-combiner #f)))
+  ;; coop: safe-handle
   (when *camera-p2*
     (set! (-> *camera-p2* my-combiner) (the-as camera-combiner #f)))
   (kill-by-name 'camera-master *active-pool*)
