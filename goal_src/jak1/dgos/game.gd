@@ -354,6 +354,7 @@
   "mod-custom-code.o" ;; added
   "mod-debug.o" ;; added
   "multi-debug.o" ;; co-op debug logging
+  "coop-api.o" ;; co-op player-identity API (consolidation layer)
   "localmulti.o" ;; co-op split-screen support
   ;; keep zoomer stuff loaded
   "target-racer-h.o"

@@ -2118,6 +2118,7 @@
  "mods/mod-custom-code.gc"
  "mods/mod-debug.gc"
  "mods/multi-debug.gc"
+ "mods/coop-api.gc"
  "mods/localmulti.gc"
 )
 

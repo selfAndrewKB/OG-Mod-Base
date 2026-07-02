@@ -1,0 +1,29 @@
+;;-*-Lisp-*-
+(in-package goal)
+
+;; name: coop-api.gc
+;; name in dgo: coop-api
+;; dgos: GAME
+
+;; Co-op player-identity API — consolidation layer for the split-screen co-op diff.
+;;
+;; Taxonomy: Documentation/architecture/coop-api-routing-map.md (8 families).
+;; Conversion plan: Documentation/refactor/conversion-plan.md.
+;;
+;; Tag convention (greppable census of every co-op touchpoint):
+;;   ;; coop: <family>                      — site routes through a family
+;;                                            (safe-handle, player-query, event-fanout,
+;;                                             attribution, hud-owner, presentation,
+;;                                             vehicle-owner)
+;;   ;; coop: global-by-design <reason>     — intentional P1/global read; do NOT "fix"
+;;   ;; coop: api <family>                  — helper that IS the API surface but lives
+;;                                            outside this file for load-order reasons
+;;
+;; Placement rule: helpers live here ONLY if every consumer compiles after this file
+;; in game.gp (this file sits in the final mods goal-src-sequence). Helpers needed by
+;; earlier-compiling files (engine headers, level code) live in their load-order-forced
+;; home (e.g. target-h.gc) with the `;; coop: api` header, or are declared via
+;; define-extern in an early header with the implementation here. The API is defined
+;; by tags, not by file membership.
+
+;; Helpers are added family-by-family during the conversion passes.
