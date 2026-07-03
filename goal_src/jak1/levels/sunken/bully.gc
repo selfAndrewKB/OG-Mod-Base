@@ -283,6 +283,7 @@
                (send-event-function arg0 a1-14))))))))))
 
 (defbehavior bully-post bully ()
+  ;; coop: player-query
   (let ((tgt (closest-target-to (-> self root trans))))
     (when (and (-> self hit-player?)
                (or (not tgt)
@@ -363,6 +364,7 @@
       0)
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (when (and (and tgt
                         (>= (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> tgt control trans))))
@@ -384,6 +386,7 @@
   :event bully-default-event-handler
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (when tgt
           (look-at-enemy! (-> tgt neck)
@@ -410,6 +413,7 @@
                                                   #f
                                                   #f
                                                   #f)
+        ;; coop: player-query
         (let ((tgt (closest-target-to (-> self root trans))))
           (when tgt
             (let ((gp-3 (new 'stack-no-clear 'vector)))
@@ -434,12 +438,14 @@
       (set! (-> self speed-u) 0.2)
       (set! (-> self bounced?) #f)
       (let ((gp-0 (new 'stack-no-clear 'vector))
+            ;; coop: player-query
             (tgt (closest-target-to (-> self root trans))))
         (if tgt (vector-! gp-0 (target-pos-for tgt 0) (-> self root trans)) (vector-z-quaternion! gp-0 (-> self root quat)))
         (set! (-> self travel-ry) (atan (-> gp-0 x) (-> gp-0 z))))
       (+! (-> self travel-ry) (rand-vu-float-range -910.2222 910.2222)))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (when tgt
           (look-at-enemy! (-> tgt neck)
@@ -505,6 +511,7 @@
       (set! (-> self bounced?) #f))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (when tgt
           (look-at-enemy! (-> tgt neck)
@@ -537,6 +544,7 @@
                 (ja :num! (seek!))
                 (set! v1-35 (or (ja-done? 0) (-> self bounced?)))))
             (ja-channel-push! 1 (seconds 0.2)))))
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (if (or (not tgt)
                 (< (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> tgt control trans))))

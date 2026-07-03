@@ -87,7 +87,8 @@
 (defbehavior junglesnake-default-event-handler junglesnake ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (case arg2
     (('touch)
-     (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+     ;; coop: player-query
+     (let ((tgt (closest-alive-target (-> self root trans))))
        (when (and tgt
                   ((method-of-type touching-shapes-entry prims-touching?)
                    (the-as touching-shapes-entry (-> arg3 param 0))
@@ -107,7 +108,8 @@
 junglesnake-default-event-handler
 
 (defmethod junglesnake-method-20 ((this junglesnake))
-  (let ((tgt (let ((t (closest-target-to (-> this root trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> this root trans))))
     (when (and tgt (-> this track-player-ry))
       (let ((v1-3 (target-pos-for tgt 0)))
         (set! (-> this des-ry) (atan (- (-> v1-3 x) (-> this root trans x)) (- (-> v1-3 z) (-> this root trans z)))))))
@@ -154,7 +156,8 @@ junglesnake-default-event-handler
         (set! (-> s3-1 vector 1 w) 0.0)
         (vector-normalize! (vector-cross! (-> s3-1 vector 2) (-> s3-1 vector 0) (-> s3-1 vector 1)) 1.0)
         (vector-normalize! (vector-cross! (-> s3-1 vector 0) (-> s3-1 vector 1) (-> s3-1 vector 2)) 1.0)))
-    (let ((tgt (let ((t (closest-target-to (-> arg0 root trans)))) (if t t *target*))))
+    ;; coop: player-query
+    (let ((tgt (closest-alive-target (-> arg0 root trans))))
       (cond
         ((and (-> s5-0 track-player-tilt) tgt)
          (let ((s2-1 (-> arg0 node-list data 25 bone transform))
@@ -223,7 +226,8 @@ junglesnake-default-event-handler
       (logior! (-> self draw status) (draw-status hidden)))
   :trans
     (behavior ()
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (when tgt
           (let* ((a0-1 (target-pos-for tgt 0))
                  (f0-1 (- (-> a0-1 y) (-> self root trans y))))
@@ -247,7 +251,8 @@ junglesnake-default-event-handler
   :trans
     (behavior ()
       (junglesnake-method-20 self)
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (when tgt
           (look-at-enemy! (-> tgt neck)
                           (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core world-sphere)
@@ -271,7 +276,8 @@ junglesnake-default-event-handler
       (set! (-> self track-player-tilt) #t))
   :trans
     (behavior ()
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (if (and tgt
                  (>= 24576.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
                  (time-elapsed? (-> self state-time) (-> self refractory-delay))
@@ -284,7 +290,8 @@ junglesnake-default-event-handler
                     (>= (vector-vector-xz-distance a0-8 (-> self root trans)) 163840.0))
               (go junglesnake-give-up)))))
       (junglesnake-method-20 self)
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (when tgt
           (look-at-enemy! (-> tgt neck)
                           (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core world-sphere)
@@ -313,7 +320,8 @@ junglesnake-default-event-handler
   :trans
     (behavior ()
       (junglesnake-method-20 self)
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (when tgt
           (look-at-enemy! (-> tgt neck)
                           (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core world-sphere)
@@ -325,14 +333,16 @@ junglesnake-default-event-handler
       (set! (-> self track-player-tilt) #t)
       (ja-channel-push! 2 (seconds 0.15))
       (junglesnake-method-23 self)
-      (let ((f30-0 (lerp-scale 0.0 1.0 (vector-vector-distance (target-pos-for (let ((t (closest-target-to (-> self root trans)))) (if t t *target*)) 0) (-> self root trans)) 0.0 24576.0)))
+      ;; coop: player-query
+      (let ((f30-0 (lerp-scale 0.0 1.0 (vector-vector-distance (target-pos-for (closest-alive-target (-> self root trans)) 0) (-> self root trans)) 0.0 24576.0)))
         (ja-no-eval :group! junglesnake-strike-close-ja :num! (seek! max 1.25) :frame-num 0.0)
         (ja-no-eval :chan 1 :group! junglesnake-strike-far-ja :num! (chan 0) :frame-interp f30-0 :frame-num 0.0)
         (until (ja-done? 0)
           (suspend)
           (set! f30-0
                 (seek f30-0
-                      (lerp-scale 0.0 1.0 (vector-vector-distance (target-pos-for (let ((t (closest-target-to (-> self root trans)))) (if t t *target*)) 0) (-> self root trans)) 0.0 24576.0)
+                      ;; coop: player-query
+                      (lerp-scale 0.0 1.0 (vector-vector-distance (target-pos-for (closest-alive-target (-> self root trans)) 0) (-> self root trans)) 0.0 24576.0)
                       (* 2.0 (seconds-per-frame))))
           (ja :num! (seek! max 1.25))
           (ja :chan 1 :num! (chan 0) :frame-interp f30-0)

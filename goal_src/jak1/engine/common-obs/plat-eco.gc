@@ -141,6 +141,7 @@
          (let ((f0-5 (-> self sync-offset-dest))) (set! (-> self sync offset) f0-5) (set! (-> self sync-offset-faux) f0-5)))
         (else
          (process-entity-status! self (entity-perm-status complete) #t)
+         ;; coop: player-query (blue-eco query; nearest powered player else P1)
          (let ((tgt (target-with-powerup-near (-> self root trans) (-> self notice-dist) (pickup-type eco-blue))))
            (dotimes (gp-1 5)
              (spawn-projectile-blue (if tgt tgt *target*)))))))

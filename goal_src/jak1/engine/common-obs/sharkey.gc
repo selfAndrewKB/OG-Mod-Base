@@ -117,6 +117,7 @@ nav-enemy-default-event-handler
   (none))
 
 (defbehavior sharkey-notice-player? sharkey ()
+  ;; coop: player-query
   (let ((tgt (closest-target-to (-> self collide-info trans))))
     (if tgt
       (and (< (- (-> tgt control trans y) (-> self y-max)) 0.0)
@@ -124,6 +125,7 @@ nav-enemy-default-event-handler
            (nav-enemy-test-point-near-nav-mesh? (-> tgt control shadow-pos))))))
 
 (defbehavior sharkey-get-player-position sharkey ((arg0 vector))
+  ;; coop: player-query
   (let ((tgt (closest-target-to (-> self collide-info trans))))
     (if tgt
       (set! (-> arg0 quad) (-> tgt control trans quad))
@@ -140,6 +142,7 @@ nav-enemy-default-event-handler
   (let ((s5-0 (new 'stack-no-clear 'vector))
         (s3-0 (new 'stack-no-clear 'vector))
         (gp-0 (new 'stack-no-clear 'vector)))
+    ;; coop: player-query
     (let* ((tgt (closest-target-to (-> self collide-info trans)))
            (s4-0 (if tgt (-> tgt control trans) (-> self collide-info trans))))
       (let ((f30-0 4096000.0))
@@ -175,6 +178,7 @@ nav-enemy-default-event-handler
     (behavior ()
       (cond
         ((-> self enable-patrol)
+         ;; coop: player-query
          (let ((tgt (closest-target-to (-> self collide-info trans))))
            (if (and (and tgt
                          (>= (-> self enemy-info idle-distance)
@@ -185,6 +189,7 @@ nav-enemy-default-event-handler
          (when (not (logtest? (-> self nav-enemy-flags) (nav-enemy-flags navenmf0)))
            (logior! (-> self nav-enemy-flags) (nav-enemy-flags navenmf0))
            (set-time! (-> self notice-time)))
+         ;; coop: player-query
          (let* ((tgt (closest-target-to (-> self collide-info trans)))
                 (tgt-trans (if tgt (-> tgt control trans) (-> self collide-info trans)))
                 (a0-4 (nav-control-method-16 (-> self nav) tgt-trans)))
@@ -277,6 +282,7 @@ nav-enemy-default-event-handler
           (sharkey-follow-trajectory (-> self attack-time))
           (suspend)
           (ja :num! (seek! (ja-aframe 3.0 0) 2.0))))
+      ;; coop: player-query
       (let ((tgt-atk (closest-target-to (-> self collide-info trans))))
         (when (send-event tgt-atk 'attack-invinc #f (static-attack-info ((mode 'sharkey))))
           (logclear! (-> self mask) (process-mask enemy))
@@ -323,6 +329,7 @@ nav-enemy-default-event-handler
       (sound-stop (-> self sound-id)))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self collide-info trans))))
         (if (not tgt) (go-virtual nav-enemy-patrol))
         (let ((gp-0 (-> tgt control trans)))

@@ -352,7 +352,8 @@
   (none))
 
 (defbehavior balloonlurker-player-impulse balloonlurker ()
-  (let ((tgt (let ((t (closest-target-to (-> self root-overlay trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> self root-overlay trans))))
     (when tgt
       (set! (-> self player-impulse) (the-as collide-shape-prim-mesh #t))
       (set! (-> self player-force-position quad) (-> tgt control trans quad))
@@ -588,7 +589,8 @@
         (entity-birth-no-kill sv-24)
         (apply-all (-> self link) actor-link-dead-hook (& sv-16))
         (when (and sv-16 sv-24)
-          (let ((tgt (let ((t (closest-target-to (-> self root-overlay trans)))) (if t t *target*))))
+          ;; coop: player-query
+          (let ((tgt (closest-alive-target (-> self root-overlay trans))))
             (process-grab? tgt)
             (suspend-for (seconds 1))
             (process-release? tgt))

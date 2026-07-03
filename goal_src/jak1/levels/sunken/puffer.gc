@@ -96,7 +96,8 @@
          (set-collide-offense (-> self root) 2 (collide-offense no-offense)))))))
 
 (defbehavior puffer-post puffer ()
-  (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> self root trans))))
     (when (and (-> self hit-player?)
                (or (not tgt)
                    (and (not (logtest? (-> tgt state-flags)
@@ -146,7 +147,8 @@
   #f)
 
 (defmethod puffer-method-25 ((this puffer) (arg0 float))
-  (let ((tgt (let ((t (closest-target-to (-> this root trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> this root trans))))
     (when tgt
       (let ((gp-0 (target-pos-for tgt 0)))
         (when (and (not (logtest? (-> tgt state-flags)
@@ -266,7 +268,8 @@
     (cond
       ((-> this attacking?)
        (let ((f30-1 (-> this attack-bottom-y))
-             (tgt (let ((t (closest-target-to (-> this root trans)))) (if t t *target*))))
+             ;; coop: player-query
+             (tgt (closest-alive-target (-> this root trans))))
          (set! (-> this targ-trans-y) (fmax (fmin (+ 4096.0 (-> (target-pos-for tgt 0) y)) (-> this top-y)) f30-1)))
        (set! (-> this root transv y)
              (* (/ (-> *display* frames-per-second) 8) (- (-> this targ-trans-y) (-> this root trans y))))
@@ -312,7 +315,8 @@
   :code
     (behavior ()
       (loop
-        (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        ;; coop: player-query
+        (let ((tgt (closest-alive-target (-> self root trans))))
           (if (and tgt
                    (>= (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> tgt control trans)))
                    (logtest? (-> self draw status) (draw-status was-drawn))
@@ -335,7 +339,8 @@
       (set-time! (-> self last-on-screen-time)))
   :trans
     (behavior ()
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (if (and (not (and tgt
                            (>= (-> self fact idle-distance) (vector-vector-distance (-> self root trans) (-> tgt control trans)))))
                  (time-elapsed? (-> self state-time) (seconds 3)))
@@ -382,7 +387,8 @@
   :trans
     (behavior ()
       (if (not (puffer-method-25 self (-> self give-up-dist))) (go puffer-patrol))
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (when tgt
           (look-at-enemy! (-> tgt neck)
                           (the-as vector (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core))

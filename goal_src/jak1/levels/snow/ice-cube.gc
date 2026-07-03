@@ -520,7 +520,8 @@
 (defmethod nav-enemy-method-60 ((this ice-cube) (arg0 symbol))
   (let ((gp-0 (new 'stack-no-clear 'vector)))
     (when (-> this tracking-player?)
-      (let ((tgt (let ((t (closest-target-to (-> this collide-info trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> this collide-info trans))))
         (if (and tgt arg0) (set! (-> this target-pt quad) (-> (target-pos-for tgt 0) quad)))))
     (vector-! gp-0 (-> this target-pt) (-> this collide-info trans))
     (seek-toward-heading-vec! (-> this collide-info) gp-0 524288.0 (seconds 0.1))
@@ -552,7 +553,8 @@
   #t)
 
 (defmethod nav-enemy-method-52 ((this ice-cube) (arg0 vector))
-  (let ((tgt (let ((t (closest-target-to (-> this collide-info trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> this collide-info trans))))
     (when tgt
       (let ((f0-0 (vector-vector-xz-distance arg0 (target-pos-for tgt 0))))
         (when (and (>= f0-0 40960.0) (>= 81920.0 f0-0) (not (nav-enemy-method-50 this arg0)))
@@ -586,7 +588,8 @@
                                                     (new 'static 'pat-surface :noentity #x1))
                   0.0)
             (set! (-> arg0 quad) (-> s3-1 intersect quad))))
-        (let ((tgt (let ((t (closest-target-to (-> this collide-info trans)))) (if t t *target*))))
+        ;; coop: player-query
+        (let ((tgt (closest-alive-target (-> this collide-info trans))))
           (cond
             (tgt (vector-! arg1 (target-pos-for tgt 0) arg0) (set! (-> arg1 y) 0.0))
             (else

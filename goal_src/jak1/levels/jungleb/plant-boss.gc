@@ -176,6 +176,7 @@
     (else (plant-boss-generic-event-handler arg0 arg1 arg2 arg3))))
 
 (defbehavior plant-boss-post plant-boss ()
+  ;; coop: player-query
   (let ((tgt (closest-target-to (-> self root trans))))
     (when tgt
       (let ((gp-0 (-> tgt control root-prim prim-core)))
@@ -693,6 +694,7 @@
         (ja-no-eval :group! plant-boss-main-initial-ja :num! (seek!) :frame-num 0.0)
         (until (ja-done? 0)
           (seek! (-> self energy) (the-as float 0.25) (seconds-per-frame))
+          ;; coop: player-query
           (let ((tgt (closest-target-to (-> self root trans))))
             (if (and tgt
                      (>= 245760.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
@@ -797,6 +799,7 @@
               (let ((d (vector-vector-distance (-> self root trans) (-> pbtgt control trans))))
                 (if (< d pbi-min) (set! pbi-min d))))))
         (if (< 409600.0 pbi-min) (go plant-boss-far-idle)))
+      ;; coop: player-query
       (let* ((tgt (closest-target-to (-> self root trans)))
              (f30-0 (if tgt (vector-vector-distance (-> tgt control trans) (-> self root trans)) 1000000000.0)))
         (if (and (< f30-0 143360.0)
@@ -884,6 +887,7 @@
               (let ((d (vector-vector-distance (-> self root trans) (-> pbstgt control trans))))
                 (if (< d pbs-min) (set! pbs-min d))))))
         (if (< 409600.0 pbs-min) (go plant-boss-far-idle)))
+      ;; coop: player-query
       (let* ((tgt (closest-target-to (-> self root trans)))
              (f0-0 (if tgt (vector-vector-distance (-> tgt control trans) (-> self root trans)) 1000000000.0)))
         (cond
@@ -995,6 +999,7 @@
         (when s5-0
           (ja :num-func num-func-identity :frame-num (ja-aframe (the-as float 100.0) 0))
           (ja :chan 1 :num-func num-func-identity :frame-num (ja-aframe (the-as float 100.0) 0))))
+      ;; coop: player-query
       (let* ((tgt-init (closest-target-to (-> self root trans)))
              (dist-init (if tgt-init
                             (vector-vector-distance (-> tgt-init control trans) (-> self root trans))
@@ -1007,6 +1012,7 @@
         (until (or v1-64 (ja-done? 0))
           (seek! (-> self body flex-blend) (the-as float 1.0) (* 2.0 (seconds-per-frame)))
           (seek! (-> self neck flex-blend) (the-as float 0.0) (* 2.0 (seconds-per-frame)))
+          ;; coop: player-query
           (let* ((tgt-loop (closest-target-to (-> self root trans)))
                  (dist-loop (if tgt-loop
                                 (vector-vector-distance (-> tgt-loop control trans) (-> self root trans))

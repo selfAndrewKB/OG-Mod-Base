@@ -143,7 +143,8 @@
           (set! f30-0 (if (rand-vu-percent? 0.5) (+ 16384.0 f30-0) (+ -16384.0 f30-0))))))
   :post
     (behavior ()
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (when (and (-> self hit-player) (or (not tgt) (time-elapsed? (-> self touch-time) (seconds 0.05))))
           (set-collide-offense (-> self root) 2 (collide-offense indestructible))
           (set! (-> self hit-player) #f))

@@ -409,7 +409,8 @@
   :bounds (static-spherem 0 0 0 5))
 
 (defbehavior orient-to-face-target quicksandlurker ()
-  (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> self root trans))))
     (if tgt (seek-to-point-toward-point! (-> self root) (-> tgt control trans) 65536.0 (seconds 0.2)))))
 
 ;; ERROR: function has no type analysis. Cannot decompile.
@@ -444,7 +445,8 @@
   (none))
 
 (defbehavior quicksandlurker-check-hide-transition quicksandlurker ()
-  (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> self root trans))))
     (when tgt
       (if (and (>= 20480.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
                (!= (-> tgt next-state name) 'target-flop))
@@ -466,7 +468,8 @@
       (logclear! (-> self draw status) (draw-status hidden)))
   :trans
     (behavior ()
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (if (and tgt (>= 163840.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
           (go quicksandlurker-wait))))
   :code
@@ -479,7 +482,8 @@
   :event quicksandlurker-default-event-handler
   :trans
     (behavior ()
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (cond
           ((and tgt (>= 81920.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
            (set! (-> self y-offset) 1228.8)
@@ -530,7 +534,8 @@
   :event quicksandlurker-default-event-handler
   :trans
     (behavior ()
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (if (or (not tgt) (< 81920.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
           (go quicksandlurker-wait)))
       (quicksandlurker-check-hide-transition))
@@ -558,7 +563,8 @@
 
 (defbehavior quicksandlurker-spit quicksandlurker ()
   (let ((gp-0 (new-stack-vector0))
-        (tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        ;; coop: player-query
+        (tgt (closest-alive-target (-> self root trans))))
     (let ((s5-0 (new-stack-vector0)))
       (set! (-> gp-0 quad)
             (-> (vector<-cspace! (new 'stack-no-clear 'vector) (joint-node quicksandlurker-lod0-jg jawEND)) quad))
@@ -626,7 +632,8 @@
       (restore-collide-with-as (-> self root)))
   :trans
     (behavior ()
-      (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+      ;; coop: player-query
+      (let ((tgt (closest-alive-target (-> self root trans))))
         (if (not tgt) (go quicksandlurker-wait))
         (let ((a0-0 (-> self nav))
               (a1-0 (-> tgt control trans)))

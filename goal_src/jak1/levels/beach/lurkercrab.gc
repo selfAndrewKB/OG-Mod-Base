@@ -102,7 +102,8 @@
          (go (method-of-object this nav-enemy-die)))
         ((begin
            (let ((s4-1 (new 'stack-no-clear 'vector)))
-             (let ((tgt (let ((t (closest-target-to (-> this collide-info trans)))) (if t t *target*))))
+             ;; coop: player-query
+             (let ((tgt (closest-alive-target (-> this collide-info trans))))
                (vector-! s4-1 (-> this collide-info trans) (target-pos-for tgt 0)))
              (vector-normalize! s4-1 24576.0)
              (vector+! s4-1 (-> this collide-info trans) s4-1)

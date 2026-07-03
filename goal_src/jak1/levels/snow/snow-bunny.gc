@@ -195,7 +195,8 @@
   (none))
 
 (defmethod nav-enemy-method-58 ((this snow-bunny))
-  (let ((tgt (let ((t (closest-target-to (-> this collide-info trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> this collide-info trans))))
     (if (or (not tgt) (not (logtest? (-> tgt state-flags) (state-flags dangerous))))
       (set-time! (-> this last-nondangerous-time))))
   (none))
@@ -233,7 +234,8 @@
   (none))
 
 (defmethod nav-enemy-method-57 ((this snow-bunny))
-  (let ((tgt (let ((t (closest-target-to (-> this collide-info trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> this collide-info trans))))
     (if (or (not tgt) (not (logtest? (-> tgt state-flags) (state-flags dangerous)))) (return #f))
     (let ((f0-0 (vector-vector-xz-distance (target-pos-for tgt 0) (-> this collide-info trans))))
       (if (< 73728.0 f0-0) (return #f))
@@ -507,7 +509,8 @@
 (defmethod nav-enemy-method-52 ((this snow-bunny))
   (local-vars (sv-48 (function float float)))
   (set! (-> this using-jump-event?) #f)
-  (let ((tgt (let ((t (closest-target-to (-> this collide-info trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> this collide-info trans))))
     (if (not tgt) (return #f))
     (let ((s4-0 (-> this final-dest)))
       (set! (-> s4-0 quad) (-> (target-pos-for tgt 0) quad))
@@ -598,7 +601,8 @@
 
 (defmethod nav-enemy-method-55 ((this snow-bunny))
   (set! (-> this using-jump-event?) #f)
-  (let ((tgt (let ((t (closest-target-to (-> this collide-info trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> this collide-info trans))))
     (if (not tgt) (return #f))
   (let ((s5-0 (new 'stack-no-clear 'snow-bunny-retreat-work)))
     (set! (-> s5-0 found-best) #f)

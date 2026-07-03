@@ -292,6 +292,7 @@
           (set! (-> this path-ry) f0-13)))
       (case (-> this mode)
         ((4)
+         ;; coop: player-query
          (let ((tgt (closest-target-to (-> this root-overeride trans))))
            (when tgt
              (let ((a0-13 (target-pos-for tgt 0))
@@ -306,6 +307,7 @@
          (if (!= (-> this mode) 1)
            (set! (-> this facing-ry) (deg-seek-smooth (-> this facing-ry) (-> this path-ry) (* 32768.0 (seconds-per-frame)) 0.25)))))
       (quaternion-axis-angle! (-> this root-overeride quat) 0.0 1.0 0.0 (-> this facing-ry))
+      ;; coop: player-query
       (let ((f30-2 0.0)
             (tgt (closest-target-to (-> this root-overeride trans))))
         (when tgt
@@ -322,6 +324,7 @@
                       (f0-47 (lerp f28-1 f0-46 f30-2)))
                  (set! (-> this up-blend) (seek-with-smooth (-> this up-blend) f0-47 (* 8192.0 (seconds-per-frame)) 0.25 0.01)))))
             (else (set! (-> this up-blend) (seek-with-smooth (-> this up-blend) f28-1 (* 8192.0 (seconds-per-frame)) 0.125 0.01))))))
+      ;; coop: player-query
       (let ((neck-tgt (closest-target-to (-> this root-overeride trans))))
         (when (and arg1 neck-tgt)
           (set-target! (-> this neck) (target-pos-for neck-tgt 5))
@@ -354,6 +357,7 @@
         (quaternion-axis-angle! s5-2 0.0 0.0 1.0 (-> this drill-rz))
         (set-trs! (-> this drill) (the-as vector #f) s5-2 (the-as vector #f)))
       0))
+  ;; coop: player-query
   (when (and (-> this hit-player?)
              (let ((sfx-tgt (closest-target-to (-> this root-overeride trans))))
                (or (not sfx-tgt)
@@ -369,15 +373,18 @@
     (when (!= v1-1 (-> this last-player-path-u-time))
       (set! (-> this last-player-path-u-time) v1-1)
       (cond
+        ;; coop: player-query
         ((closest-target-to (-> this root-overeride trans))
          (let* ((s5-0 (-> this path))
                 (s4-0 (method-of-object s5-0 path-control-method-20)))
-           (target-pos-for (closest-target-to (-> this root-overeride trans)) 0)
+           ;; coop: player-query
+           (target-pos-for (closest-alive-target (-> this root-overeride trans)) 0)
            (set! (-> this player-path-u) (s4-0 s5-0))))
         (else (set! (-> this player-path-u) 0.0)))))
   (-> this player-path-u))
 
 (defmethod driller-lurker-method-25 ((this driller-lurker))
+  ;; coop: player-query
   (let ((tgt (closest-target-to (-> this root-overeride trans))))
     (when tgt
       (let* ((s5-0 (target-pos-for tgt 0))
@@ -392,6 +399,7 @@
     #f))
 
 (defmethod driller-lurker-method-26 ((this driller-lurker))
+  ;; coop: player-query
   (let ((tgt (closest-target-to (-> this root-overeride trans))))
     (when tgt
       (let* ((a1-0 (target-pos-for tgt 0))
@@ -401,6 +409,7 @@
   #t)
 
 (defmethod driller-lurker-method-24 ((this driller-lurker))
+  ;; coop: player-query
   (let ((tgt (closest-target-to (-> this root-overeride trans))))
     (when tgt
       (let* ((a1-0 (target-pos-for tgt 0))
@@ -551,7 +560,8 @@
       (if (time-elapsed? (-> self started-chasing-time) (seconds 3)) (go driller-lurker-jammed-standing))
       (let* ((gp-0 (-> self path))
              (s5-0 (method-of-object gp-0 path-control-method-20)))
-        (target-pos-for (closest-target-to (-> self root-overeride trans)) 0)
+        ;; coop: player-query
+        (target-pos-for (closest-alive-target (-> self root-overeride trans)) 0)
         (let ((f0-1 (- (s5-0 gp-0) (-> self path-u))))
           (when (>= (fabs f0-1) (/ (-> self path-units-per-meter) 10))
             (cond
@@ -617,6 +627,7 @@
         (ja :num! (seek!)))
       (set-time! (-> self started-chasing-time))
       (cond
+        ;; coop: player-query
         ((closest-target-to (-> self root-overeride trans)) (go driller-lurker-chase #f) (set! (-> self path-speed) 5888.0))
         (else (set! (-> self path-speed) 7680.0) (go driller-lurker-patrol))))
   :post transform-post)

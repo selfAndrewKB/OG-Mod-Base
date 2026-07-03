@@ -55,7 +55,8 @@
   0)
 
 (defmethod common-post ((this nav-enemy))
-  (let ((tgt (let ((t (closest-target-to (-> this collide-info trans)))) (if t t *target*))))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> this collide-info trans))))
     (when (and (logtest? (-> this nav-enemy-flags) (nav-enemy-flags navenmf8))
                (or (not tgt)
                    (and (not (logtest? (-> tgt state-flags)
@@ -264,6 +265,7 @@ nav-enemy-default-event-handler
 ;; (define *multi-dbg-ai* #f) in engine/mods/multi-debug.gc.
 (define-extern *multi-dbg-ai* symbol)
 
+;; coop: api player-query
 (defbehavior nav-enemy-get-target nav-enemy ()
   "Return the closest valid target to this enemy. In single-player, the only
    candidate is *target* (P1). In split-screen, returns whichever player is

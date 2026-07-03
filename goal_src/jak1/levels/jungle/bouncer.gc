@@ -63,6 +63,7 @@
       (loop
         (if (time-elapsed? (-> self state-time) (seconds 0.2))
           (ja :num! (seek! 0.0 0.1))
+          ;; coop: player-query
           (let ((tgt (closest-target-to (-> self root trans))))
             (ja :num!
                 (seek! (lerp-scale (ja-aframe 6.0 0)

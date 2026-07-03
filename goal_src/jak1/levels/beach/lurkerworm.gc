@@ -178,7 +178,8 @@
   :init-specs ((:fade-a -0.10666667)))
 
 (defmethod lurkerworm-method-20 ((this lurkerworm))
-  (let ((tgt (let ((t (closest-target-to (-> this root trans)))) (if t t *target*)))
+  ;; coop: player-query
+  (let ((tgt (closest-alive-target (-> this root trans)))
         (s5-0 (new 'stack-no-clear 'vector)))
     (vector-! s5-0 (target-pos-for tgt 0) (-> this root trans))
     (set-target! (-> this twister) (atan (-> s5-0 x) (-> s5-0 z)))
@@ -245,7 +246,8 @@ lurkerworm-default-post-behavior
   :code
     (behavior ()
       (loop
-        (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+        ;; coop: player-query
+        (let ((tgt (closest-alive-target (-> self root trans))))
           (if (and (time-elapsed? (-> self state-time) (seconds 1))
                    tgt
                    (>= 81920.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
@@ -266,7 +268,8 @@ lurkerworm-default-post-behavior
         (spawn (-> self part) (-> self root trans))
         (particle-effect self)
         (when (time-elapsed? (-> self state-time) (seconds 1))
-          (let ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*))))
+          ;; coop: player-query
+          (let ((tgt (closest-alive-target (-> self root trans))))
             (if (and tgt (>= 81920.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
               (go lurkerworm-rise)
               (go lurkerworm-idle))))
@@ -314,7 +317,8 @@ lurkerworm-default-post-behavior
           (ja-blend-eval)
           (particle-effect self)
           (when gp-1
-            (let* ((tgt (let ((t (closest-target-to (-> self root trans)))) (if t t *target*)))
+            ;; coop: player-query
+            (let* ((tgt (closest-alive-target (-> self root trans)))
                    (f0-13 (- 1.0
                               (* 0.00009765625
                                  (+ -16384.0 (if tgt (vector-vector-distance (-> self root trans) (-> tgt control trans)) 4096000.0)))))
