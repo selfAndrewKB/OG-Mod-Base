@@ -708,9 +708,8 @@
   :code
     (behavior ()
       (set-setting! 'music 'danger 0.0 0)
-      (dotimes (rpi (-> *target-list* length))
-        (let ((rptgt (get-target rpi)))
-          (when rptgt (send-event rptgt 'reset-pickup 'eco))))
+      ;; coop: event-fanout
+      (send-event-all-targets 'reset-pickup 'eco)
       (let ((v1-9 (-> self entity extra perm)))
         (logior! (-> v1-9 status) (entity-perm-status user-set-from-cstage))
         (b! (zero? (-> v1-9 user-int8 2)) cfg-5 :delay (empty-form)))

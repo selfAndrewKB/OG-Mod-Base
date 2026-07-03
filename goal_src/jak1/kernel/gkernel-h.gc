@@ -383,6 +383,33 @@
     (if (nonzero? safe-h)
       (handle->process safe-h))))
 
+;; coop: api event-fanout
+(defmacro mirror-camera-event-secondaries (&rest event-forms)
+  "Mirror camera event(s) to P2's camera-master when its pipeline exists.
+   Each event-form is (msg args...), forwarded as (send-event *camera-p2* msg args...).
+   Callers must have *camera-p2* externed (camera-h.gc or a local define-extern).
+   Lives here (not coop-api.gc) because consumers are level files that compile
+   before the mods sequence in game.gp; macro home rule per coop-api.gc header.
+   Sites needing the stronger liveness gate (nonzero? tracked-target) or
+   query-state guards keep their hand-written block, tagged ;; coop: event-fanout."
+  `(when *camera-p2*
+     ,@(apply (lambda (f) (cons 'send-event (cons '*camera-p2* f))) event-forms)))
+
+;; coop: api event-fanout
+(defmacro send-event-all-targets (msg &rest args)
+  "Broadcast an event to every live co-op target: the canonical guarded
+   *target-list* loop. Fits ONLY unconditional broadcasts; loops with per-target
+   filters or per-target event args keep their custom shell, tagged
+   ;; coop: event-fanout (shells consolidate under do-targets in Pass 8).
+   CAUTION: use from :code or :post bodies. send-event inside dotimes in a
+   :trans body crashed once (ogre-bridge, LEARNED-RULES Session 44) — root
+   cause unisolated; do not introduce NEW :trans-body uses of this macro.
+   Lives here (not coop-api.gc) for the same load-order reason as above."
+  `(dotimes (fanout-idx (-> *target-list* length))
+     (let ((fanout-tgt (get-target fanout-idx)))
+       (when fanout-tgt
+         (send-event fanout-tgt ,msg ,@args)))))
+
 (defmacro ppointer->process (ppointer)
   "convert a (pointer process) to a process."
   ;; this uses the self field, which seems to always just get set to the object.

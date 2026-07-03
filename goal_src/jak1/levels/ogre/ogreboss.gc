@@ -1023,7 +1023,8 @@
 (defbehavior ogreboss-post ogreboss ()
   (transform-post)
   (send-event *camera* 'point-of-interest (-> self node-list data 5 bone transform vector 3))
-  (when *camera-p2* (send-event *camera-p2* 'point-of-interest (-> self node-list data 5 bone transform vector 3)))
+  ;; coop: event-fanout
+  (mirror-camera-event-secondaries ('point-of-interest (-> self node-list data 5 bone transform vector 3)))
   0
   (none))
 
@@ -1222,7 +1223,8 @@
   :exit
     (behavior ()
       (send-event *camera* 'point-of-interest #f)
-      (when *camera-p2* (send-event *camera-p2* 'point-of-interest #f))
+      ;; coop: event-fanout
+      (mirror-camera-event-secondaries ('point-of-interest #f))
       (set! (-> self vulnerable) #f))
   :trans
     (behavior ()
