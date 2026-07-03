@@ -796,6 +796,7 @@
   ;; Use the footprint-only predicate, not citb-exit-plat-target-on-lift?, so
   ;; stale rider state from a previous trip cannot suppress a needed snap.
   (let ((slot 0))
+    ;; coop: event-fanout (filtered loop — shell to do-targets in Pass 8)
     (dotimes (idx (-> *target-list* length))
       (let ((tgt (get-target idx)))
         (when (and tgt (target-active-for-platform-sync? tgt))
@@ -907,6 +908,7 @@
 (defbehavior citb-exit-plat-move-player citb-exit-plat ((arg0 vector))
   (let ((gp-0 (new 'stack-no-clear 'vector)))
     (vector-! gp-0 (-> self root trans) arg0)
+    ;; coop: event-fanout (filtered loop — shell to do-targets in Pass 8)
     (dotimes (idx (-> *target-list* length))
       (let ((tgt (get-target idx)))
         (when (and tgt

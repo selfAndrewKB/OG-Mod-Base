@@ -218,17 +218,16 @@
          (if *target* (logior! (-> *target* mask) (process-mask sleep)))
          (send-event (ppointer->process (-> self parent)) 'bomb-going)
          (send-event *camera* 'change-to-entity-by-name "camera-402")
-         (when *camera-p2* (send-event *camera-p2* 'change-to-entity-by-name "camera-402"))
+         ;; coop: event-fanout
+         (mirror-camera-event-secondaries ('change-to-entity-by-name "camera-402"))
          (set-time! (-> self state-time))
          (until (time-elapsed? (-> self state-time) (seconds 2))
            (suspend))
          (send-event *camera* 'force-blend 0)
          (send-event *camera* 'change-state *camera-base-mode*)
          (send-event *camera* 'clear-entity)
-         (when *camera-p2*
-           (send-event *camera-p2* 'force-blend 0)
-           (send-event *camera-p2* 'change-state *camera-base-mode*)
-           (send-event *camera-p2* 'clear-entity))
+         ;; coop: event-fanout
+         (mirror-camera-event-secondaries ('force-blend 0) ('change-state *camera-base-mode*) ('clear-entity))
          (if *target* (logclear! (-> *target* mask) (process-mask sleep)))
          ;; coop: player-query
          (let ((kill-tgt (closest-target-to (-> self root trans))))
@@ -511,6 +510,7 @@
   :trans
     (behavior ()
       (set! (-> self ring radius-primary) (* 204.8 (the float (- (-> *display* game-frame-counter) (-> self state-time)))))
+      ;; coop: event-fanout (filtered loop — shell to do-targets in Pass 8)
       (dotimes (ri (-> *target-list* length))
         (let ((rtp (get-target ri)))
           (when rtp

@@ -242,6 +242,7 @@
     (process-taskable-force-release-coop-lock! (the-as process-taskable #f))
     (set! *process-taskable-coop-lock-owner* arg0)
     (set! *process-taskable-coop-release-frame* -1)
+    ;; coop: event-fanout (filtered loop — shell to do-targets in Pass 8)
     (dotimes (idx (-> *target-list* length))
       (let ((raw (-> *target-list* idx)))
         ;; coop: safe-handle

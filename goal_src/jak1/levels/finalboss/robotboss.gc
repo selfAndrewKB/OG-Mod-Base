@@ -118,7 +118,8 @@
       (set! *camera-base-mode* cam-launcher-longfall)
       (send-event *camera* 'clear-entity)
       (set! *camera-base-mode* s5-4)
-      (when *camera-p2* (send-event *camera-p2* 'clear-entity))))
+      ;; coop: event-fanout
+      (mirror-camera-event-secondaries ('clear-entity))))
   (b! #t cfg-66 :delay (nop!))
   (label cfg-19)
   (b! (not (and (-> self des-cam-entity)
@@ -131,6 +132,7 @@
                         (res-lump-struct (-> *camera* cam-entity) 'name string :time (the-as float -1000000000.0)))))
     (begin
       (send-event *camera* 'change-to-entity-by-name (-> self des-cam-entity))
+      ;; coop: event-fanout (guarded variant — keeps custom gate)
       (when (and *camera-p2*
                  (not (send-event *camera-p2* 'query-state cam-launcher-longfall))
                  (or (not (-> *camera-p2* cam-entity))
@@ -147,6 +149,7 @@
              (not (send-event *camera* 'query-state cam-eye)))
     (send-event *camera* 'change-state cam-robotboss (seconds 1))
     (send-event *camera* 'clear-entity))
+  ;; coop: event-fanout (guarded variant — keeps custom gate)
   (when (and *camera-p2*
              (not (send-event *camera-p2* 'query-state cam-robotboss))
              (not (send-event *camera-p2* 'query-state cam-eye))
@@ -163,11 +166,8 @@
       (send-event *camera* 'force-blend (seconds 1))
       (send-event *camera* 'clear-entity)
       (send-event *camera* 'change-state cam-string (seconds 1))
-      (when *camera-p2*
-        (send-event *camera-p2* 'point-of-interest #f)
-        (send-event *camera-p2* 'force-blend (seconds 1))
-        (send-event *camera-p2* 'clear-entity)
-        (send-event *camera-p2* 'change-state cam-string (seconds 1)))))
+      ;; coop: event-fanout
+      (mirror-camera-event-secondaries ('point-of-interest #f) ('force-blend (seconds 1)) ('clear-entity) ('change-state cam-string (seconds 1)))))
   (label cfg-66)
   (cond
     ((send-event *camera* 'query-state cam-string))
@@ -175,7 +175,8 @@
      (let ((s5-10 (new 'stack-no-clear 'vector)))
        (vector<-cspace! s5-10 (joint-node robotboss-basic-lod0-jg interesting))
        (send-event *camera* 'point-of-interest s5-10)
-       (when *camera-p2* (send-event *camera-p2* 'point-of-interest s5-10)))))
+       ;; coop: event-fanout
+       (mirror-camera-event-secondaries ('point-of-interest s5-10)))))
   (when (and arg0 *debug-segment* (cpad-pressed? 0 l3)) ;; og:preserve-this changed from (cpad-pressed? 1 x)
     (cpad-clear! 0 l3)
     (go arg0))
@@ -248,7 +249,8 @@
     (set! (-> gp-0 y) 32768.0)
     (vector+! gp-0 gp-0 s5-0)
     (send-event *camera* 'set-pivot gp-0)
-    (when *camera-p2* (send-event *camera-p2* 'set-pivot gp-0)))
+    ;; coop: event-fanout
+    (mirror-camera-event-secondaries ('set-pivot gp-0)))
   (when (-> self alts 6)
     (let ((a0-16 (-> self alts 6 extra process))
           (f0-10 (+ (-> self entity extra trans y) (-> self desired-pool-y))))
@@ -672,7 +674,8 @@
       (set! (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 3 prim-core collide-as) (collide-kind))
       (set! (-> self use-interesting) #f)
       (send-event *camera* 'point-of-interest #f)
-      (when *camera-p2* (send-event *camera-p2* 'point-of-interest #f))
+      ;; coop: event-fanout
+      (mirror-camera-event-secondaries ('point-of-interest #f))
       (if (nonzero? (-> self yellow-gun)) (set-mode! (-> self yellow-gun) (joint-mod-handler-mode flex-blend)))
       (robotboss-yellow-eco-off)
       (robotboss-cut-cam-exit)
@@ -1573,6 +1576,7 @@
        (spawn (-> self particle 0) s4-0)
        (when (and arg1 (nonzero? (-> self looping-sound 0)))
          (update! (-> self looping-sound 0))
+         ;; coop: event-fanout (filtered loop — shell to do-targets in Pass 8)
          (dotimes (bbi (-> *target-list* length))
            (let ((bbtp (get-target bbi)))
              (when (and bbtp
@@ -1598,6 +1602,7 @@
        (spawn (-> self particle 1) gp-0)
        (when (and arg1 (nonzero? (-> self looping-sound 1)))
          (update! (-> self looping-sound 1))
+         ;; coop: event-fanout (filtered loop — shell to do-targets in Pass 8)
          (dotimes (rri (-> *target-list* length))
            (let ((rrtp (get-target rri)))
              (when (and rrtp
@@ -1719,7 +1724,8 @@
       (set! (-> (the-as collide-shape-prim-group (-> self root root-prim)) prims 0 prim-core collide-as) (collide-kind))
       (set! (-> self use-interesting) #f)
       (send-event *camera* 'point-of-interest #f)
-      (when *camera-p2* (send-event *camera-p2* 'point-of-interest #f))
+      ;; coop: event-fanout
+      (mirror-camera-event-secondaries ('point-of-interest #f))
       (robotboss-blue-done)
       (if (nonzero? (-> self looping-sound 0)) (stop! (-> self looping-sound 0)))
       (if (nonzero? (-> self looping-sound 1)) (stop! (-> self looping-sound 1)))

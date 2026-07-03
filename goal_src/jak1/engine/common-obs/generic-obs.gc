@@ -94,6 +94,7 @@
   :code
     (behavior ()
       (loop
+        ;; coop: event-fanout (filtered loop — shell to do-targets in Pass 8)
         (dotimes (idx (-> *target-list* length))
           (let ((tgt (get-target idx)))
             (when (and tgt

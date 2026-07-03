@@ -734,6 +734,7 @@
       ;; pre-sets rider-count on the coordinator BEFORE go-virtual so ride's
       ;; :enter doesn't need to reset it.
       (let ((accepted 0))
+        ;; coop: event-fanout (filtered loop — shell to do-targets in Pass 8)
         (dotimes (idx (-> *target-list* length))
           (let ((tgt (get-target idx)))
             (when (and tgt
@@ -818,6 +819,7 @@
       (let ((entrance-rot (new 'stack-no-clear 'vector))
             (to-tgt       (new 'stack-no-clear 'vector)))
         (path-control-method-12 (-> self path) entrance-rot 0.2)
+        ;; coop: event-fanout (filtered loop — shell to do-targets in Pass 8)
         (dotimes (idx (-> *target-list* length))
           (let ((tgt (get-target idx)))
             (when (and tgt

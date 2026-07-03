@@ -113,6 +113,7 @@
       ;; (Citadel elevator overhead, moving platform shots). Mirror the same
       ;; entity-camera selection to P2's camera master instead of inventing a
       ;; separate follow offset, so both viewports use the native authored shot.
+      ;; coop: event-fanout (liveness-gated variant — keeps stronger gate)
       (when (and *camera-p2* (nonzero? (-> *camera-p2* tracked-target)))
         (send-event *camera-p2* 'change-to-entity-by-name v1-1))))
   0
@@ -123,6 +124,7 @@
   ;; Keep release symmetric with plat-button-camera-on; otherwise P2 can remain
   ;; stuck to an authored platform camera after P1 has already returned to the
   ;; normal camera state.
+  ;; coop: event-fanout (liveness-gated variant — keeps stronger gate)
   (when (and *camera-p2* (nonzero? (-> *camera-p2* tracked-target)))
     (send-event *camera-p2* 'clear-entity))
   0
