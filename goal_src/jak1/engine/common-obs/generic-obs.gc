@@ -118,6 +118,7 @@
       (let ((any-occupant #t))
         (until (not any-occupant)
           (set! any-occupant #f)
+          ;; coop: player-query
           (dotimes (idx (-> *target-list* length))
             (let ((tgt (get-target idx)))
               (when (and tgt (= (handle->process (-> tgt control unknown-handle10)) self))

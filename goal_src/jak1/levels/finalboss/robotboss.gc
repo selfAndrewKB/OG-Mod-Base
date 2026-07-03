@@ -846,6 +846,7 @@
     (behavior ()
       (robotboss-always-trans robotboss-yellow)
       (let ((lj-any #f))
+        ;; coop: player-query
         (dotimes (lji (-> *target-list* length))
           (let ((ljtp (get-target lji)))
             (when (and ljtp (= (-> ljtp control unknown-surface00 name) 'launch-jump))
@@ -1210,6 +1211,7 @@
     (behavior ()
       (robotboss-always-trans robotboss-red)
       (let ((lj-any #f))
+        ;; coop: player-query
         (dotimes (lji (-> *target-list* length))
           (let ((ljtp (get-target lji)))
             (when (and ljtp (= (-> ljtp control unknown-surface00 name) 'launch-jump))
@@ -1478,6 +1480,7 @@
     (behavior ()
       (robotboss-always-trans robotboss-green)
       (let ((lj-any #f))
+        ;; coop: player-query
         (dotimes (lji (-> *target-list* length))
           (let ((ljtp (get-target lji)))
             (when (and ljtp (= (-> ljtp control unknown-surface00 name) 'launch-jump))

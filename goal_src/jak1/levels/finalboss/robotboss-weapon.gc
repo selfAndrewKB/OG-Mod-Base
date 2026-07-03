@@ -209,6 +209,7 @@
       (cond
         ((or arg0
              (let ((db-any-low #f))
+               ;; coop: player-query
                (dotimes (dbl (-> *target-list* length))
                  (let ((dbltp (get-target dbl)))
                    (when (and dbltp (< (-> dbltp control trans y) (+ 40960.0 (-> self entity extra trans y))))
@@ -245,6 +246,7 @@
   (when (not (movie?))
     (let ((db-has-players #f)
           (db-all-high #t))
+      ;; coop: player-query
       (dotimes (dbhi (-> *target-list* length))
         (let ((dbhtp (get-target dbhi)))
           (when dbhtp

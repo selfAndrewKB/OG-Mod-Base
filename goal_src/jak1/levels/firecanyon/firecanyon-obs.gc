@@ -8,6 +8,7 @@
 
 (defun firecanyon-racer-near? ((pos vector) (dist float))
   (let ((found #f))
+    ;; coop: player-query
     (dotimes (idx (-> *target-list* length))
       (let ((tgt (get-target idx)))
         (when (and tgt

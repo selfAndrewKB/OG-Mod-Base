@@ -766,6 +766,7 @@
   ;; Vanilla waits for P1 to move away before the button can reengage. Do the
   ;; same query across the active target list so either player standing on/near
   ;; the switch can hold the elevator at its endpoint without causing loops.
+  ;; coop: player-query
   (dotimes (idx (-> *target-list* length))
     (let ((tgt (get-target idx)))
       (when (and tgt
@@ -779,6 +780,7 @@
   ;; elevator, keep that native return safeguard armed only when every active
   ;; player is actually off the lift; otherwise P2-only rides look "lost" to the
   ;; singleton check even though a valid rider is present.
+  ;; coop: player-query
   (dotimes (idx (-> *target-list* length))
     (let ((tgt (get-target idx)))
       (when (and tgt

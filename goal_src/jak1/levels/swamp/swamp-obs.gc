@@ -184,6 +184,7 @@
                 (near-tgt (the-as target #f))
                 (near-dist (the-as float 10000000000.0))
                 (near-idx -1))
+            ;; coop: player-query
             (dotimes (idx (-> *target-list* length))
               (let ((tgt (get-target idx)))
                 (when tgt

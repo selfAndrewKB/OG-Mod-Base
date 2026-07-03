@@ -70,6 +70,7 @@
   ;; Vanilla uses global *target* without a range check here. Keep that property:
   ;; after an endlessfall/checkpoint reset, the ferry may be far away at the boss
   ;; side, but the respawned player at the start side must still pull it home.
+  ;; coop: player-query
   (dotimes (idx (-> *target-list* length))
     (let ((tgt (get-target idx)))
       (when (and tgt (target-active-for-platform-sync? tgt))
@@ -83,6 +84,7 @@
   ;; The native finalboss ferry checks *target*'s yellow eco globally. Do not use
   ;; target-with-powerup-near here: on death/reset, the platform can be far from
   ;; the respawn point and still needs the player's yellow eco to command return.
+  ;; coop: player-query
   (dotimes (idx (-> *target-list* length))
     (let ((tgt (get-target idx)))
       (when (and tgt (target-has-powerup? tgt (pickup-type eco-yellow)))

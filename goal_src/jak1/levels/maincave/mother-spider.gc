@@ -323,6 +323,7 @@
     (else (let ((v1-25 (-> this draw shadow-ctrl))) (logior! (-> v1-25 settings flags) (shadow-flags disable-draw))) 0)))
 
 (defmethod grab-player? ((this mother-spider))
+  ;; coop: player-query
   (dotimes (idx (-> *target-list* length))
     (let ((tgt (get-target idx)))
       (when (and tgt
@@ -339,6 +340,7 @@
   #f)
 
 (defmethod letgo-player? ((this mother-spider))
+  ;; coop: player-query
   (dotimes (idx (-> *target-list* length))
     (let ((tgt (get-target idx)))
       (when (and tgt

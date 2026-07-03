@@ -668,6 +668,7 @@
   (if *multi-coop-active*
     (let ((best (the-as target #f))
           (best-dist 32768.0))
+      ;; coop: player-query
       (dotimes (idx (-> *target-list* length))
         (let ((raw (-> *target-list* idx)))
           ;; coop: safe-handle

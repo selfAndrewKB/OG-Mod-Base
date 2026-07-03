@@ -138,6 +138,7 @@
   (cond
     (*multi-coop-active*
      (let ((near? #f))
+       ;; coop: player-query
        (dotimes (idx (-> *target-list* length))
          (let ((tgt-handle (-> *target-list* idx)))
            (when (and (not near?) (not (zero? tgt-handle)))

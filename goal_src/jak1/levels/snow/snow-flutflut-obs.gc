@@ -11,6 +11,7 @@
 ;; touched/rode them; global *target* only represents P1.
 (defun snow-any-flut-rider-ready-for-cave? ()
   (let ((found #f))
+    ;; coop: player-query
     (dotimes (idx (-> *target-list* length))
       (let ((tgt (get-target idx)))
         (when (and tgt

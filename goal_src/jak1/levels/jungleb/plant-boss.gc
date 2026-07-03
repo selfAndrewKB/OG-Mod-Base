@@ -793,6 +793,7 @@
   :trans
     (behavior ()
       (let ((pbi-min (the-as float 10000000000.0)))
+        ;; coop: player-query
         (dotimes (pbi (-> *target-list* length))
           (let ((pbtgt (get-target pbi)))
             (when pbtgt
@@ -881,6 +882,7 @@
   :trans
     (behavior ()
       (let ((pbs-min (the-as float 10000000000.0)))
+        ;; coop: player-query
         (dotimes (pbsi (-> *target-list* length))
           (let ((pbstgt (get-target pbsi)))
             (when pbstgt
