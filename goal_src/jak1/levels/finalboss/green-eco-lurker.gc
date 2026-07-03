@@ -306,6 +306,7 @@
       (send-event (ppointer->process (-> this parent)) 'blob-hit-jak))))
 
 (defmethod nav-enemy-method-51 ((this green-eco-lurker) (arg0 vector))
+  ;; coop: player-query
   (let ((tgt (closest-target-to arg0)))
     (when (or (not tgt) (>= (vector-vector-xz-distance arg0 (-> tgt control trans)) 36864.0))
       (let ((v1-3 (new 'stack-no-clear 'vector)))

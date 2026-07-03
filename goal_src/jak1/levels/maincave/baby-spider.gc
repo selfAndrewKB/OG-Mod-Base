@@ -260,8 +260,10 @@ baby-spider-default-event-handler
   :code
     (behavior ()
       (cond
+        ;; coop: player-query
         ((not (nav-enemy-get-target)) (go-virtual nav-enemy-idle))
         ((target-in-range? self (-> self nav-info notice-distance)) (go-virtual nav-enemy-chase))
+        ;; coop: player-query
         ((and (let ((tgt (nav-enemy-get-target)))
                (and tgt
                     (>= (-> self enemy-info idle-distance)
@@ -348,6 +350,7 @@ baby-spider-default-event-handler
         (ja :num! (loop!))))
   :post
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (when tgt (nav-enemy-method-52 self (target-pos-for tgt 0))))
       (nav-enemy-travel-post)))

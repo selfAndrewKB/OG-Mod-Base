@@ -614,6 +614,7 @@
       (restore-collide-with-as (-> self collide-info)))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (when (and tgt (>= 163840.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
           (let ((s5-0 (new 'stack-no-clear 'vector))
@@ -722,6 +723,7 @@
       (logior! (-> self nav-enemy-flags) (nav-enemy-flags navenmf2))
       (nav-enemy-method-57 self)
       (logclear! (-> self mask) (process-mask actor-pause))
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (if (or (not tgt)
                 (logtest? (-> tgt state-flags)
@@ -821,6 +823,7 @@
       (set-time! (-> self state-time))
       (logior! (-> self nav-enemy-flags) (nav-enemy-flags navenmf2))
       (nav-enemy-method-58 self)
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (if (or (not tgt)
                 (logtest? (-> tgt state-flags)
@@ -887,6 +890,7 @@
       (nav-enemy-method-58 self)
       (logior! (-> self nav-enemy-flags) (nav-enemy-flags navenmf2))
       (set-time! (-> self next-skid-sound-time))
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (if (or (not tgt)
                 (logtest? (-> tgt state-flags)
@@ -911,6 +915,7 @@
       (set-root-prim-collide-with! (-> self collide-info) (collide-kind target)))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (when (or (not tgt) (logtest? (-> tgt state-flags) (state-flags do-not-notice)))
           (cond
@@ -1023,6 +1028,7 @@
     (behavior ()
       (when (time-elapsed? (-> self state-time) (seconds 2))
         (cond
+          ;; coop: player-query
           ((let ((tgt (nav-enemy-get-target)))
              (or (not tgt)
                  (< (-> self enemy-info idle-distance) (vector-vector-distance (-> self collide-info trans) (-> tgt control trans)))))
@@ -1057,6 +1063,7 @@
       (let ((gp-1 (new 'stack 'joint-exploder-tuning 1)))
         (set! (-> gp-1 duration) (seconds 3))
         (set! (-> gp-1 gravity) -327680.0)
+        ;; coop: player-query
         (set! (-> gp-1 fountain-rand-transv-lo quad) (-> (target-pos-for (nav-enemy-get-target) 0) quad))
         (process-spawn joint-exploder
                        *ice-cube-break-sg*

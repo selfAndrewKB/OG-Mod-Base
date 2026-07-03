@@ -242,6 +242,7 @@ nav-enemy-default-event-handler
       (logclear! (-> self nav-enemy-flags) (nav-enemy-flags navenmf6)))
   :trans
     (behavior ()
+      ;; coop: player-query
       (if (logtest? (-> (nav-enemy-get-target) state-flags)
                     (state-flags being-attacked invulnerable timed-invulnerable invuln-powerup do-not-notice dying))
         (go-virtual nav-enemy-victory))

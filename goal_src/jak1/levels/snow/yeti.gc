@@ -346,6 +346,7 @@
       (set! (-> self turn-time) (seconds 0.5))
       (ja-channel-push! 1 (seconds 0.15))
       (let ((s4-0 (-> self collide-info))
+            ;; coop: player-query
             (s5-0 (target-pos-for (nav-enemy-get-target) 0)))
         (when (< (fabs (deg-diff (y-angle s4-0) (vector-y-angle (vector-! (new 'stack-no-clear 'vector) s5-0 (-> s4-0 trans)))))
                  12743.111)
@@ -458,6 +459,7 @@
       (if (< (vector-vector-xz-distance-squared arg0 (-> (the-as (pointer yeti-slave) s5-0) 0 collide-info trans)) 603979800.0)
         (return #f))
       (set! s5-0 (-> s5-0 0 brother))))
+  ;; coop: player-query
   (let ((tgt (closest-target-to arg0)))
     (when tgt
       (if (< (vector-vector-xz-distance-squared arg0 (target-pos-for tgt 0)) 603979800.0) (return #f))))
@@ -471,6 +473,7 @@
       (while (> s2-0 0)
         (eval-path-curve-div! (-> this path) arg0 (the float s1-0) 'interp)
         (when (aggro? this arg0)
+          ;; coop: player-query
           (let ((tgt (closest-target-to arg0)))
             (cond
               (tgt (vector-! arg1 (target-pos-for tgt 0) arg0) (set! (-> arg1 y) 0.0))
@@ -487,6 +490,7 @@
   :code
     (behavior ()
       (loop
+        ;; coop: player-query
         (let ((tgt (closest-target-to (-> self root trans))))
           (when tgt
             (when (>= (-> self first-time-spawn-dist) (vector-vector-xz-distance (target-pos-for tgt 0) (-> self root trans)))

@@ -65,6 +65,7 @@
         (f24-0 4096000.0)
         (f28-0 0.0))
     (let ((s5-0 (+ (-> self path curve num-cverts) -1))
+          ;; coop: player-query
           (s4-0 (target-pos-for (nav-enemy-get-target) 0)))
       (dotimes (s3-0 s5-0)
         (let ((f22-0 (the float s3-0)))
@@ -132,6 +133,7 @@ nav-enemy-default-event-handler
   :trans
     (behavior ()
       (seek! (-> self sprint-distance) 61440.0 (* 8192.0 (seconds-per-frame)))
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (if (and tgt (>= 102400.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
           (level-hint-spawn (text-id zero) (the-as string #f) (-> self entity) *entity-pool* (game-task none)))
@@ -164,6 +166,7 @@ nav-enemy-default-event-handler
       (set-time! (-> self state-time)))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (cond
           ((or (not tgt) (< 102400.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))

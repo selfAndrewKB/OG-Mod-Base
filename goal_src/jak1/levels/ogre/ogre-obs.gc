@@ -690,6 +690,7 @@
       (ogre-bridge-update-joints))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (when (and tgt
                    (>= 286720.0 (vector-vector-distance (-> self root trans) (-> tgt control trans)))
@@ -712,6 +713,7 @@
       (ja-no-eval :group! ogre-bridge-assemble-ja :num! (seek!) :frame-num 0.0)
       (until (ja-done? 0)
         (when (rand-vu-percent? 0.2)
+          ;; coop: player-query
           (let ((bridge-tgt (closest-target-to (-> self root trans))))
             (if bridge-tgt (spawn-projectile-blue bridge-tgt))))
         (suspend)

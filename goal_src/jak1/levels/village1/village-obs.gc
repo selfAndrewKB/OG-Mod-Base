@@ -545,6 +545,7 @@
       (ja-channel-set! 1))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self collide-info trans))))
         (if (and tgt (>= 163840.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
           (go starfish-patrol))))
@@ -562,6 +563,7 @@
   :trans
     (behavior ()
       (when (time-elapsed? (-> self state-time) (seconds 1))
+        ;; coop: player-query
         (let ((tgt (closest-target-to (-> self collide-info trans))))
           (if (or (not tgt) (< 204800.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
             (go starfish-idle)))))
@@ -677,6 +679,7 @@
       (loop
         (when (time-elapsed? (-> self state-time) (seconds 0.5))
           (set-time! (-> self state-time))
+          ;; coop: player-query
           (let ((tgt (closest-target-to (-> self root trans))))
             (if (and (and tgt (>= 204800.0 (vector-vector-distance (-> self root trans) (-> tgt control trans))))
                      (< (process-drawable-child-count) (-> self child-count)))

@@ -217,6 +217,7 @@
       (set! (-> self run-blend-interp) (- (-> self run-blend-interp))))))
 
 (defbehavior fleeing-nav-enemy-chase-post fleeing-nav-enemy ()
+  ;; coop: player-query
   (let ((tgt (nav-enemy-get-target))
         (gp-0 (new 'stack-no-clear 'vector)))
     (vector-! gp-0 (-> self collide-info trans) (target-pos-for tgt 0))
@@ -279,6 +280,7 @@
         (ja-no-eval :group! (-> self draw art-group data (-> self nav-info notice-anim)) :num! (seek! max f30-0) :frame-num 0.0)
         (until (ja-done? 0)
           (seek-toward-heading-vec! (-> self collide-info) (-> self nav travel) (-> self rotate-speed) (-> self turn-time))
+          ;; coop: player-query
           (let ((tgt (nav-enemy-get-target)))
             (if (and tgt
                      (>= (-> self flee-info abort-notice-distance)
@@ -349,6 +351,7 @@
               (vector-float*! s4-0 s4-0 1820.4445)
               (matrix-axis-angle! s3-0 (-> *camera* local-down) (-> s2-0 y))
               (vector-matrix*! gp-0 gp-0 s3-0))
+            ;; coop: player-query
             (let ((tgt (nav-enemy-get-target)))
               (if tgt (vector-! gp-0 (-> self collide-info trans) (target-pos-for tgt 0))))
             (vector-normalize! gp-0 (-> self flee-info deflection-max-dist))
@@ -589,6 +592,7 @@
     (behavior ()
       (set! (-> self speed-adjust) 1.0)
       (set! (-> self run-blend-interp) 0.0)
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (vector-! (-> self saved-travel) (-> self collide-info trans) (target-pos-for tgt 0)))
       ((-> (method-of-type fleeing-nav-enemy nav-enemy-chase) enter)))
@@ -597,6 +601,7 @@
       (let ((s3-0 (new 'stack-no-clear 'vector))
             (s4-0 (new 'stack-no-clear 'vector))
             (gp-0 (new 'stack-no-clear 'vector))
+            ;; coop: player-query
             (tgt (nav-enemy-get-target)))
         0.0
         0.0
@@ -910,6 +915,7 @@
       (set-time! (-> self state-time)))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (if (and (time-elapsed? (-> self state-time) (seconds 1))
                  (not (and tgt (>= 81920.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))))
@@ -940,6 +946,7 @@
         (('hide) (go peeper-wait))))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (if (and tgt (>= 61440.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))
           (go peeper-wait))))
@@ -976,6 +983,7 @@
       (logclear! (-> self draw status) (draw-status hidden)))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (if (and tgt (>= 61440.0 (vector-vector-xz-distance (-> self root trans) (-> tgt control trans))))
           (go peeper-hide))))

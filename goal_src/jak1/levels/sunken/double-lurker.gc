@@ -281,6 +281,7 @@
 (defstate double-lurker-top-resume (double-lurker-top)
   :code
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (cond
           ((not tgt) (go-virtual nav-enemy-idle))
@@ -456,6 +457,7 @@
 (defstate double-lurker-resume (double-lurker)
   :code
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (cond
           ((not tgt) (go-virtual nav-enemy-idle))

@@ -229,6 +229,7 @@
            (send-event *camera-p2* 'change-state *camera-base-mode*)
            (send-event *camera-p2* 'clear-entity))
          (if *target* (logclear! (-> *target* mask) (process-mask sleep)))
+         ;; coop: player-query
          (let ((kill-tgt (closest-target-to (-> self root trans))))
            (when kill-tgt
              (send-event kill-tgt 'attack-invinc #f (static-attack-info ((mode 'instant-death)))))))

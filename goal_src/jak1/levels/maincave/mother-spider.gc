@@ -237,6 +237,7 @@
      (when (= (-> arg0 type) mother-spider-egg)
        (let ((gp-3 (new 'stack-no-clear 'vector))
              (s5-0 (-> (the-as process-drawable arg0) root trans)))
+         ;; coop: player-query
          (vector-! gp-3 (target-pos-for (closest-target-to s5-0) 0) s5-0)
          (set! (-> gp-3 y) 0.0)
          (vector-normalize! gp-3 1.0)
@@ -251,6 +252,7 @@
      (when (= (-> arg0 type) mother-spider-egg)
        (let ((gp-0 (new 'stack-no-clear 'vector))
              (s5-0 (-> (the-as process-drawable arg0) root trans)))
+         ;; coop: player-query
          (vector-! gp-0 (target-pos-for (closest-target-to s5-0) 0) s5-0)
          (set! (-> gp-0 y) 0.0)
          (vector-normalize! gp-0 1.0)
@@ -269,6 +271,7 @@
   (let ((v0-5 (+ (-> this baby-count) 1))) (set! (-> this baby-count) v0-5) v0-5))
 
 (defmethod is-player-stuck? ((this mother-spider))
+  ;; coop: player-query
   (let ((tgt (closest-target-to (-> this root trans))))
     (when (and tgt
                (not (and (logtest? (-> tgt control unknown-surface00 flags) (surface-flags jump))
@@ -428,6 +431,7 @@
                    (spawn (-> this part) s2-0)))))
             (set! s4-1 (/ s4-1 2)))))
       (when arg1
+        ;; coop: player-query
         (let ((neck-tgt (closest-target-to (-> this root trans))))
           (when neck-tgt
             (case (-> this mode)
@@ -526,13 +530,16 @@
        (when (< (fabs (-> this spin-vel)) 69176.89)
          (if (>= (-> this spin-vel) 0.0) (set! (-> this spin-vel) 69176.89) (set! (-> this spin-vel) -69176.89))
          (cond
+           ;; coop: player-query
            ((let ((tgt (closest-target-to (-> this root trans)))) tgt)
+            ;; coop: player-query
             (let* ((tgt (closest-target-to (-> this root trans)))
                    (v1-59 (target-pos-for tgt 0))
                    (f0-59 (atan (- (-> v1-59 x) (-> this root trans x)) (- (-> v1-59 z) (-> this root trans z)))))
               (if (>= 3640.889 (fabs (deg- f0-59 (-> this orient-rot y)))) (set! (-> this spin-vel) 0.0))))
            (else (set! (-> this spin-vel) 0.0)))))
       (else
+       ;; coop: player-query
        (let ((tgt (closest-target-to (-> this root trans))))
          (when tgt
            (let* ((v1-66 (target-pos-for tgt 0))
@@ -677,6 +684,7 @@
     (behavior ()
       (if (-> self hit?) (go mother-spider-hit-while-tracking))
       (if (letgo-player? self) (go mother-spider-traveling (the-as uint 0)))
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (let ((gp-0 (new 'stack-no-clear 'vector)))
           (vector<-cspace! gp-0 (joint-node mother-spider-lod0-jg bodA))
@@ -764,6 +772,7 @@
         (ja-no-eval :group! mother-spider-spit-ja :num! (seek! max 1.5) :frame-num 0.0)
         (until (ja-done? 0)
           (when (and (not gp-0) (>= (ja-aframe-num 0) 6.0) (>= 8.0 (ja-aframe-num 0)))
+            ;; coop: player-query
             (let ((tgt (closest-target-to (-> self root trans))))
               (when tgt
                 (let ((s4-0 (new 'stack-no-clear 'vector))
@@ -816,6 +825,7 @@
     (behavior ()
       (if (-> self hit?) (go mother-spider-hit-while-birthing))
       (if (letgo-player? self) (go mother-spider-traveling (the-as uint 0)))
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (if (and (time-elapsed? (-> self started-birthing-time) (seconds 6))
                  (and tgt
@@ -1266,6 +1276,7 @@
                  (s3-1 (new 'stack-no-clear 'vector)))
              (dotimes (s2-9 s5-3)
                (eval-path-curve-div! (-> this path) s4-2 (the float s2-9) 'interp)
+               ;; coop: player-query
                (vector-! s3-1 (target-pos-for (closest-target-to s4-2) 0) s4-2)
                (set! (-> s3-1 y) 0.0)
                (let ((s1-2 vector-rotate-around-y!)

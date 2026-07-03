@@ -244,6 +244,7 @@
         (suspend)))
   :post
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (if (and tgt (< (vector-vector-xz-distance (-> tgt control trans) (-> self root trans)) 57344.0) (not (ja-min? 0)))
           (rider-post)

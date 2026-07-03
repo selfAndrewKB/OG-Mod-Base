@@ -594,6 +594,7 @@
     (let ((s5-0 (new 'stack-no-clear 'vector)))
       (vector<-cspace! gp-0 (joint-node robotboss-basic-lod0-jg Lyellow_ecoBarrell))
       (set! (-> gp-0 y) 1972633.6)
+      ;; coop: player-query
       (let ((tgt-ys (closest-target-to (-> self root trans))))
         (if tgt-ys
           (set! (-> s5-0 quad) (-> tgt-ys control trans quad))
@@ -780,6 +781,7 @@
           (go robotboss-yellow-dark-bomb))))
   :post
     (behavior ()
+      ;; coop: player-query
       (let ((tgt-yg (closest-target-to (-> self root trans))))
         (when tgt-yg
           (if (nonzero? (-> self yellow-gun)) (set-target! (-> self yellow-gun) (-> tgt-yg control trans)))))
@@ -814,6 +816,7 @@
         (ja :num! (seek!)))
       (loop
         (cond
+          ;; coop: player-query
           ((let ((tgt-yh (closest-target-to (-> self root trans))))
              (and tgt-yh (< (+ 81920.0 (-> self entity extra trans y)) (-> tgt-yh control trans y))))
            (when (not (ja-group? robotboss-idle-hover-lookup-no-red-ja))
@@ -1500,6 +1503,7 @@
         (ja :num! (seek!)))
       (loop
         (cond
+          ;; coop: player-query
           ((let ((tgt-bh (closest-target-to (-> self root trans))))
              (and tgt-bh (< (+ 81920.0 (-> self entity extra trans y)) (-> tgt-bh control trans y))))
            (when (not (ja-group? robotboss-idle-hover-lookup-no-blue-ja))

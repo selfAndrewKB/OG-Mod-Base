@@ -280,6 +280,7 @@
   :virtual override
   :code
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (cond
           (tgt
@@ -306,6 +307,7 @@
     (behavior ()
       (if (nav-enemy-method-57 self) (go-virtual snow-bunny-defend))
       (when (time-elapsed? (-> self state-time) (-> self state-timeout))
+        ;; coop: player-query
         (let ((tgt (nav-enemy-get-target)))
           (if (not tgt) (go-virtual nav-enemy-idle))
           (cond
@@ -482,6 +484,7 @@
                                                     #f
                                                     #f
                                                     #f)
+          ;; coop: player-query
           (let ((tgt (nav-enemy-get-target)))
             (when tgt
               (let ((gp-2 (new 'stack-no-clear 'vector)))
@@ -556,6 +559,7 @@
     (behavior ()
       (set-time! (-> self state-time))
       (set! (-> self should-retreat?) #f)
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (if (or (not tgt) (logtest? (-> tgt state-flags) (state-flags do-not-notice))) (go-virtual nav-enemy-patrol)))
       (if (not (target-in-range? self (-> self nav-info stop-chase-distance))) (go-virtual nav-enemy-patrol))
@@ -677,6 +681,7 @@
   :enter
     (behavior ()
       (set-time! (-> self state-time))
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (if (not tgt) (go-virtual nav-enemy-patrol))
         (let ((v1-8 (>= 73728.0 (vector-vector-xz-distance (target-pos-for tgt 0) (-> self collide-info trans)))))
@@ -721,6 +726,7 @@
       (snow-bunny-method-76 self #f))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (if (not tgt) (go-virtual nav-enemy-patrol))
         (nav-enemy-method-58 self)
@@ -750,6 +756,7 @@
       (snow-bunny-method-76 self #t))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (when tgt
           (let ((gp-0 (new 'stack-no-clear 'vector)))

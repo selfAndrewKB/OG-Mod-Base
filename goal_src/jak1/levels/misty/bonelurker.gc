@@ -161,6 +161,7 @@ nav-enemy-default-event-handler
           (suspend)
           (ja :num! (seek! max f30-0)))
         (loop
+          ;; coop: player-query
           (let ((tgt (nav-enemy-get-target)))
             (cond
               ((or (not tgt) (< 36864.0 (vector-vector-distance (-> self collide-info trans) (-> tgt control trans))))
@@ -238,6 +239,7 @@ nav-enemy-default-event-handler
       (set! (-> self turn-time) (seconds 0.1))
       (ja-channel-push! 1 (seconds 0.15))
       (let ((s4-0 (-> self collide-info))
+            ;; coop: player-query
             (s5-0 (target-pos-for (nav-enemy-get-target) 0)))
         (when (< (fabs (deg-diff (y-angle s4-0) (vector-y-angle (vector-! (new 'stack-no-clear 'vector) s5-0 (-> s4-0 trans)))))
                  12743.111)

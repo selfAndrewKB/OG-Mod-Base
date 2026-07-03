@@ -157,6 +157,7 @@ swamp-rat-default-event-handler
         (ja :num! (loop!))))
   :post
     (behavior ()
+      ;; coop: player-query
       (swamp-rat-update-wiggle-target (target-pos-for (nav-enemy-get-target) 0))
       (nav-enemy-travel-post)))
 

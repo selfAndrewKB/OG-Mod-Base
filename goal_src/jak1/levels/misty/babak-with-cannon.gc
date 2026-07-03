@@ -23,6 +23,7 @@ nav-enemy-default-event-handler
   :event nav-enemy-default-event-handler
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (if (and (and tgt
                       (>= (-> self enemy-info idle-distance)
@@ -46,6 +47,7 @@ nav-enemy-default-event-handler
   :trans
     (behavior ()
       (when (time-elapsed? (-> self state-time) (seconds 0.1))
+        ;; coop: player-query
         (let ((tgt (nav-enemy-get-target)))
           (let ((f30-0 (- (-> (target-pos-for tgt 0) y) (-> self collide-info trans y))))
             (if (and (time-elapsed? (-> self state-time) (seconds 3))
@@ -191,6 +193,7 @@ nav-enemy-default-event-handler
         (if v1-0 (logclear! (-> v1-0 extra perm status) (entity-perm-status complete)))))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (let ((f0-1 (- (-> (target-pos-for tgt 0) y) (-> self collide-info trans y))))
           (if (and (< -40960.0 f0-1)
@@ -208,6 +211,7 @@ nav-enemy-default-event-handler
   :event nav-enemy-default-event-handler
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (nav-enemy-get-target)))
         (if (and tgt (= (-> tgt current-level name) 'beach)) (spool-push *art-control* "beachcam-cannon" 0 self -1.0))
         (if (and tgt (= (-> tgt current-level name) 'misty)) (spool-push *art-control* "mistycam-cannon" 0 self -1.0)))
@@ -224,6 +228,7 @@ nav-enemy-default-event-handler
       (when (not (task-complete? *game-info* (-> self entity extra perm task)))
         (when (not (and (-> self entity) (logtest? (-> self entity extra perm status) (entity-perm-status complete))))
           (process-entity-status! self (entity-perm-status complete) #t)
+          ;; coop: player-query
           (let ((tgt (nav-enemy-get-target)))
             (if (and tgt (= (-> tgt current-level name) 'beach)) (beachcam-spawn))
             (if (and tgt (= (-> tgt current-level name) 'misty)) (mistycam-spawn))))

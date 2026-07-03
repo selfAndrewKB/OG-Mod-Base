@@ -180,6 +180,7 @@ nav-enemy-default-event-handler
         (until (time-elapsed? (-> self state-time) (seconds 0.2))
           (suspend)
           (ja :num! (loop!)))
+        ;; coop: player-query
         (set! (-> self nav target-pos quad) (-> (target-pos-for (nav-enemy-get-target) 0) quad))
         (hopper-do-jump)))
   :post nav-enemy-jump-post)

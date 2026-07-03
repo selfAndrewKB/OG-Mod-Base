@@ -309,6 +309,7 @@
       (quaternion-axis-angle! (-> this root-overeride quat) 0.0 1.0 0.0 (-> this facing-ry))
       ;; coop: player-query
       (let ((f30-2 0.0)
+            ;; coop: player-query
             (tgt (closest-target-to (-> this root-overeride trans))))
         (when tgt
           (let ((f0-34 (vector-vector-xz-distance (target-pos-for tgt 0) (-> this root-overeride trans))))
@@ -359,6 +360,7 @@
       0))
   ;; coop: player-query
   (when (and (-> this hit-player?)
+             ;; coop: player-query
              (let ((sfx-tgt (closest-target-to (-> this root-overeride trans))))
                (or (not sfx-tgt)
                    (and (not (logtest? (-> sfx-tgt state-flags)

@@ -66,6 +66,7 @@
 ;; Use only from `defbehavior`/state bodies where `self` is bound; defmethod
 ;; bodies use `this` and must call `closest-target-to` inline.
 (defbehavior ram-boss-current-target ram-boss ()
+  ;; coop: player-query
   (closest-target-to (-> self collide-info trans)))
 
 (define *ram-boss-nav-enemy-info*
@@ -944,6 +945,7 @@
   (the-as symbol (vector-float*! arg0 arg0 (/ 1.0 (-> arg0 w)))))
 
 (defmethod nav-enemy-method-55 ((this ram-boss))
+  ;; coop: player-query
   (let ((tgt (closest-target-to (-> this collide-info trans))))
     (if (not tgt) (return #f))
     (let ((s5-0 (new 'stack-no-clear 'vector))
@@ -981,6 +983,7 @@
 (defmethod set-jump-height-factor! ((this ram-boss) (arg0 int))
   (cond
     ((zero? (-> this proj-status))
+     ;; coop: player-query
      (let ((tgt (closest-target-to (-> this collide-info trans))))
        (when (and tgt (time-elapsed? (-> this proj-last-thrown-time) (seconds 2)))
          (when arg0
@@ -1195,6 +1198,7 @@
 
 (defmethod ram-boss-method-57 ((this ram-boss) (arg0 float))
   (let ((f0-0 0.0)
+        ;; coop: player-query
         (tgt (closest-target-to (-> this collide-info trans))))
     (when tgt
       (let ((s3-0 (new 'stack-no-clear 'vector)))

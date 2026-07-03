@@ -644,6 +644,7 @@
 ;; will hit kermit-set-nav-mesh-target / kermit-set-rotate-dir-to-player /
 ;; kermit-player-target-pos.
 (defbehavior kermit-update-target-handle kermit ()
+  ;; coop: player-query
   (let ((tgt (closest-target-to (-> self collide-info trans))))
     (set! (-> self target-handle) (if tgt (process->handle tgt) (the-as handle #f)))
     tgt))

@@ -481,6 +481,7 @@
       (set! (-> self joint enable) #f)
       (ja-no-eval :group! ogreboss-super-boulder-roll-ja :num! (seek! (ja-aframe (the-as float 100.0) 0)) :frame-num 0.0)
       (until (ja-done? 0)
+        ;; coop: player-query
         (let* ((tgt (closest-target-to (-> self root trans)))
                (ref (if tgt (-> tgt control trans) (target-pos 0))))
           (when (< 81920.0 (vector-vector-distance (-> self root root-prim prim-core world-sphere) ref))
@@ -741,6 +742,7 @@
   (none))
 
 (defbehavior ogreboss-player-inside-range? ogreboss ((arg0 float))
+  ;; coop: player-query
   (let ((tgt (closest-target-to (-> self far-pos))))
     (if tgt
         (< (vector-vector-distance (-> self far-pos) (-> tgt control trans)) arg0)
@@ -812,6 +814,7 @@
   :trans
     (behavior ()
       (try-preload-stream *art-control* "$GAMCAM23" 0 self (the-as float -99.0))
+      ;; coop: player-query
       (let ((tgt (closest-target-to (-> self root trans))))
         (when tgt
           (let ((gp-0 (-> tgt control trans)))
@@ -863,6 +866,7 @@
 (defstate ogreboss-wait-for-player (ogreboss)
   :trans
     (behavior ()
+      ;; coop: player-query
       (when (closest-target-to (-> self root trans))
         (if (ogreboss-player-inside-range? (the-as float 614400.0)) (go ogreboss-stage1))
         (if (not (ogreboss-player-inside-range? (the-as float 737280.0))) (go ogreboss-idle))))
@@ -881,6 +885,7 @@
     ((rand-vu-percent? (the-as float 0.4)) (set! gp-0 (rand-vu-int-range 0 (+ (-> self target-count) -1))))
     (else
      (set! gp-0 0)
+     ;; coop: player-query
      (let* ((tgt (closest-target-to (-> self root trans)))
             (f30-0 4096000.0)
             (s5-0 (if tgt (-> tgt control trans) (target-pos 0))))
@@ -904,6 +909,7 @@
       (set! (-> gp-0 pickup-type) arg0)
       (set! (-> gp-0 blast-radius) 32768.0)
       (cond
+        ;; coop: player-query
         ((closest-target-to (-> self root trans))
          (let ((v1-10 (ogreboss-pick-target)))
            (let* ((a0-3 (-> self target-actor-array v1-10))
@@ -1065,6 +1071,7 @@
           (ja :num! (seek! max f30-0)))
         (countdown (gp-1 (+ gp-0 -1))
           (let ((boulder-pickup (pickup-type none))
+                ;; coop: player-query
                 (low-hp-tgt (closest-target-to (-> self root trans))))
             (let ((f28-0 0.0))
               (when low-hp-tgt

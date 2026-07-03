@@ -654,6 +654,7 @@
           (else (sound-play "wcrate-break")))
         (case (-> self defense)
           (('darkeco)
+           ;; coop: player-query
            (let ((tgt (closest-target-to (-> self root trans))))
              (when tgt
                (let ((f0-0 (lerp-scale 1.0
