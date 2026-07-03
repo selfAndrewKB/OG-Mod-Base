@@ -483,6 +483,7 @@
   :code
     (behavior ()
       (loop
+        ;; coop: player-query
         (if (>= 214228270000.0 (min-camera-distance-squared (-> self root trans)))
           (logclear! (-> self draw status) (draw-status hidden))
           (logior! (-> self draw status) (draw-status hidden)))
@@ -523,6 +524,7 @@
       (if (-> self door) (send-event (ppointer->process (-> self door)) 'trigger))
       (if (-> self button) (send-event (ppointer->process (-> self button)) 'untrigger))
       (loop
+        ;; coop: player-query
         (if (>= 214228270000.0 (min-camera-distance-squared (-> self root trans)))
           (logclear! (-> self draw status) (draw-status hidden))
           (logior! (-> self draw status) (draw-status hidden)))

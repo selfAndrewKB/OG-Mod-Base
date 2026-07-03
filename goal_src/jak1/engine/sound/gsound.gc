@@ -490,6 +490,7 @@
            (set! (-> spec mask) (sound-mask))
            (if (-> this params) (effect-param->sound-spec spec (-> this params) (-> this param-count))))
          (if (and (nonzero? (-> spec fo-max))
+                  ;; coop: player-query
                   (< (* 4096.0 (the float (-> spec fo-max))) (min-ear-dist (-> this trans))))
            (return 0))
          (when (and *debug-effect-control* (>= (-> this time-base) 0))
@@ -621,6 +622,7 @@
                   (else (camera-pos)))))
     result))
 
+;; coop: api player-query
 (defun ear-trans-p2 ()
   "Return P2's audio listener position, or ear-trans when P2 is absent/cutscene."
   (when (or (not *multi-coop-active*) (movie?) *external-cam-mode*)
@@ -630,6 +632,7 @@
       (target-pos-for p2 0)
       (ear-trans))))
 
+;; coop: api player-query
 (defun min-ear-dist ((pos vector))
   "Minimum distance from pos to either player's ear — used for sound culling."
   (fmin (vector-vector-distance pos (ear-trans))

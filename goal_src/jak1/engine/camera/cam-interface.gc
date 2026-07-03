@@ -48,6 +48,7 @@
 ;; is fully wired (matches the existing split-screen-should-render? predicate).
 ;; This avoids reading *p2-math-camera* trans before it's been populated, which
 ;; would default to (0,0,0) and cause spurious wakeups in levels near origin.
+;; coop: api player-query
 (defun min-camera-distance ((pos vector))
   (let ((d1 (vector-vector-distance pos (-> *math-camera* trans))))
     (cond
@@ -64,6 +65,7 @@
          (fmin d1 d2)))
       (else d1))))
 
+;; coop: api player-query
 (defun min-camera-distance-squared ((pos vector))
   (let ((d1 (vector-vector-distance-squared pos (-> *math-camera* trans))))
     (cond

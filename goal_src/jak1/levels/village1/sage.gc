@@ -302,6 +302,7 @@
     ((and (closed? (-> this tasks) (game-task misty-cannon) (task-status need-reminder))
           (= (get-reminder (-> this tasks) 0) 1))
      #t)
+    ;; coop: player-query
     ((and (-> this reminder-played) (< 81920.0 (min-camera-distance (-> this root trans)))) #t)
     (else #f)))
 
@@ -365,6 +366,7 @@
             (process-taskable-method-43 self)
             (ja-no-eval :group! (ja-group) :num! (seek!) :frame-num 0.0)
             (until (ja-done? 0)
+              ;; coop: player-query
               (if (and (-> self reminder-played) (< 81920.0 (min-camera-distance (-> self root trans))))
                 (go-virtual idle))
               (suspend)

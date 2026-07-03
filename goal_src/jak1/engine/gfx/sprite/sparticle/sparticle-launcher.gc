@@ -727,6 +727,7 @@
     ;; near P2 but far from P1 doesn't get its rate ramped to zero. Single-player
     ;; and pre-P2-wired states fall back to P1 distance via min-camera-distance's
     ;; liveness gate.
+    ;; coop: player-query
     (let ((f30-0 (min-camera-distance arg0))
           ;; hour mask
           (s3-1 (ash 1 (if *time-of-day-proc* (-> *time-of-day-proc* 0 hour) 0))))

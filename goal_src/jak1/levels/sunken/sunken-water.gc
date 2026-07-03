@@ -116,6 +116,7 @@
          (set-fade! *palette-fade-controls*
                     3
                     (-> self deadly-fade)
+                    ;; coop: player-query
                     (min-camera-distance (-> self root trans))
                     (the-as vector #f)))
         (else

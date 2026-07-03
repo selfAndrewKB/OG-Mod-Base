@@ -155,6 +155,7 @@
       (if (= (-> self state-time) (current-time)) (set! (-> self path-pos) (-> self dest)))
       (seek! (-> self path-pos) (-> self dest) (* (-> self speed) (seconds-per-frame)))
       (eval-path-curve! (-> self path) (-> self basetrans) (-> self path-pos) 'interp)
+      ;; coop: player-query
       (if (< (min-ear-dist (-> self root trans)) 81920.0)
         (sound-play "eco-plat-hover" :id (-> self sound-id) :position (the-as symbol (-> self root trans))))
       (plat-trans)

@@ -156,6 +156,7 @@ eco-door-event-handler
       (update-transforms! (-> self root))
       (ja-post)
       (loop
+        ;; coop: player-query
         (let ((tgt (target-near (-> self root trans) (-> self open-distance))))
         (when tgt
           (eco-door-method-26 self)
@@ -172,6 +173,7 @@ eco-door-event-handler
   :event eco-door-event-handler
   :code
     (behavior ()
+      ;; coop: player-query
       (let* ((tgt (target-with-powerup-near (-> self root trans) (-> self open-distance) (pickup-type eco-blue)))
              (gp-0 (and (not (and (-> self entity) (logtest? (-> self entity extra perm status) (entity-perm-status complete))))
                         tgt)))
@@ -199,6 +201,7 @@ eco-door-event-handler
       (update-transforms! (-> self root))
       (ja-post)
       (loop
+        ;; coop: player-query
         (let* ((tgt (target-near (-> self root trans) (-> self close-distance)))
                (f30-0 (vector4-dot (-> self out-dir)
                                     (if tgt

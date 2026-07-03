@@ -760,7 +760,8 @@
                     (new 'static 'rgba :r #xff :b #xff :a #x80)))
 
 (defbehavior target-compute-edge target ()
-  (let ((s5-0 (if (= self (handle->process (-> *target-list* 0))) *edge-grab-info* *edge-grab-info-p2*)))
+  ;; coop: player-query (edge-grab partition select; get-target hardens a zero slot-0 handle)
+  (let ((s5-0 (if (= self (get-target 0)) *edge-grab-info* *edge-grab-info-p2*)))
     (if (not (edge-grab-info-method-9 s5-0)) (send-event self 'end-mode))
     (if *display-edge-collision-marks* (debug-draw s5-0))
     (set! (-> self control ground-pat) (the-as pat-surface (-> s5-0 edge-tri-pat)))
@@ -795,7 +796,8 @@
   (none))
 
 (defbehavior target-compute-edge-rider target ()
-  (let ((gp-0 (if (= self (handle->process (-> *target-list* 0))) *edge-grab-info* *edge-grab-info-p2*)))
+  ;; coop: player-query (edge-grab partition select; get-target hardens a zero slot-0 handle)
+  (let ((gp-0 (if (= self (get-target 0)) *edge-grab-info* *edge-grab-info-p2*)))
     (if (not (edge-grab-info-method-9 gp-0)) (send-event self 'end-mode))
     (if *display-edge-collision-marks* (debug-draw gp-0))
     (vector-normalize! (vector-! (-> self control unknown-vector100) (the-as vector (-> gp-0 world-vertex)) (-> gp-0 world-vertex 1))
@@ -974,6 +976,7 @@
       (set! (-> self control reaction) target-collision-reaction)
       (fill-cache-integrate-and-collide! (-> self control) (-> self control transv) (-> self control root-prim collide-with))
       (if (logtest? (-> self control root-prim prim-core action) (collide-action edgegrab-possible))
+        ;; coop: player-query
         (find-edge-grabs! self *collide-cache*))
       (if *debug-segment*
         (add-frame (-> *display* frames (-> *display* on-screen) frame profile-bar 0)
@@ -1017,6 +1020,7 @@
                    (new 'static 'rgba :r #x40 :b #x40 :a #x80)))
       (fill-cache-integrate-and-collide! (-> self control) (-> self control transv) (-> self control root-prim collide-with))
       (if (logtest? (-> self control root-prim prim-core action) (collide-action edgegrab-possible))
+        ;; coop: player-query
         (find-edge-grabs! self *collide-cache*))
       (if *debug-segment*
         (add-frame (-> *display* frames (-> *display* on-screen) frame profile-bar 0)
@@ -1055,6 +1059,7 @@
                    (new 'static 'rgba :r #x40 :b #x40 :a #x80)))
       (fill-cache-integrate-and-collide! (-> self control) (-> self control transv) (-> self control root-prim collide-with))
       (if (logtest? (-> self control root-prim prim-core action) (collide-action edgegrab-possible))
+        ;; coop: player-query
         (find-edge-grabs! self *collide-cache*))
       (if *debug-segment*
         (add-frame (-> *display* frames (-> *display* on-screen) frame profile-bar 0)
@@ -1133,6 +1138,7 @@
                    (new 'static 'rgba :r #x40 :b #x40 :a #x80)))
       (fill-cache-integrate-and-collide! (-> self control) (-> self control transv) (-> self control root-prim collide-with))
       (if (logtest? (-> self control root-prim prim-core action) (collide-action edgegrab-possible))
+        ;; coop: player-query
         (find-edge-grabs! self *collide-cache*))
       (if *debug-segment*
         (add-frame (-> *display* frames (-> *display* on-screen) frame profile-bar 0) 'draw (new 'static 'rgba :r #x40 :a #x80)))

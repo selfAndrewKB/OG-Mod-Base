@@ -554,6 +554,7 @@
         (process-particles))
       ;; vif0 collide
       (with-profiler "sound-update"
+        ;; coop: player-query (dual-ear sound buffers)
         (swap-sound-buffers (ear-trans) (ear-trans-p2) (camera-pos) (camera-angle) (camera-angle-p2) (camera-pos-p2))
         (str-play-kick))
       (with-profiler "level-update"

@@ -157,6 +157,7 @@
 ;; co-op: list of handles for all player targets (index 0 = *target*, 1-3 = extra players)
 (define *target-list* (new 'global 'boxed-array handle 4))
 
+;; coop: api safe-handle
 (defun get-target ((tgt-idx int))
   "Return the target process at the given index, or #f if slot is empty."
   (if (zero? (-> *target-list* tgt-idx))
@@ -168,12 +169,14 @@
 ;; Co-op singleton helpers: many vanilla doors/platforms asked only *target*
 ;; whether P1 had eco. Keep the target-list scan centralized so level scripts
 ;; can ask "which nearby player is eligible?" without open-coding handle guards.
+;; coop: api player-query
 (defun target-has-powerup? ((tgt target) (kind pickup-type))
   "Return true when this target currently owns the requested eco powerup."
   (and (= (-> tgt fact eco-type) kind) (< 0.0 (-> tgt fact eco-level))))
 
 ;; Returns the owning target so callers can also route owner-specific effects
 ;; like blue projectiles or launches to the player that actually powered it.
+;; coop: api player-query
 (defun target-with-powerup-near ((pos vector) (dist float) (kind pickup-type))
   "Find any active target near pos that currently owns the requested eco powerup."
   (dotimes (idx (-> *target-list* length))
@@ -186,6 +189,7 @@
 
 ;; Non-powerup proximity companion for hints/autoclose logic. Prefer this over
 ;; *target* distance checks when any player should keep a mechanism awake/open.
+;; coop: api player-query
 (defun target-near ((pos vector) (dist float))
   "Find any active target near pos."
   (dotimes (idx (-> *target-list* length))
@@ -207,6 +211,7 @@
             (return #t))))))
   #f)
 
+;; coop: api player-query
 (defun target-active-for-platform-sync? ((tgt target))
   "Return true when this target can be safely included in platform sync helpers."
   ;; Dead/loading targets can still have a live process handle during respawn.
@@ -219,6 +224,7 @@
        (!= (-> tgt next-state name) 'target-warp-in)
        (!= (-> tgt next-state name) 'target-warp-out)))
 
+;; coop: api player-query
 (defun platform-teleport-active-targets! ((platform-pos vector) (y-offset float) (spacing float))
   "Move every active player to platform-pos, spread along X for collision safety."
   ;; This is intentionally an explicit, case-by-case assist rather than a hidden

@@ -43,6 +43,7 @@
         (else (plat-event proc argc message block))))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (target-near (-> self root trans) 20480.0)))
         (if (and tgt (not (target-has-powerup? tgt (pickup-type eco-blue))))
           (level-hint-spawn (text-id sidekick-hint-orb-cache-top) "sksp0009" (the-as entity #f) *entity-pool* (game-task none)))))

@@ -112,6 +112,7 @@
              (-> *setting-control* current movie)
              (and (not (zero? cam-handle)) (handle->process cam-handle))))))
 
+;; coop: player-query (P2 alive gates split-screen)
 (defun split-screen-render-ready? ()
   (let ((cam-handle (-> *game-info* other-camera-handle)))
     (if (and (target-alive? (get-target 1))

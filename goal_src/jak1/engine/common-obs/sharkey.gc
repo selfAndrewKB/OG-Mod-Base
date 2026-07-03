@@ -67,6 +67,7 @@ nav-enemy-default-event-handler
 (defmethod run-logic? ((this sharkey))
   (or (not (logtest? (-> this mask) (process-mask actor-pause)))
       (or (>= (+ (-> *ACTOR-bank* pause-dist) (-> this collide-info pause-adjust-distance))
+              ;; coop: player-query
               (min-camera-distance (-> this collide-info trans)))
           (and (nonzero? (-> this skel)) (!= (-> this skel root-channel 0) (-> this skel channel)))
           (and (nonzero? (-> this draw)) (logtest? (-> this draw status) (draw-status no-skeleton-update))))))

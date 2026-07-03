@@ -734,6 +734,7 @@
         (matrix-rotate-y! gp-0 (+ (-> self rot-base) (* (parameter-ease-sin-clamp (-> self rot-t)) (-> self rot-dist))))
         (matrix*! gp-0 (-> self init-mat) gp-0)
         (matrix->quaternion (-> self root quat) gp-0))
+      ;; coop: player-query
       (when (< (min-camera-distance (-> self root trans)) 204800.0)
         (let ((a2-1 (new 'static 'vector)))
           (set! (-> a2-1 quad) (-> self root trans quad))

@@ -133,6 +133,7 @@
   (cond
     ((= (-> self keg-behavior) 1))
     (else
+     ;; coop: player-query
      (if (< (min-ear-dist (-> self root trans)) 163840.0)
        (sound-play "barrel-roll" :id (-> self sound-id) :position (the-as symbol (-> self root trans))))))
   (transform-post))

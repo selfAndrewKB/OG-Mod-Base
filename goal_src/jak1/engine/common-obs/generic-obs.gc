@@ -1219,6 +1219,7 @@
         (('trans) (move-to-point! (-> self root) (the-as vector (-> block param 0))) (update-transforms! (-> self root)))))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (target-near (-> self root trans) (-> self active-distance))))
         (when tgt
           (cond
@@ -1252,6 +1253,7 @@
         (-> v1-0 id)))
   :trans
     (behavior ()
+      ;; coop: player-query
       (let ((tgt (target-with-powerup-near (-> self root trans) (-> self active-distance) (pickup-type eco-blue))))
         (if (not tgt)
           (go launcher-idle))

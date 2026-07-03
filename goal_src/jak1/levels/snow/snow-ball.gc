@@ -198,6 +198,7 @@
            (set! (-> self root scale x) f0-25)
            (set! (-> self root scale y) f0-25)
            (set! (-> self root scale z) f0-25))))))
+  ;; coop: player-query
   (let ((v1-54 (< (min-camera-distance (-> self root trans)) 163840.0)))
     (cond
       ((zero? (-> self rolling-sound-id))

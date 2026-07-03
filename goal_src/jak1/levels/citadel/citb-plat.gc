@@ -158,6 +158,7 @@
               (get-current-phase-with-mirror (-> self sync))))
       (eval-path-curve! (-> self path) (-> self basetrans) (-> self path-pos) 'interp)
       (vector+! (-> self basetrans) (-> self basetrans) (-> self trans-offset))
+      ;; coop: player-query
       (if (< (min-ear-dist (-> self root trans)) 81920.0)
         (sound-play "eco-plat-hover" :id (-> self sound-id) :position (the-as symbol (-> self root trans))))
       (plat-trans)))
@@ -568,6 +569,7 @@
     (behavior ()
       (set! (-> self path-pos) (get-current-phase (-> self sync)))
       (eval-path-curve! (-> self path) (-> self basetrans) (-> self path-pos) 'interp)
+      ;; coop: player-query
       (if (< (min-ear-dist (-> self root trans)) 81920.0)
         (sound-play "eco-plat-hover" :id (-> self sound-id) :position (the-as symbol (-> self root trans))))
       (plat-trans)))

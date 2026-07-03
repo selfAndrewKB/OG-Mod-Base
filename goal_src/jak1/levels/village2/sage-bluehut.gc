@@ -96,6 +96,7 @@
      #t)
     ((and (closed? (-> this tasks) (game-task swamp-arm) (task-status need-reminder)) (= (get-reminder (-> this tasks) 0) 1))
      #t)
+    ;; coop: player-query
     ((and (-> this reminder-played) (< 81920.0 (min-camera-distance (-> this root trans)))) #t)
     (else #f)))
 

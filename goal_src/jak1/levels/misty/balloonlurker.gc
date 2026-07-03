@@ -447,6 +447,7 @@
     ((not (-> self dead))
      (if (zero? (-> self engine-sound-id)) (set! (-> self engine-sound-id) (new-sound-id)))
      (if (zero? (-> self pedal-sound-id)) (set! (-> self pedal-sound-id) (new-sound-id)))
+     ;; coop: player-query
      (when (< (min-ear-dist (-> self root-overlay trans)) 286720.0)
        (let* ((f0-2 (/ (-> self engine-thrust) (-> *BALLOONLURKER-bank* max-engine-thrust)))
               (f1-2 100.0)

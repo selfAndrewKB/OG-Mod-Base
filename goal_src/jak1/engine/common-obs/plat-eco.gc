@@ -49,9 +49,11 @@
       (lods-assign! (-> self draw) (-> self unlit-look)))
   :trans
     (behavior ()
+      ;; coop: player-query
       (when (target-with-powerup-near (-> self root trans) (-> self notice-dist) (pickup-type eco-blue))
         (send-to-all (-> self link) 'wake)
         (go-virtual plat-path-active (the-as plat #f)))
+      ;; coop: player-query
       (if (target-near (-> self root trans) (-> self notice-dist))
         (level-hint-spawn (text-id misty-eco-plat) "sksp0073" (the-as entity #f) *entity-pool* (game-task none))))
   :code
@@ -83,6 +85,7 @@
         (set! (-> a1-0 message) 'query)
         (set! (-> a1-0 param 0) (the-as uint 'powerup))
         (set! (-> a1-0 param 1) (the-as uint 3))
+        ;; coop: player-query
         (if (and (not (target-with-powerup-near (-> self root trans) (-> self notice-dist) (pickup-type eco-blue)))
                  (begin
                    (logior! (-> self mask) (process-mask sleep-code))
