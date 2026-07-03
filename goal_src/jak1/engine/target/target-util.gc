@@ -824,6 +824,17 @@
               (set! best-dist d))))))
     best))
 
+;; coop: api player-query
+(defun closest-alive-target ((pos vector))
+  "closest-target-to with the canonical P1 fallback: returns the closest valid
+   target, or *target* when no valid target exists (single-player, or every
+   player is invulnerable / dying / do-not-notice). Generalizes
+   nav-enemy-get-target's `(if tgt tgt *target*)` semantics for non-nav
+   processes; keeps single-player behaviour identical. Lives here (not
+   coop-api.gc) because level files compile before the mods sequence."
+  (let ((tgt (closest-target-to pos)))
+    (if tgt tgt *target*)))
+
 (defun target-cam-pos ()
   (let ((gp-0 *target*))
     (the-as vector
