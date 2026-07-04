@@ -410,6 +410,34 @@
        (when fanout-tgt
          (send-event fanout-tgt ,msg ,@args)))))
 
+;; coop: api attribution
+(defmacro event-sender-target (proc)
+  "Attribution: resolve an event sender (proc/arg0) to the target that sent it,
+   or #f when the sender is not a target process. Both arms are cast to target
+   so the expression stays typed (no basic/object widening); #f truthiness is
+   unaffected by the cast. Canonical replacement for raw (the-as target proc)
+   at event-handler sites — never read *target* to identify an event sender.
+   Lives here (not coop-api.gc) because consumers are level files that compile
+   before the mods sequence in game.gp; macro home rule per coop-api.gc header."
+  `(let ((est-proc ,proc))
+     (if (and est-proc (= (-> est-proc type) target))
+         (the-as target est-proc)
+         (the-as target #f))))
+
+;; coop: api attribution
+(defmacro buzz-target! (tgt buzz-idx amount duration)
+  "Attribution: rumble the pad that owns a specific target — the canonical
+   (cpad-set-buzz! (-> *cpad-list* cpads (-> tgt control unknown-cpad-info00
+   number)) ...) incantation. tgt must be a live target (self in target
+   behaviors, or an attributed sender via event-sender-target); never pad 0
+   by assumption. Lives here (not coop-api.gc) for the same load-order
+   reason as above."
+  `(let ((buzz-tgt ,tgt))
+     (cpad-set-buzz! (-> *cpad-list* cpads (-> buzz-tgt control unknown-cpad-info00 number))
+                     ,buzz-idx
+                     ,amount
+                     ,duration)))
+
 (defmacro ppointer->process (ppointer)
   "convert a (pointer process) to a process."
   ;; this uses the self field, which seems to always just get set to the object.

@@ -87,8 +87,12 @@
 (defbehavior junglesnake-default-event-handler junglesnake ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (case arg2
     (('touch)
-     ;; coop: player-query
-     (let ((tgt (closest-alive-target (-> self root trans))))
+     ;; coop: attribution (Session 54 bugfix: lethality gate must read the TOUCHER's
+     ;; state-flags — the 'attack below goes to arg0, but the gate was checking the
+     ;; closest player, letting the snake bite an invulnerable P2 while P1 stood
+     ;; closer (or vice versa). Falls back to closest player if arg0 is not a target.)
+     (let* ((sender (event-sender-target arg0))
+            (tgt (if sender sender (closest-alive-target (-> self root trans)))))
        (when (and tgt
                   ((method-of-type touching-shapes-entry prims-touching?)
                    (the-as touching-shapes-entry (-> arg3 param 0))
