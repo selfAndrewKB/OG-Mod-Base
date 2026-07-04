@@ -958,6 +958,7 @@
   0
   (none))
 
+;; coop: attribution (hazard applied per-target via tgt parameter, never *target*)
 (defun water-vol-apply-hazard ((this water-vol) (tgt target))
   (let ((ctl (-> tgt water)))
     (when (and (logtest? (water-flags wt19) (-> this flags))

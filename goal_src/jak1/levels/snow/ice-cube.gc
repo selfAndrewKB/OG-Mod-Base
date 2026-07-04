@@ -346,6 +346,7 @@
    (:conerot-y (degrees 0) (degrees 360))
    (:conerot-radius (meters 0) (meters 1.5))))
 
+;; coop: attribution (no (the-as target) cast — handler uses (= (-> arg0 type) target) checks to branch between direct send-event for target senders and manual event-message-block for non-target senders; no target-specific field reads on sender)
 (defbehavior ice-cube-default-event-handler ice-cube ((arg0 process) (arg1 int) (arg2 symbol) (arg3 event-message-block))
   (case arg2
     (('attack)

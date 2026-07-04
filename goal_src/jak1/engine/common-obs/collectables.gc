@@ -1133,6 +1133,9 @@
       (local-vars
         (sv-96 res-tag)
         (victory-target target))
+      ;; coop: attribution (save-handle-at-event-time — victory subject from the arg1
+      ;; picker handle set at go-virtual pickup time; *target* is the deliberate
+      ;; singleton-cutscene default, overridden only for the racer victory anim below)
       (set! victory-target *target*)
       (when (and (string= (-> self victory-anim name) "fuel-cell-racer-victory-1")
                  (not (zero? arg1)))

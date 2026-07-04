@@ -10,6 +10,7 @@
 
 ;; DECOMP BEGINS
 
+;; coop: api attribution
 (defun projectile-owner-cpad ((proj projectile))
   (let ((owner (the-as target #f)))
     (when (not (zero? (-> proj last-target)))
@@ -730,6 +731,7 @@
   (none))
 
 (defmethod projectile-method-27 ((this projectile-yellow))
+  ;; coop: attribution (via projectile-owner-cpad)
   (cpad-set-buzz! (projectile-owner-cpad this) 1 204 (seconds 0.1))
   (set! (-> this attack-mode) 'eco-yellow)
   (set! (-> this mode) 1)
@@ -856,6 +858,7 @@
   (none))
 
 (defmethod projectile-method-27 ((this projectile-blue))
+  ;; coop: attribution (via projectile-owner-cpad)
   (cpad-set-buzz! (projectile-owner-cpad this) 1 204 (seconds 0.1))
   (sound-play "blue-eco-on")
   (set! (-> this mode) 2)

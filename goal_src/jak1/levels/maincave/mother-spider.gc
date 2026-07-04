@@ -212,7 +212,8 @@
               (('uppercut) (go mother-spider-die-from-uppercut))
               (else
                (let ((gp-0 (new 'stack-no-clear 'vector)))
-                 (let ((v1-5 (target-pos-for (the-as target arg0) 0))) (vector-! gp-0 (-> self root trans) v1-5))
+                 ;; coop: attribution
+                 (let ((v1-5 (target-pos-for (event-sender-target arg0) 0))) (vector-! gp-0 (-> self root trans) v1-5))
                  (set! (-> gp-0 y) 0.0)
                  (vector-normalize! gp-0 1.0)
                  (+! (-> self thread-vel) -40960.0)
@@ -228,7 +229,8 @@
      (when (= (-> arg0 type) target)
        (when (send-event arg0 'attack (-> arg3 param 0) (static-attack-info ((shove-up (meters 0.5)) (shove-back (meters 2)))))
          (let ((gp-2 (new 'stack-no-clear 'vector)))
-           (let ((v1-20 (target-pos-for (the-as target arg0) 0))) (vector-! gp-2 (-> self root trans) v1-20))
+           ;; coop: attribution
+           (let ((v1-20 (target-pos-for (event-sender-target arg0) 0))) (vector-! gp-2 (-> self root trans) v1-20))
            (set! (-> gp-2 y) 0.0)
            (vector-normalize! gp-2 1.0)
            (+! (-> self thread-vel) -8192.0)

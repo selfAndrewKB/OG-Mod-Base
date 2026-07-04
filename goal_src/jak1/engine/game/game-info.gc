@@ -602,8 +602,10 @@
        (when (not (and (= (handle->process source-handle) (handle->process (-> this eco-source)))
                        (not (time-elapsed? (-> this eco-source-time) (seconds 0.5)))))
          (let ((owner (the-as target (-> this process))))
-           (cpad-set-buzz! (-> *cpad-list* cpads (-> owner control unknown-cpad-info00 number)) 1 127 (seconds 0.2))
-           (cpad-set-buzz! (-> *cpad-list* cpads (-> owner control unknown-cpad-info00 number)) 0 17 (seconds 0.2)))
+           ;; coop: attribution
+           (buzz-target! owner 1 127 (seconds 0.2))
+           ;; coop: attribution
+           (buzz-target! owner 0 17 (seconds 0.2)))
          (case kind
            (((pickup-type eco-blue)) (sound-play "get-blue-eco"))
            (((pickup-type eco-green)) (sound-play "get-green-eco"))
@@ -626,6 +628,7 @@
                (send-event (ppointer->process s4-3) 'target s5-1)
                (send-event (ppointer->process s4-3) 'event 'eco-blue)
                ;; [co-op] query the owning player (self.target), not always P1 (*target*)
+               ;; coop: attribution (save-handle-at-event-time)
                (send-event (ppointer->process s4-3) 'exit
                            (lambda :behavior touch-tracker ()
                              (let ((tgt-proc (the-as process (if (not (zero? (-> self target))) (handle->process (-> self target)) #f))))

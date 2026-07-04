@@ -614,6 +614,7 @@
     (behavior ((proc process) (argc int) (message symbol) (block event-message-block))
       (case message
         (('touch 'attack)
+         ;; coop: attribution (sender type-check gate; attack routes via proc)
          (when (= (-> proc type) target)
            (send-event proc 'attack (-> block param 0) (static-attack-info ((mode 'generic))))
            (send-event (ppointer->process (-> self parent)) 'hit-jak)))))

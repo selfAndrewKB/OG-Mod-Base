@@ -238,11 +238,13 @@
           ((= (-> arg3 param 1) 'flop) (go bully-die) (return #t) v0-0)
           ((or (= arg2 'touch) (= arg2 'attack))
            (cond
+             ;; coop: attribution (cast retained — sender guaranteed target by outer ((= (-> arg0 type) target)) cond guard)
              ((>= (- (-> (target-pos-for (the-as target arg0) 0) y) (-> self root trans y)) 6144.0)
               (let* ((f0-6 (fmax 0.6 (* 0.000023935356 (-> self travel-speed))))
                      (f28-0 (* 8192.0 f0-6))
                      (f30-0 (* 8192.0 f0-6))
                      (s4-0 (new 'stack-no-clear 'vector)))
+                ;; coop: attribution (cast retained — sender guaranteed target by outer ((= (-> arg0 type) target)) cond guard)
                 (vector-! s4-0 (target-pos-for (the-as target arg0) 0) (-> self root trans))
                 (let ((f26-0 (atan (-> s4-0 x) (-> s4-0 z))))
                   (when (< 0.0 (-> self travel-speed))

@@ -161,6 +161,7 @@
      (case (-> arg3 param 0)
        (('die)
         (when (= (-> arg3 param 1) 'plant-boss)
+          ;; coop: attribution (save-handle-at-event-time — the dying player, from arg0)
           (set! (-> self swallowed-player) (process->handle arg0))
           (go plant-boss-eat)))))))
 

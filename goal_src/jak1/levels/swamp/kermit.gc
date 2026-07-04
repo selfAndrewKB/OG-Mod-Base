@@ -533,6 +533,8 @@
    (miss-count       int8)
    (charged-up       symbol)
    (sound-id         sound-id)
+   ;; coop: attribution (save-handle-at-event-time — [CONFIRMED] Session 36; the
+   ;; comment below is load-bearing, preserve verbatim)
    ;; co-op: closest player handle, refreshed per-tick from `:trans` bodies.
    ;; Read by helpers (kermit-player-target-pos, kermit-set-rotate-dir-to-player,
    ;; kermit-set-nav-mesh-target). Joint-mod-tracker callback is a no-op now;

@@ -28,17 +28,19 @@
       (case message
         (('touch 'attack)
          (when (= (-> proc type) target)
+           ;; coop: attribution (cast retained — sender guaranteed target by outer (when (= (-> proc type) target)) guard)
            (when ((method-of-type touching-shapes-entry prims-touching-action?)
                   (the-as touching-shapes-entry (-> block param 0))
                   (-> (the-as target proc) control)
                   (collide-action solid)
                   (collide-action))
-             (let ((s4-0 (new 'stack 'attack-info)))
+             ;; coop: attribution
+             (let ((snd-tgt (event-sender-target proc)) (s4-0 (new 'stack 'attack-info)))
                (calc-shove-up (-> self root) s4-0 (-> self shove-up))
                (level-hint-spawn (text-id sunken-hotpipes) "sksp0134" (the-as entity #f) *entity-pool* (game-task none))
-               (if (or (= (-> (the-as target proc) control unknown-surface00 mode) 'air)
-                       (>= (+ (current-time) (seconds -0.2)) (-> (the-as target proc) control unknown-dword11))
-                       (< 0.75 (-> (the-as target proc) control poly-normal y)))
+               (if (or (= (-> snd-tgt control unknown-surface00 mode) 'air)
+                       (>= (+ (current-time) (seconds -0.2)) (-> snd-tgt control unknown-dword11))
+                       (< 0.75 (-> snd-tgt control poly-normal y)))
                  (send-event proc
                              'attack-or-shove
                              (-> block param 0)
@@ -46,7 +48,7 @@
                  (send-event proc
                              'attack-or-shove
                              (-> block param 0)
-                             (static-attack-info ((mode 'burn) (shove-up (meters 0)) (shove-back (meters 2)) (vector (-> (the-as target proc) control poly-normal)) (angle 'shove)))))))))))
+                             (static-attack-info ((mode 'burn) (shove-up (meters 0)) (shove-back (meters 2)) (vector (-> snd-tgt control poly-normal)) (angle 'shove)))))))))))
   :code anim-loop)
 
 (defmethod init-from-entity! ((this shover) (arg0 entity-actor))

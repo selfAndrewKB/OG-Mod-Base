@@ -202,6 +202,7 @@
             (set! (-> self player-attack-id) v1-3)
             (case (-> self mode)
               ((5)
+               ;; coop: attribution (cast retained — sender guaranteed target by outer ((= (-> arg0 type) target)) cond guard; v1-5 used in field-read chain)
                (let ((v1-5 (the-as target arg0)))
                  (when (!= (-> arg3 param 1) 'flop)
                    (let ((f0-4 (atan (- (-> v1-5 control trans x) (-> self root-overeride trans x))
@@ -209,6 +210,7 @@
                      (quaternion-axis-angle! (-> self root-overeride quat) 0.0 1.0 0.0 f0-4))))
                (go driller-lurker-die))
               (else
+               ;; coop: attribution (cast retained — sender guaranteed target by outer ((= (-> arg0 type) target)) cond guard; s4-0 used in field-read chain)
                (let ((s4-0 (the-as target arg0))
                      (s2-0 #f)
                      (s3-0 #f))

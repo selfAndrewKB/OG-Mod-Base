@@ -219,6 +219,7 @@
                        (s3-0 (new 'stack-no-clear 'vector))
                        (t2-0 (new 'stack-no-clear 'collide-tri-result)))
                    0.0
+                   ;; coop: attribution (cast retained — sender guaranteed target by (type-type? (-> s4-0 type) target))
                    (set! (-> s4-1 quad) (-> (the-as target t1-0) control trans quad))
                    (+! (-> s4-1 y) 4096.0)
                    (set-vector! s3-0 0.0 (- 118784.0 (-> s4-1 y)) 0.0 1.0)

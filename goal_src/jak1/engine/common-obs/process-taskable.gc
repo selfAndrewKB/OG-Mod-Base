@@ -685,6 +685,7 @@
     (if (process-taskable-target-prompt-ready? arg0 *target*) *target* (the-as target #f))))
 
 (defun process-taskable-try-start-talk! ((arg0 process-taskable) (arg1 target))
+  ;; coop: attribution (prompt reads arg1's pad, not pad 0 — the pressing player)
   (when (cpad-pressed? (-> arg1 control unknown-cpad-info00 number) circle)
     (cond
       ((process-grab? *target*)

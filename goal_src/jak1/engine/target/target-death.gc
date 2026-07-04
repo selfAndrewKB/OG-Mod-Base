@@ -438,7 +438,8 @@
       ((or (= v1-9 'endlessfall) (= v1-9 'instant-death)))
       ((begin
          (target-timed-invulnerable (-> arg0 invinc-time) self)
-         (cpad-set-buzz! (-> *cpad-list* cpads (-> self control unknown-cpad-info00 number)) 0 255 (seconds 0.5))
+         ;; coop: attribution
+         (buzz-target! self 0 255 (seconds 0.5))
          (let ((v1-13 (-> arg0 angle))) (= v1-13 'up)))
        (sound-play "hit-up"))
       (else (sound-play "oof"))))

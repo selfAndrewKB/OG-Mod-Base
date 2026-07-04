@@ -546,7 +546,8 @@
       (let ((v1-258 (rand-vu-int-range 3 (+ (-> self node-list length) -1))))
         (launch-particles (-> *part-id-table* 2229)
                           (vector<-cspace! (new 'stack-no-clear 'vector) (-> self node-list data v1-258)))))
-    (cpad-set-buzz! (-> *cpad-list* cpads (-> self control unknown-cpad-info00 number)) 0 1 (seconds 0.1)))
+    ;; coop: attribution
+    (buzz-target! self 0 1 (seconds 0.1)))
   (when (logtest? (-> self control status) (cshape-moving-flags twall))
     (let* ((gp-8 (racer-find-prop-point (new 'stack-no-clear 'vector) (-> self control unknown-vector70)))
            (v1-274 (-> self control wall-pat material))
@@ -560,7 +561,8 @@
                            (lerp-scale 0.2 10.0 (-> self control unknown-float01) 0.0 (-> self racer transv-max)))
                      (-> *part-id-table* 2225)))))
       (launch-particles a1-54 gp-8))
-    (cpad-set-buzz! (-> *cpad-list* cpads (-> self control unknown-cpad-info00 number)) 0 51 (seconds 0.05))
+    ;; coop: attribution
+    (buzz-target! self 0 51 (seconds 0.05))
     (sound-play-by-name (sound-name-with-material 'zoom-hit (-> self control wall-pat) "")
                         (-> self racer scrape-sound-id)
                         1024

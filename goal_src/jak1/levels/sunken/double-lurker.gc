@@ -423,6 +423,7 @@
        (cond
          ((-> self buddy-on-shoulders?)
           (let ((s4-0 (new 'stack-no-clear 'vector)))
+            ;; coop: attribution (cast retained — sender guaranteed target by outer (when (= (-> arg0 type) target)) guard)
             (vector-! s4-0 (target-pos-for (the-as target arg0) 0) (-> self collide-info trans))
             (cond
               ((and (>= (-> s4-0 y) 8192.0)
@@ -435,6 +436,7 @@
               (else
                (when (and ((method-of-type touching-shapes-entry prims-touching-action?)
                            (the-as touching-shapes-entry (-> arg3 param 0))
+                           ;; coop: attribution (cast retained — sender guaranteed target by outer (when (= (-> arg0 type) target)) guard)
                            (-> (the-as target arg0) control)
                            (collide-action solid)
                            (collide-action))

@@ -507,6 +507,7 @@
                                          (the-as uint 2))
                                         (or (= (-> self type) scarecrow-a)
                                             (and (= (-> proc type) target)
+                                                 ;; coop: attribution (cast retained — sender guaranteed target by (= (-> proc type) target))
                                                  (logtest? (-> (the-as target proc) control unknown-surface00 flags) (surface-flags jump))
                                                  (not (logtest? (-> (the-as target proc) control status) (cshape-moving-flags onsurf))))))))))))
         (('touch) (send-shove-back (-> self root) proc (the-as touching-shapes-entry (-> block param 0)) 0.7 6144.0 16384.0))))

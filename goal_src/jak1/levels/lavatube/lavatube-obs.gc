@@ -424,6 +424,7 @@
       (case message
         (('touch 'attack)
          (cond
+           ;; coop: attribution (no (the-as target) cast — handler uses (= (-> proc type) target) type check to gate send-event 'attack-invinc; proc used only as generic process in send-event, no target field reads)
            ((= (-> proc type) target)
             (let ((s5-0 (-> block param 0)))
               (if (and s5-0

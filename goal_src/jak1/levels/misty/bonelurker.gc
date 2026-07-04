@@ -29,6 +29,7 @@
   0
   (none))
 
+;; coop: attribution (touch/attack handlers route via arg0 sender — canonical, no cast)
 (defmethod touch-handler ((this bonelurker) (arg0 process) (arg1 event-message-block))
   (when (and (logtest? (-> this nav-enemy-flags) (nav-enemy-flags navenmf6))
              ((method-of-type touching-shapes-entry prims-touching?)

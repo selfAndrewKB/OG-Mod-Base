@@ -756,6 +756,7 @@
            (go ram-boss-lose-shield)
            (return #t)
            v0-4)
+          ;; coop: attribution (cast retained — inside cond test begin expr; no explicit type guard; in practice attack events here come from target via collision, but non-target 'attack is a latent crash)
           ((begin
              (if (not (logtest? (-> self nav-enemy-flags) (nav-enemy-flags navenmf8))) (do-push-aways! (-> self collide-info)))
              (level-hint-spawn (text-id snow-ram-boss-red-eco-hint) "sksp0346" (the-as entity #f) *entity-pool* (game-task none))
@@ -776,6 +777,7 @@
      (cond
        ((-> self has-shield?)
         (cond
+          ;; coop: attribution (cast retained — inside cond test expr; sender guaranteed target by collide-with (collide-kind target) collision setup)
           ((>= (- (-> (target-pos-for (the-as target arg0) 0) y) (-> self collide-info trans y)) 9420.8)
            (send-event arg0 'shove (-> arg3 param 0) (static-attack-info ((shove-back (meters 4)) (shove-up (meters 2)))))
            (go ram-boss-up-defend-block)
