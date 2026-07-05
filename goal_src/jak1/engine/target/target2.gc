@@ -109,6 +109,7 @@
    (sides-x-scale       float)
    (sides-y-scale       float)
    (x-offset            int32)
+   ;; coop: hud-owner
    ;; Co-op: index of the player that spawned this HUD (0 = P1, 1 = P2, ...).
    ;; Used by find-active-fp-hud to filter per render pass so P2's reticle does
    ;; not draw in P1's viewport (and vice versa). Defaults to 0 in single-player.
@@ -130,6 +131,7 @@
   (dotimes (s5-0 (-> this nb-of-particles))
     (kill-and-free-particles (-> this particles s5-0 part))
     (set! (-> this particles s5-0 part matrix) -1))
+  ;; coop: hud-owner
   ;; Phase 2e: disable-hud/enable-hud are global and count-balanced — skip in co-op.
   ;; draw-huds-for-pass handles per-viewport FPS show/hide instead.
   (when (not *multi-coop-active*)
@@ -207,6 +209,7 @@
   (the-as first-person-hud ((method-of-type process relocate) this offset)))
 
 (defmethod spawn-particles! ((this first-person-hud))
+  ;; coop: hud-owner
   ;; Always called from :post (game-logic time) — particles are active for both render passes.
   ;; Co-op: HVDF slots are written per-pass by fp-hud-spawn-for-pass, which writes the
   ;; correct screen position for the matching viewport and off-screen for all others.
@@ -238,6 +241,7 @@
         (('go-away) (go hud-going-out))))
   :enter
     (behavior ()
+      ;; coop: hud-owner
       ;; Phase 2e: in co-op, per-pass FPS detection in draw-huds-for-pass handles
       ;; show/hide. Global disable-hud/enable-hud are count-balanced — skip them.
       (when (not *multi-coop-active*)
@@ -264,6 +268,7 @@
         (suspend)))
   :post
     (behavior ()
+      ;; coop: hud-owner
       ;; Always spawn at game-logic time. Co-op: fp-hud-spawn-for-pass writes HVDF per-pass
       ;; (correct for owner viewport, off-screen for the other). SP: spawn-particles! writes HVDF here.
       (spawn-particles! self)))
@@ -296,6 +301,7 @@
     (behavior ()
       (spawn-particles! self)))
 
+;; coop: api hud-owner
 (defun find-fp-hud-for-pass ((pass int))
   "Return the live FP HUD whose owner-pad matches pass (0=P1, 1=P2).
    In single-player there is only one fp-hud with owner-pad=0; pass is always 0.
@@ -315,15 +321,36 @@
                     (set! res fphud)))))))))
     res))
 
+;; coop: api hud-owner
+(defun fp-hud-for-particle ((arg1 sparticle-cpuinfo))
+  "hud-owner: resolve the first-person-hud that owns a particle callback.
+   Co-op: arg1.key.proc is the canonical particle-callback ownership pattern
+   (the launch-control was created with the hud as its proc). SP: fall back to
+   find-fp-hud-for-pass keyed on *active-render-cam* (always pass 0 in SP).
+   Both arms cast to first-person-hud so the if stays typed; #f truthiness
+   survives the cast. Lives here (not coop-api.gc) because first-person-hud
+   is defined in this file."
+  (let ((lc (-> arg1 key)))
+    (the-as first-person-hud
+            (if *multi-coop-active*
+              (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))
+              (find-fp-hud-for-pass (the int *active-render-cam*))))))
+
+;; coop: api hud-owner
+(defun fp-hud-visible-this-pass? ((hud first-person-hud))
+  "hud-owner: #t when HUD is live and should draw in the current render pass.
+   SP: any live hud draws. Co-op: only the hud whose owner-pad matches
+   *active-render-cam* draws; the caller's *multi-coop-active* cond arm hides
+   the particles otherwise."
+  (and hud
+       (or (not *multi-coop-active*)
+           (= (the int (-> hud owner-pad)) (the int *active-render-cam*)))))
+
 (defun part-first-person-hud-left-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let* ((lc (-> arg1 key))
-         (s5-0 (the-as first-person-hud
-                       (if *multi-coop-active*
-                         (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))
-                         (find-fp-hud-for-pass (the int *active-render-cam*))))))
+  ;; coop: hud-owner
+  (let ((s5-0 (fp-hud-for-particle arg1)))
     (cond
-      ((and s5-0 (or (not *multi-coop-active*)
-                     (= (the int (-> s5-0 owner-pad)) (the int *active-render-cam*))))
+      ((fp-hud-visible-this-pass? s5-0)
        (let ((f30-0 (* 0.00024414062 (the float (-> s5-0 in-out-position)))))
          (if (or (-> *setting-control* current movie) (movie?)) (set! f30-0 1.0))
          (if (< 0.25 f30-0) (set! f30-0 1.0) (* 4.0 f30-0))
@@ -338,14 +365,10 @@
   (none))
 
 (defun part-first-person-hud-right-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let* ((lc (-> arg1 key))
-         (s5-0 (the-as first-person-hud
-                       (if *multi-coop-active*
-                         (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))
-                         (find-fp-hud-for-pass (the int *active-render-cam*))))))
+  ;; coop: hud-owner
+  (let ((s5-0 (fp-hud-for-particle arg1)))
     (cond
-      ((and s5-0 (or (not *multi-coop-active*)
-                     (= (the int (-> s5-0 owner-pad)) (the int *active-render-cam*))))
+      ((fp-hud-visible-this-pass? s5-0)
        (let ((f30-0 (* 0.00024414062 (the float (-> s5-0 in-out-position)))))
          (if (or (-> *setting-control* current movie) (movie?)) (set! f30-0 1.0))
          (if (< 0.25 f30-0) (set! f30-0 1.0) (* 4.0 f30-0))
@@ -360,14 +383,10 @@
   (none))
 
 (defun part-first-person-hud-selector-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
-  (let* ((lc (-> arg1 key))
-         (v1-2 (the-as first-person-hud
-                       (if *multi-coop-active*
-                         (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))
-                         (find-fp-hud-for-pass (the int *active-render-cam*))))))
+  ;; coop: hud-owner
+  (let ((v1-2 (fp-hud-for-particle arg1)))
     (cond
-      ((and v1-2 (or (not *multi-coop-active*)
-                     (= (the int (-> v1-2 owner-pad)) (the int *active-render-cam*))))
+      ((fp-hud-visible-this-pass? v1-2)
        (let ((f30-0 (* 0.00024414062 (the float (-> v1-2 in-out-position)))))
          (if (or (-> *setting-control* current movie) (movie?)) (set! f30-0 1.0))
          (if (< 0.5 f30-0) (set! f30-0 1.0) (* 2.0 f30-0))
@@ -377,6 +396,7 @@
   0
   (none))
 
+;; coop: api hud-owner
 (defun fp-hud-spawn-for-pass ((pass int))
   "Write HVDF screen positions for all live fp-hud particles. Called per render pass.
    *math-camera* holds the current pass's camera on entry.
@@ -473,6 +493,7 @@
         (when *multi-coop-active*
           (format 0 "[HUD:la-spawn] slot=~D pp=~A~%" slot pp))
         (when pp
+          ;; coop: hud-owner (stamp owner at spawn — pad index = player slot)
           (set! (-> (the-as first-person-hud (-> pp 0)) owner-pad) (the int8 slot)))
         ;; Guard against null pp — if spawn fails, ppointer->handle 0 dereferences
         ;; address 0 (unmapped on PC) → crash. Null-check here prevents that.
@@ -577,6 +598,7 @@
         (when *multi-coop-active*
           (format 0 "[HUD:bg-spawn] slot=~D pp=~A~%" slot pp))
         (when pp
+          ;; coop: hud-owner (stamp owner at spawn — pad index = player slot)
           (set! (-> (the-as first-person-hud (-> pp 0)) owner-pad) (the int8 slot)))
         (set! (-> self fp-hud) (if pp (ppointer->handle pp) (the-as handle #f)))))
   :exit
