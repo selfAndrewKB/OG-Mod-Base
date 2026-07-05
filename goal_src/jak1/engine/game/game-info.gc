@@ -390,6 +390,7 @@
 (define-extern multi-log-enabled? (function symbol symbol))
 (define-extern *multi-coop-active* symbol)
 
+;; coop: api hud-owner
 (defun mirror-shared-pickup! ((picker fact-info-target) (kind pickup-type) (amount float) (source-handle handle))
   "Per-viewport HUD Phase 1: mirror per-fact pickup deltas to all live targets except PICKER.
 
@@ -445,6 +446,7 @@
           kind amount picker-tgt mirror-count))))
   (none))
 
+;; coop: api hud-owner
 (defun sync-shared-pickups-to! ((new-tgt target))
   "Per-viewport HUD Phase 1: when a new target spawns mid-game, copy per-fact shared
    counters (buzzer, eco-pill) from the existing *target* so the new player's HUDs read
@@ -649,6 +651,7 @@
                s5-1)))))
      (-> this eco-level))
     (else ((method-of-type fact-info pickup-collectable!) this kind amount source-handle)))))
+    ;; coop: hud-owner (mirror per-fact pickup to other players' HUD facts)
     (mirror-shared-pickup! this kind amount source-handle)
     picker-result))
 

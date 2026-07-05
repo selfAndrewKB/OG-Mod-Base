@@ -269,6 +269,7 @@
       (set! (-> self fov) 11650.845))
   :exit
     (behavior ()
+      ;; coop: hud-owner (fp-hud teardown routed to the camera's own tracked-target)
       ;; Co-op: route 'end-mode to the rich-tracked target (the player whose
       ;; FPS this cam-eye was serving), not unconditionally to *target*.
       (let ((mm (-> self my-master)))

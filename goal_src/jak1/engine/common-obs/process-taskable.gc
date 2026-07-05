@@ -699,6 +699,9 @@
        #t))))
 
 (defun process-taskable-print-talk-for-target ((arg0 process-taskable) (arg1 target))
+  ;; coop: hud-owner (CONSTRAINT, decision 5: assumes render-pass index ==
+  ;; pad number — holds for 2-player split-screen where pass N draws pad N's
+  ;; viewport. Revisit if viewport count ever diverges from pad index.)
   (let ((old-cam *active-render-cam*))
     ;; Direct game-text runs during process tick, so route this prompt to the
     ;; candidate player's viewport before printing. Talk ownership is still P1.

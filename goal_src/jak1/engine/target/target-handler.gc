@@ -36,6 +36,8 @@
      (let ((v1-21 (level-get *level* (the-as symbol (-> arg3 param 0)))))
        (when v1-21
          (let ((s5-1 (-> v1-21 info)))
+           ;; coop: hud-owner (reclassified from event-fanout — iterates
+           ;; *hud-parts-list* HUD slots, not targets; per-viewport buzzer sync)
            ;; Session 51 B5 follow-up: in MP, send 'hide-quick to ALL viewports'
            ;; hud-buzzers BEFORE rewriting fact.buzzer. fact.buzzer is per-task and
            ;; gets reset to the new task's count on every 'level-enter, which any
@@ -59,6 +61,9 @@
              (set-time! (-> *game-info* enter-level-time (-> *level-task-data-remap* (+ (-> s5-1 index) -1))))))
          (when *multi-dbg-hud*
            (format 0 "[MULTI:hud] level-enter->sync from pid=~D level=~A~%" (-> self pid) (-> arg3 param 0)))
+         ;; coop: hud-owner (reclassified from event-fanout — same HUD-slot
+         ;; iteration as the 'hide-quick block above; SP else-arm is the tagged
+         ;; legacy *hud-parts* fallback)
          ;; Session 51 B5 follow-up: send 'sync to ALL viewports' hud-buzzers in MP,
          ;; not just P1's slot. Each gets first-init=#t so next display snaps.
          (cond

@@ -135,6 +135,9 @@
     (can-grab-display? arg0)))
 
 (defun print-press-to-use-for-target ((arg0 target))
+  ;; coop: hud-owner (CONSTRAINT, decision 5: assumes render-pass index ==
+  ;; pad number — holds for 2-player split-screen where pass N draws pad N's
+  ;; viewport. Revisit if viewport count ever diverges from pad index.)
   (let ((old-cam *active-render-cam*))
     ;; Direct game-text DMA normally runs from process tick, where
     ;; *active-render-cam* is pass 0. Temporarily route this one prompt to the

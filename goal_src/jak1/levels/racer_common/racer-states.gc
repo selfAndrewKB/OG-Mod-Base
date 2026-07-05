@@ -11,11 +11,13 @@
 (define-extern target-camera (function target camera-master))
 (define-extern find-picker-hud-parts (function process-tree hud-parts))
 
+;; coop: api hud-owner
 (defun target-racing-owner-hud-parts ((arg0 target))
   ;; Bike meters are temporary rider HUDs. Resolve them from the riding target,
   ;; not legacy *hud-parts*, so each viewport owns and hides its own meters.
   (find-picker-hud-parts (the-as process-tree arg0)))
 
+;; coop: hud-owner
 (defun target-racing-hide-bike-huds ((arg0 target))
   (let ((parts (target-racing-owner-hud-parts arg0)))
     (let ((speed (-> parts bike-speed)))
@@ -44,6 +46,7 @@
       (set! (-> parts power 0 y-sgn) arg2)))
   (none))
 
+;; coop: hud-owner
 (defun target-racing-spawn-bike-huds ((arg0 target))
   (let ((parts (target-racing-owner-hud-parts arg0)))
     (when (or (= (-> arg0 current-level name) 'lavatube)

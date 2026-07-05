@@ -26,6 +26,7 @@
   ((method-of-type process deactivate) this)
   (none))
 
+;; coop: api hud-owner
 ;; Per-viewport HUD: resolve the *hud-parts-list* slot owned by THIS hud's parent target.
 ;; Each spawned hud is parented :to its target (slot 0 = P1, 1 = P2, ...). Walks parent
 ;; pointer, then locates that target in *target-list* to identify its slot. Falls back
@@ -42,6 +43,7 @@
               (return (-> *hud-parts-list* slots i)))))))
     *hud-parts*))
 
+;; coop: api hud-owner
 ;; [B7] Per-viewport pickup routing: given a picker target process, return
 ;; its *hud-parts-list* slot. Falls back to *hud-parts* (slot 0 = P1) when
 ;; picker is not found in *target-list* — covers SP boot, pre-coop, and any
@@ -73,6 +75,7 @@
   (none))
 
 (defmethod draw-hud ((this hud))
+  ;; coop: hud-owner
   ;; Session 51 N1 fix: in MP, this method runs from hud-draw-for-pass per render
   ;; pass; spawn is handled by hud-spawn-particles! in :post (process tick), so
   ;; gate the spawn loop off in MP. In SP, hud-draw-for-pass never runs and :post
@@ -118,6 +121,7 @@
          (set-time! (-> this last-target-equal-time))))
       (set! (-> this value2) arg1)
       (when (and (not (movie?)) (= *master-mode* 'game) (not (-> this first-init)) (not (-> this disable)))
+        ;; coop: hud-owner
         ;; Per-viewport HUD: friend send routes to the OWNER's hud-parts slot, not the
         ;; legacy *hud-parts* (which mirrors only slot 0). Eg. P2's hud-pickups friend
         ;; send must reach P2's hud-health, not P1's.
@@ -451,6 +455,7 @@
 (defun send-hud-increment-event ((arg0 hud))
   (when (-> arg0 increment-on-event)
     (send-event arg0 'increment)
+    ;; coop: hud-owner
     ;; Session 51 B4 fix: in MP, also broadcast 'increment to same-type HUDs in
     ;; the other viewports so their target-value advances in lockstep with the
     ;; picker's. Without this, mirror HUDs's tally-value branch 1 fails the

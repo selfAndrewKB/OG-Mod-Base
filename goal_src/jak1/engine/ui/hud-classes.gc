@@ -169,6 +169,7 @@
   (none))
 
 (defmethod hud-update ((this hud-pickups))
+  ;; coop: hud-owner
   ;; Per-viewport HUD Phase 2: read owner from parent process. Each viewport's HUD
   ;; shows its OWN player's eco-pill count. Phase 1 mirror keeps counts in lockstep
   ;; on pickup; per-player consumption causes natural drift.
@@ -262,6 +263,7 @@
   ((scale float)))
 
 
+;; coop: hud-owner
 ;; Per-viewport HUD Phase 3: ownership-from-particle-key. Each particle was spawned by
 ;; a specific HUD process; arg1.key.proc points at it. Read scale from THAT HUD and
 ;; (-> hud-self parent 0) to resolve the owning target. Eliminates *active-render-cam*
@@ -302,6 +304,7 @@
   0
   (none))
 
+;; coop: hud-owner
 (defun part-hud-health-02-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-health (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
@@ -313,6 +316,7 @@
   0
   (none))
 
+;; coop: hud-owner
 (defun part-hud-health-03-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-health (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
@@ -330,6 +334,7 @@
   (none))
 
 (defmethod hud-update ((this hud-health))
+  ;; coop: hud-owner
   ;; Per-viewport HUD Phase 2: each player's health bar displays only their OWN health.
   ;; No cross-player encoding — owner identified by parent process.
   (when (-> this parent)
@@ -624,6 +629,7 @@
                                 (font-flags shadow kerning large)
                                 0.8))
         (((hud-collectable-view level-totals))
+         ;; coop: hud-owner
          ;; Per-viewport HUD Phase 3: read OWNER's current-level via parent process.
          (when (-> this parent)
            (let* ((owner (the-as target (-> this parent 0)))
@@ -647,6 +653,7 @@
   (none))
 
 (defmethod hud-update ((this hud-money))
+  ;; coop: hud-owner
   ;; Per-viewport HUD Phase 2: orb count is team-shared via the GLOBAL *game-info*
   ;; (target.game is a pointer to *game-info* — see logic-target.gc:1263), so every
   ;; viewport naturally shows the same count. Owner is identified via parent process.
@@ -956,6 +963,7 @@
                                 (font-flags shadow kerning large)
                                 0.8))
         (((hud-collectable-view level-totals))
+         ;; coop: hud-owner
          ;; Per-viewport HUD Phase 3: per-player level-totals display reads OWNER's
          ;; current-level via parent process (each viewport shows ITS player's level cells).
          (when (-> this parent)
@@ -998,6 +1006,7 @@
   0
   (none))
 
+;; coop: hud-owner
 (defun fuel-cell-hud-starburst-3-callback ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-fuel-cell (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f)))))
@@ -1007,6 +1016,7 @@
   0
   (none))
 
+;; coop: hud-owner
 (defun fuel-cell-hud-starburst-4-callback ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-fuel-cell (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f)))))
@@ -1016,6 +1026,7 @@
   0
   (none))
 
+;; coop: hud-owner
 (defun fuel-cell-hud-center-callback ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-fuel-cell (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f)))))
@@ -1029,6 +1040,7 @@
   (none))
 
 (defmethod hud-update ((this hud-fuel-cell))
+  ;; coop: hud-owner
   ;; Per-viewport HUD Phase 2: power cells are team-shared via global *game-info*.
   ;; Owner from parent process.
   (when (-> this parent)
@@ -1157,6 +1169,7 @@
    (text-y-offset int32)))
 
 
+;; coop: hud-owner
 (defun part-hud-buzzer-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-buzzers (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
@@ -1192,6 +1205,7 @@
                                 (font-flags shadow kerning large)
                                 0.8))
         (((hud-collectable-view level-totals))
+         ;; coop: hud-owner
          ;; Per-viewport HUD Phase 3: read OWNER's current-level via parent process.
          (when (-> this parent)
            (let* ((owner (the-as target (-> this parent 0)))
@@ -1218,6 +1232,7 @@
   (none))
 
 (defmethod hud-update ((this hud-buzzers))
+  ;; coop: hud-owner
   ;; Per-viewport HUD Phase 2: per-fact buzzer count is mirrored on pickup (Phase 1)
   ;; so all live targets stay in lockstep. Each viewport's HUD shows its owner's
   ;; (== team total) buzzer count via parent process.
@@ -1392,6 +1407,7 @@
   0
   (none))
 
+;; coop: hud-owner
 (defun part-hud-eco-timer-01-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
@@ -1418,6 +1434,7 @@
   0
   (none))
 
+;; coop: hud-owner
 (defun part-hud-eco-timer-02-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
@@ -1442,6 +1459,7 @@
   0
   (none))
 
+;; coop: hud-owner
 (defun part-hud-eco-timer-03-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
@@ -1466,6 +1484,7 @@
   0
   (none))
 
+;; coop: hud-owner
 (defun part-hud-eco-timer-backing-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
@@ -1475,6 +1494,7 @@
   0
   (none))
 
+;; coop: hud-owner
 (defun part-hud-eco-timer-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-power (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
@@ -1485,6 +1505,7 @@
   (none))
 
 (defmethod hud-update ((this hud-power))
+  ;; coop: hud-owner
   ;; Per-viewport HUD Phase 2: power-up eco (red/blue/yellow) is per-player, owner from parent.
   ;; [HUD:power] and [HUD:power-ECO] logs disabled
   (when (-> this parent)
@@ -1553,6 +1574,7 @@
   0
   (none))
 
+;; coop: hud-owner
 (defun activate-hud ((arg0 process))
   "Per-viewport HUD Phase 2: spawn a full HUD set for the target ARG0, parented to it.
    Identifies ARG0's slot in *target-list* and writes the spawned processes into
@@ -1641,6 +1663,7 @@
 (defun hide-hud ()
   (when *target*
     (cond
+      ;; coop: hud-owner (reclassified from event-fanout — HUD visibility, not target broadcast)
       (*multi-coop-active*
        (dotimes (slot (-> *target-list* length))
          (when (not (zero? (-> *target-list* slot)))
@@ -1656,6 +1679,7 @@
 (defun hide-bottom-hud ()
   (when *target*
     (cond
+      ;; coop: hud-owner (reclassified from event-fanout — HUD visibility, not target broadcast)
       (*multi-coop-active*
        (dotimes (slot (-> *target-list* length))
          (when (not (zero? (-> *target-list* slot)))
@@ -1681,6 +1705,7 @@
 (defun enable-hud ()
   (when *target*
     (cond
+      ;; coop: hud-owner (reclassified from event-fanout — HUD visibility, not target broadcast)
       (*multi-coop-active*
        (dotimes (slot (-> *target-list* length))
          (when (not (zero? (-> *target-list* slot)))
@@ -1696,6 +1721,7 @@
 (defun hide-hud-quick ()
   (when *target*
     (cond
+      ;; coop: hud-owner (reclassified from event-fanout — HUD visibility, not target broadcast)
       (*multi-coop-active*
        (dotimes (slot (-> *target-list* length))
          (when (not (zero? (-> *target-list* slot)))
@@ -1711,6 +1737,7 @@
 (defun show-hud ()
   (when (and *target* (or (not *progress-process*) (hidden? (-> *progress-process* 0))))
     (cond
+      ;; coop: hud-owner (reclassified from event-fanout — HUD visibility, not target broadcast)
       (*multi-coop-active*
        (dotimes (slot (-> *target-list* length))
          (when (not (zero? (-> *target-list* slot)))
@@ -1759,6 +1786,7 @@
     (set! (-> *hud-parts* money-all) (process-spawn hud-money-all :init hud-init-by-other arg0 :to *target*)))
   0)
 
+;; coop: hud-owner
 ;; Per-viewport HUD Phase 2: per-pass HUD draw. Called from draw-world-pass
 ;; (multi-draw.gc) before sprite-draw. Reads the pass's player's HUD set from
 ;; *hud-parts-list* slots[pass], skipping when that player is in first-person mode
@@ -1826,6 +1854,7 @@
         (-> *display* integral-frame-counter)))
     (logclear! (-> arg0 mask) (process-mask actor-pause))
     (let ((s4-0 (new 'stack-no-clear 'vector)))
+      ;; coop: hud-owner
       ;; [B7] When the picker is P2, swap *math-camera* to *p2-math-camera* for
       ;; the world→screen projection. Otherwise the projection runs through
       ;; whichever camera happens to be live in *math-camera* — which outside

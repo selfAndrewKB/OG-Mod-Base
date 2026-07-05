@@ -8,6 +8,7 @@
 
 ;; DECOMP BEGINS
 
+;; coop: api hud-owner
 (defun racer-hud-owner ((arg0 hud))
   ;; Racer meters are spawned only while riding, and parented to the riding target.
   ;; Particle callbacks run later through launch-control, so recover the owner from
@@ -25,6 +26,7 @@
       0.0)))
 
 (defun part-hud-racer-speed-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
+  ;; coop: hud-owner
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-bike-speed (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
          (owner (racer-hud-owner hud-self))
@@ -108,6 +110,7 @@
    (:flags (bit2 bit9))))
 
 (defun part-hud-racer-heat-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
+  ;; coop: hud-owner
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-bike-heat (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
          (f0-1 (racer-hud-heat-ratio hud-self)))
@@ -138,6 +141,7 @@
   (none))
 
 (defun part-hud-zoomer-heat-slice-01-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
+  ;; coop: hud-owner
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-bike-heat (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
          (f0-1 (racer-hud-heat-ratio hud-self)))
@@ -146,6 +150,7 @@
   (none))
 
 (defun part-hud-zoomer-heat-slice-02-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
+  ;; coop: hud-owner
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-bike-heat (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
          (f0-1 (racer-hud-heat-ratio hud-self)))
@@ -155,6 +160,7 @@
   (none))
 
 (defun part-hud-zoomer-heat-slice-03-func ((arg0 sparticle-system) (arg1 sparticle-cpuinfo) (arg2 matrix))
+  ;; coop: hud-owner
   (let* ((lc (-> arg1 key))
          (hud-self (the-as hud-bike-heat (if (and lc (-> lc proc)) (-> lc proc) (the-as process #f))))
          (f0-1 (racer-hud-heat-ratio hud-self)))
@@ -276,6 +282,7 @@
 
 
 (defmethod hud-update ((this hud-bike-heat))
+  ;; coop: hud-owner
   (let ((owner (racer-hud-owner this)))
     (if owner (tally-value this (the int (-> owner racer heat)) 0)))
   0
@@ -334,6 +341,7 @@
 
 
 (defmethod hud-update ((this hud-bike-speed))
+  ;; coop: hud-owner
   (let ((owner (racer-hud-owner this)))
     (if owner (tally-value this (the int (-> owner control unknown-float01)) 0)))
   0
